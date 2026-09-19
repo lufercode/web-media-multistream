@@ -1,0 +1,43 @@
+# ==============================================================================
+# Git Ignore - Web Media Multistream
+# ==============================================================================
+
+# Archivos temporales y del sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
+*.swp
+
+# Archivos comprimidos y respaldos locales pesados
+*.zip
+*.rar
+*.tar.gz
+*.7z
+appp.zip
+
+# Logs y registros de error
+*.log
+error_log
+
+# Configuración local de IDEs / Editores
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Variables de entorno o configuraciones sensibles
+.env
+.env.local
+.env.*.local
+
+# Scripts temporales de pruebas y experimentos
+scratch/
+
+# Caché dinámica generada por el servidor (se conserva la carpeta con .gitkeep)
+data/cache/*
+!data/cache/.gitkeep
+
+# Historial local de visualización del usuario
+data/watched_progress.json
