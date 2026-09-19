@@ -1,0 +1,530 @@
+/* style.css */
+
+/* ==========================================================================
+   Sistema de Modo Oscuro y Alto Contraste (WCAG AAA)
+   ========================================================================== */
+:root,
+[data-bs-theme="dark"] {
+    --bs-body-bg: #101216;
+    --bs-body-color: #f1f5f9;
+    --bs-secondary-color: #94a3b8;
+    --bs-tertiary-color: #cbd5e1;
+    --bs-emphasis-color: #ffffff;
+    --bs-border-color: #334155;
+    --bs-border-color-translucent: rgba(255, 255, 255, 0.12);
+}
+
+body {
+    background-color: #101216 !important;
+    color: #f1f5f9 !important;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Forzar legibilidad perfecta en textos secundarios y silenciados */
+.text-muted,
+small.text-muted,
+p.text-muted,
+span.text-muted,
+div.text-muted {
+    color: #94a3b8 !important; /* Gris slate claro: contraste > 7:1 contra fondos oscuros */
+}
+
+.text-secondary {
+    color: #cbd5e1 !important; /* Slate-300: excelente lectura */
+}
+
+.text-light {
+    color: #f8fafc !important;
+}
+
+.text-white {
+    color: #ffffff !important;
+}
+
+/* Barra de navegación */
+.navbar-brand {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+/* Tarjetas de contenido */
+.card {
+    background-color: #181b24 !important;
+    border: 1px solid #292f3d !important;
+    color: #f1f5f9 !important;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Evitar el efecto de zoom en las tarjetas de temporada y detalles */
+#enlaces-container .card:hover,
+.details-hero-card:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.card-img-top {
+    border-radius: 8px;
+    object-fit: cover;
+    aspect-ratio: 2/3;
+}
+
+.card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #f8fafc !important;
+    margin-top: 0.5rem;
+}
+
+/* Sección de títulos */
+h1, h2, h3, h4, h5, h6 {
+    color: #f8fafc;
+}
+
+h2 {
+    font-weight: 700;
+    border-bottom: 2px solid #e50914;
+    padding-bottom: 0.5rem;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Formulario de búsqueda */
+.form-control, .form-select {
+    background-color: #181c25 !important;
+    border: 1px solid #333d4f !important;
+    color: #f8fafc !important;
+}
+
+.form-control::placeholder {
+    color: #64748b !important;
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: #1e232f !important;
+    border-color: #e50914 !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 0 0.25rem rgba(229, 9, 20, 0.25) !important;
+}
+
+.btn-primary {
+    background-color: #e50914;
+    border-color: #e50914;
+}
+
+.btn-primary:hover {
+    background-color: #c40812;
+    border-color: #c40812;
+}
+
+/* Botones secundarios con buen contraste */
+.btn-outline-secondary {
+    border-color: #475569 !important;
+    color: #cbd5e1 !important;
+}
+
+.btn-outline-secondary:hover {
+    background-color: #334155 !important;
+    border-color: #64748b !important;
+    color: #ffffff !important;
+}
+
+/* Badges con alto contraste */
+.badge.bg-secondary {
+    background-color: #2e3648 !important;
+    color: #f1f5f9 !important;
+    border: 1px solid #434e68 !important;
+}
+
+.badge.bg-dark {
+    background-color: #0b0d13 !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #2f3647 !important;
+}
+
+.badge.bg-warning,
+.badge.text-dark {
+    color: #000000 !important;
+    font-weight: 700 !important;
+}
+
+.badge.bg-info {
+    color: #000000 !important;
+    font-weight: 700 !important;
+}
+
+.badge-status {
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 0.35em 0.65em;
+}
+
+/* Acordeón de temporadas y capítulos */
+.accordion-item {
+    background-color: #141720 !important;
+    border: 1px solid #292e3d !important;
+}
+
+.accordion-button {
+    background-color: #1c212d !important;
+    color: #f8fafc !important;
+    border-bottom: 1px solid #292e3d !important;
+}
+
+.accordion-button:not(.collapsed) {
+    background: linear-gradient(145deg, #242c3c, #1a202c) !important;
+    color: #38bdf8 !important;
+    box-shadow: none !important;
+}
+
+.accordion-button::after {
+    filter: invert(1) brightness(1.6);
+}
+
+.accordion-body {
+    background-color: #10131a !important;
+    color: #e2e8f0 !important;
+}
+
+/* Alertas legibles en modo oscuro */
+.alert-dark {
+    background-color: #161a24 !important;
+    border: 1px solid #2d3446 !important;
+    color: #e2e8f0 !important;
+}
+
+.alert-dark .text-muted {
+    color: #cbd5e1 !important;
+}
+
+/* Íconos de disponibilidad */
+.search-status-icon i {
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    -webkit-text-stroke: 0.5px #ffffff;
+}
+
+.search-status-icon .text-success {
+    color: #28a745 !important;
+}
+
+.search-status-icon .text-danger {
+    color: #dc3545 !important;
+}
+
+.search-status-icon .text-warning {
+    color: #ffc107 !important;
+}
+
+/* ==========================================================================
+   Modo Horizontal Forzado (Rotación Virtual para móviles e iPhone)
+   Permite ver en pantalla completa apaisada sin quitar el bloqueo de iOS
+   ========================================================================== */
+#videoPlayerModal.modal-force-landscape {
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #000 !important;
+}
+
+#videoPlayerModal.modal-force-landscape .modal-dialog {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vh !important;
+    width: 100dvh !important;
+    height: 100vw !important;
+    height: 100dvw !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform-origin: 0 0 !important;
+    transform: rotate(90deg) translateY(-100%) !important;
+    z-index: 1060 !important;
+}
+
+#videoPlayerModal.modal-force-landscape .modal-content {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+    border: none !important;
+    background: #000 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+#videoPlayerModal.modal-force-landscape .modal-header {
+    background: rgba(15, 15, 15, 0.95) !important;
+    border-bottom: 1px solid #333 !important;
+    padding: 6px 12px !important;
+    flex: 0 0 auto !important;
+    z-index: 10 !important;
+}
+
+#videoPlayerModal.modal-force-landscape .modal-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: calc(100vw - 44px) !important;
+    height: calc(100dvw - 44px) !important;
+    position: relative !important;
+    background: #000 !important;
+}
+
+#videoPlayerModal.modal-force-landscape #playerIframe,
+#videoPlayerModal.modal-force-landscape #playerVideo,
+#videoPlayerModal.modal-force-landscape #artplayerContainer {
+    width: 100% !important;
+    height: 100% !important;
+    border: 0 !important;
+}
+
+#artplayerContainer {
+    width: 100%;
+    height: 520px;
+    max-height: 75vh;
+    background: #000;
+}
+
+/* Ocultamiento total de barra de carga, controles y cursor al reproducir en pantalla completa o normal */
+.art-video-player:not(.art-control-show):not(.art-hover) .art-bottom,
+.art-video-player.art-mini-progress-bar:not(.art-control-show):not(.art-hover) .art-bottom {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    transition: opacity 0.3s ease, visibility 0.3s ease !important;
+}
+
+.art-video-player:not(.art-control-show):not(.art-hover) .art-progress,
+.art-video-player.art-mini-progress-bar:not(.art-control-show):not(.art-hover) .art-progress {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+.art-video-player.art-hide-cursor,
+.art-video-player.art-hide-cursor * {
+    cursor: none !important;
+}
+
+/* ==========================================================================
+   Miniaturas y Tarjetas Multimedia (Episodios, Películas y Anime)
+   ========================================================================== */
+
+/* Tarjeta hero de detalles con fondo cinematográfico */
+.details-hero-card {
+    border-radius: 12px;
+    background-color: #1a1a1a;
+    transition: none !important;
+}
+
+/* Tarjeta contenedora de episodio */
+.episode-card {
+    background-color: #12141a !important;
+    border: 1px solid #292d38 !important;
+    border-radius: 8px;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.episode-card:hover {
+    border-color: #3b4252 !important;
+    background-color: #161922 !important;
+}
+
+/* Caja de la miniatura 16:9 */
+.episode-thumb-box,
+.movie-thumb-box {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #191c24;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+}
+
+.episode-thumb-img,
+.movie-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.25s ease;
+}
+
+.episode-thumb-box:hover .episode-thumb-img,
+.movie-thumb-box:hover .movie-thumb-img {
+    transform: scale(1.05);
+}
+
+/* Overlay con icono de reproducir al pasar el mouse */
+.episode-thumb-overlay,
+.movie-thumb-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 2;
+}
+
+.episode-thumb-box:hover .episode-thumb-overlay,
+.movie-thumb-box:hover .movie-thumb-overlay {
+    opacity: 1;
+}
+
+.episode-thumb-play-icon {
+    width: 36px;
+    height: 36px;
+    background: rgba(229, 9, 20, 0.85);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 0.9rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    padding-left: 2px;
+}
+
+/* Placeholder cuando el episodio no tiene imagen de TMDB */
+.episode-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #1f232c, #111317);
+    color: #6c757d;
+}
+
+/* Truncar texto a 2 líneas */
+.text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Estilo para póster en video modal */
+#playerVideo {
+    object-fit: contain;
+}
+
+/* Adaptación responsiva para móviles pequeños */
+@media (max-width: 576px) {
+    .episode-card {
+        padding: 0.75rem !important;
+    }
+    .episode-thumb-box {
+        margin-bottom: 0.5rem;
+    }
+}
+
+/* ==========================================================================
+   Desplegables de Proveedores y Servidores (Cuevana, Gnula, etc.)
+   ========================================================================== */
+.provider-collapse-card {
+    transition: all 0.2s ease;
+}
+
+.provider-toggle-btn {
+    background: linear-gradient(145deg, #222630, #181b22) !important;
+    border: 1px solid #3d4556 !important;
+    border-radius: 8px !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    color: #e2e8f0 !important;
+    text-decoration: none !important;
+}
+
+.provider-toggle-btn:hover {
+    background: linear-gradient(145deg, #2a303d, #1f232c) !important;
+    border-color: #586580 !important;
+    color: #ffffff !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.provider-toggle-btn:focus,
+.provider-toggle-btn:active {
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25) !important;
+}
+
+.provider-toggle-btn:not(.collapsed),
+.provider-toggle-btn[aria-expanded="true"] {
+    background: linear-gradient(145deg, #1b2333, #151b27) !important;
+    border-color: #0d6efd !important;
+    box-shadow: 0 0 12px rgba(13, 110, 253, 0.25);
+}
+
+.provider-toggle-btn .toggle-chevron {
+    display: inline-block;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease;
+}
+
+.provider-toggle-btn:not(.collapsed) .toggle-chevron,
+.provider-toggle-btn[aria-expanded="true"] .toggle-chevron {
+    transform: rotate(180deg);
+    color: #0dcaf0 !important;
+}
+
+.provider-collapse-card .card-body {
+    background-color: #12141a !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* Animación de entrada para tarjetas de servidores en tiempo real */
+.pop-in-card {
+    animation: popInCard 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes popInCard {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Banner de progreso de búsqueda en vivo */
+.sources-progress-banner {
+    background: linear-gradient(135deg, #151922 0%, #1a202c 100%);
+    border: 1px solid #334155;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    transition: all 0.3s ease;
+}
+
+.sources-progress-banner.is-done {
+    background: linear-gradient(135deg, #112019 0%, #15291e 100%);
+    border-color: #198754;
+}
+
+.sources-progress-banner .progress {
+    height: 5px;
+    background-color: #1e293b;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.sources-progress-banner .progress-bar {
+    background: linear-gradient(90deg, #0d6efd, #0dcaf0);
+    transition: width 0.3s ease;
+}

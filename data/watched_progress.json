@@ -1,0 +1,43 @@
+{
+    "tv": {
+        "95350": {
+            "1": {
+                "1": "watched",
+                "2": "partially_watched"
+            }
+        },
+        "6357": {
+            "1": {
+                "21": "watched",
+                "8": "partially_watched",
+                "9": "partially_watched",
+                "1": "partially_watched"
+            },
+            "2": {
+                "7": "partially_watched"
+            },
+            "5": {
+                "6": "partially_watched",
+                "12": "partially_watched"
+            },
+            "4": {
+                "11": "partially_watched"
+            }
+        },
+        "85937": {
+            "1": {
+                "1": "partially_watched"
+            }
+        },
+        "4607": {
+            "2": {
+                "6": "partially_watched"
+            }
+        }
+    },
+    "movie": {
+        "872585": "partially_watched",
+        "1084242": "partially_watched",
+        "1729723": "partially_watched"
+    }
+}
