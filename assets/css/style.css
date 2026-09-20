@@ -1040,3 +1040,23 @@ h2 {
     padding: 2.5rem;
     text-align: center;
 }
+
+/* Pie de Página (Footer) */
+.site-footer {
+    background: rgba(14, 16, 21, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.author-badge {
+    transition: all 0.25s ease;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.88rem;
+}
+
+.author-badge:hover {
+    color: #e50914 !important;
+    border-color: #e50914 !important;
+    box-shadow: 0 0 12px rgba(229, 9, 20, 0.35);
+    transform: translateY(-1px);
+}
