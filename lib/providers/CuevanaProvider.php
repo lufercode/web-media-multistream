@@ -150,7 +150,7 @@ class CuevanaProvider implements ProviderInterface
         return $results;
     }
 
-    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null): array
+    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?int $absolute_episode = null): array
     {
         if (!$this->isEnabled()) {
             return [];
@@ -206,6 +206,14 @@ class CuevanaProvider implements ProviderInterface
             $serie_slug = preg_replace('/^series\//', 'serie/', $raw_slug);
             $ep_url = "{$this->host}/{$serie_slug}/temporada/{$season}/episodio/{$episode}";
             $ep_html = http_get($ep_url, ['timeout' => 6]);
+
+            // Si falla y la temporada es >= 2 (animes donde Cuevana unifica todo en temporada 1),
+            // probar con la numeración continua de temporada 1
+            if (!$ep_html && $season >= 2) {
+                $alt_ep = ($absolute_episode !== null && $absolute_episode > 0) ? $absolute_episode : (($season - 1) * 24 + $episode);
+                $alt_url = "{$this->host}/{$serie_slug}/temporada/1/episodio/{$alt_ep}";
+                $ep_html = http_get($alt_url, ['timeout' => 6]);
+            }
 
             if ($ep_html && preg_match('/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s', $ep_html, $m_det)) {
                 $det_json = json_decode($m_det[1], true);

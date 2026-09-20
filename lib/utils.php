@@ -497,3 +497,32 @@ function http_get(string $url, array $options = []): ?string {
     return $result !== false ? $result : null;
 }
 
+/**
+ * Comparación flexible de títulos para Anime, permitiendo sufijos comunes de temporadas y formatos
+ * como (TV), 2nd Season, Season 2, etc., sin descartar falsos negativos.
+ */
+function is_anime_title_match(string $query_title, string $candidate_title): bool {
+    $clean = function(string $s) {
+        $s = mb_strtolower($s, 'UTF-8');
+        $s = preg_replace('/[\(\[]\s*(?:tv|pelicula|movie|bd|audio\s*latino|sub\s*español)\s*[\)\]]/iu', ' ', $s);
+        $s = preg_replace('/\b(?:tv|ova|ona|special|especial)\b/i', ' ', $s);
+        $s = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $s);
+        $s = preg_replace('/\s+/', ' ', $s);
+        return trim($s);
+    };
+
+    $q = $clean($query_title);
+    $c = $clean($candidate_title);
+    if (empty($q) || empty($c)) return false;
+    if ($q === $c) return true;
+
+    if (strpos($c, $q) === 0) {
+        $remainder = trim(substr($c, strlen($q)));
+        if (empty($remainder) || preg_match('/^(?:(?:\d+|[1-9]nd|[1-9]rd|[1-9]th|season|temporada|part|parte|the|final|movie|pelicula|shimetsu|zenpen|kouhen|[\p{L}]+)\s*)+$/iu', $remainder)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+

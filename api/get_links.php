@@ -37,6 +37,7 @@ $title = $item['title'] ?? $item['name'] ?? null;
 $original_title = $item['original_title'] ?? $item['original_name'] ?? null;
 $requested_season = isset($_GET['season']) ? (int)$_GET['season'] : null;
 $requested_episode = isset($_GET['episode']) ? (int)$_GET['episode'] : null;
+$requested_absolute = isset($_GET['absolute']) && $_GET['absolute'] !== '' ? (int)$_GET['absolute'] : null;
 $release_year = null;
 if (!empty($item['release_date'])) {
     $release_year = substr($item['release_date'], 0, 4);
@@ -60,7 +61,7 @@ if ($requested_provider !== null && $requested_provider !== '') {
     if ($type === 'movie') {
         $single_links = $manager->searchMovieSingleProvider($requested_provider, $title, $release_year, $tmdb_id, $original_title);
     } elseif ($requested_season !== null && $requested_episode !== null) {
-        $single_links = $manager->searchSeriesSingleProvider($requested_provider, $title, $requested_season, $requested_episode, $tmdb_id, $original_title);
+        $single_links = $manager->searchSeriesSingleProvider($requested_provider, $title, $requested_season, $requested_episode, $tmdb_id, $original_title, $requested_absolute);
     } else {
         $single_links = ['direct' => [], 'streaming' => [], 'torrent' => []];
     }
@@ -78,46 +79,120 @@ if ($requested_provider !== null && $requested_provider !== '') {
 // Para series sin episodio específico, construir siempre la estructura de episodios
 $all_links = [];
 if ($type === 'tv' && ($requested_season === null || $requested_episode === null)) {
-    $seasons = $item['seasons'] ?? [];
-    foreach ($seasons as $season_info) {
-        $s_num = $season_info['season_number'] ?? null;
-        if ($s_num === null || $s_num == 0) continue;
+    // Comprobar si existen grupos de episodios canónicos (type 6 "Seasons")
+    $use_episode_groups = false;
+    $canonical_groups = get_tmdb_episode_groups_seasons($item['id']);
+    $valid_groups = [];
 
-        $s_padded = str_pad((string)$s_num, 2, '0', STR_PAD_LEFT);
-        $season_key = "T{$s_padded}";
+    if ($canonical_groups && !empty($canonical_groups['groups'])) {
+        foreach ($canonical_groups['groups'] as $g) {
+            $name = strtolower($g['name'] ?? '');
+            if (($g['order'] ?? 0) > 0 && strpos($name, 'special') === false && strpos($name, 'especial') === false) {
+                $valid_groups[] = $g;
+            }
+        }
+        usort($valid_groups, function($a, $b) {
+            return ($a['order'] ?? 0) <=> ($b['order'] ?? 0);
+        });
 
-        $season_details = get_tmdb_season_details($item['id'], $s_num);
-        $episodes_data = $season_details['episodes'] ?? [];
-        $episode_list = [];
+        $default_regular_seasons = array_filter($item['seasons'] ?? [], function($s) {
+            return ($s['season_number'] ?? 0) > 0;
+        });
 
-        foreach ($episodes_data as $ep) {
-            $e_num = $ep['episode_number'];
-            $e_padded = str_pad((string)$e_num, 2, '0', STR_PAD_LEFT);
-            $episode_key = "E{$e_padded}";
+        if (count($valid_groups) > count($default_regular_seasons)) {
+            $use_episode_groups = true;
+        }
+    }
 
-            $ep_name = trim($ep['name'] ?? '');
-            if (empty($ep_name)) {
-                $ep_name = 'Episodio ' . $e_num;
+    if ($use_episode_groups) {
+        foreach ($valid_groups as $g) {
+            $s_num = (int)($g['order'] ?? 1);
+            $s_padded = str_pad((string)$s_num, 2, '0', STR_PAD_LEFT);
+            $season_key = "T{$s_padded}";
+
+            $episodes_data = $g['episodes'] ?? [];
+            if (empty($episodes_data)) continue;
+
+            usort($episodes_data, function($a, $b) {
+                return ($a['order'] ?? 0) <=> ($b['order'] ?? 0);
+            });
+
+            $episode_list = [];
+            foreach ($episodes_data as $ep) {
+                $e_num = ($ep['order'] ?? 0) + 1;
+                $e_padded = str_pad((string)$e_num, 2, '0', STR_PAD_LEFT);
+                $episode_key = "E{$e_padded}";
+
+                $abs_num = (int)($ep['episode_number'] ?? $e_num);
+
+                $ep_name = trim($ep['name'] ?? '');
+                if (empty($ep_name)) {
+                    $ep_name = 'Episodio ' . $e_num;
+                }
+
+                $episode_list[$episode_key] = [
+                    'name' => $ep_name,
+                    'season_number' => $s_num,
+                    'episode_number' => $e_num,
+                    'absolute_number' => $abs_num,
+                    'overview' => $ep['overview'] ?? '',
+                    'air_date' => $ep['air_date'] ?? null,
+                    'still_path' => !empty($ep['still_path']) ? "https://image.tmdb.org/t/p/w300{$ep['still_path']}" : null,
+                    'runtime' => $ep['runtime'] ?? null,
+                    'vote_average' => isset($ep['vote_average']) && $ep['vote_average'] > 0 ? round($ep['vote_average'], 1) : null
+                ];
             }
 
-            $episode_list[$episode_key] = [
-                'name' => $ep_name,
+            $all_links[$season_key] = [
                 'season_number' => $s_num,
-                'episode_number' => $e_num,
-                'overview' => $ep['overview'] ?? '',
-                'air_date' => $ep['air_date'] ?? null,
-                'still_path' => !empty($ep['still_path']) ? "https://image.tmdb.org/t/p/w300{$ep['still_path']}" : null,
-                'runtime' => $ep['runtime'] ?? null,
-                'vote_average' => isset($ep['vote_average']) && $ep['vote_average'] > 0 ? round($ep['vote_average'], 1) : null
+                'name' => !empty($g['name']) ? $g['name'] : 'Temporada ' . $s_num,
+                'episode_count' => count($episode_list),
+                'episodes' => $episode_list
             ];
         }
+    } else {
+        $seasons = $item['seasons'] ?? [];
+        foreach ($seasons as $season_info) {
+            $s_num = $season_info['season_number'] ?? null;
+            if ($s_num === null || $s_num == 0) continue;
 
-        $all_links[$season_key] = [
-            'season_number' => $s_num,
-            'name' => $season_info['name'] ?? 'Temporada ' . $s_num,
-            'episode_count' => count($episode_list),
-            'episodes' => $episode_list
-        ];
+            $s_padded = str_pad((string)$s_num, 2, '0', STR_PAD_LEFT);
+            $season_key = "T{$s_padded}";
+
+            $season_details = get_tmdb_season_details($item['id'], $s_num);
+            $episodes_data = $season_details['episodes'] ?? [];
+            $episode_list = [];
+
+            foreach ($episodes_data as $ep) {
+                $e_num = $ep['episode_number'];
+                $e_padded = str_pad((string)$e_num, 2, '0', STR_PAD_LEFT);
+                $episode_key = "E{$e_padded}";
+
+                $ep_name = trim($ep['name'] ?? '');
+                if (empty($ep_name)) {
+                    $ep_name = 'Episodio ' . $e_num;
+                }
+
+                $episode_list[$episode_key] = [
+                    'name' => $ep_name,
+                    'season_number' => $s_num,
+                    'episode_number' => $e_num,
+                    'absolute_number' => $e_num,
+                    'overview' => $ep['overview'] ?? '',
+                    'air_date' => $ep['air_date'] ?? null,
+                    'still_path' => !empty($ep['still_path']) ? "https://image.tmdb.org/t/p/w300{$ep['still_path']}" : null,
+                    'runtime' => $ep['runtime'] ?? null,
+                    'vote_average' => isset($ep['vote_average']) && $ep['vote_average'] > 0 ? round($ep['vote_average'], 1) : null
+                ];
+            }
+
+            $all_links[$season_key] = [
+                'season_number' => $s_num,
+                'name' => $season_info['name'] ?? 'Temporada ' . $s_num,
+                'episode_count' => count($episode_list),
+                'episodes' => $episode_list
+            ];
+        }
     }
 }
 
@@ -144,7 +219,7 @@ if ($metadata_only) {
 if ($type === 'movie') {
     $all_links = $manager->searchMovie($title, $release_year, $tmdb_id, $original_title);
 } elseif ($requested_season !== null && $requested_episode !== null) {
-    $all_links = $manager->searchSeries($title, $requested_season, $requested_episode, $tmdb_id, $original_title);
+    $all_links = $manager->searchSeries($title, $requested_season, $requested_episode, $tmdb_id, $original_title, $requested_absolute);
 }
 
 echo json_encode([

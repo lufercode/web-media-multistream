@@ -171,7 +171,7 @@ class ProviderManager
      * Busca todas las fuentes para un episodio de serie,
      * consultando tanto el título en español como el título original si difiere.
      */
-    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?string $original_title = null): array
+    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?string $original_title = null, ?int $absolute_episode = null): array
     {
         $consolidated = [
             'direct' => [],
@@ -189,7 +189,7 @@ class ProviderManager
             foreach ($titles as $t) {
                 if (empty($t)) continue;
                 try {
-                    $sources = $provider->searchSeries($t, $season, $episode, $tmdb_id);
+                    $sources = $provider->searchSeries($t, $season, $episode, $tmdb_id, $absolute_episode);
                     if (!empty($sources)) {
                         $prov_sources = array_merge($prov_sources, $sources);
                         if (count($sources) >= 5) break;
@@ -305,7 +305,7 @@ class ProviderManager
     /**
      * Busca fuentes para un episodio de serie en un único proveedor específico
      */
-    public function searchSeriesSingleProvider(string $provider_id, string $title, int $season, int $episode, ?int $tmdb_id = null, ?string $original_title = null): array
+    public function searchSeriesSingleProvider(string $provider_id, string $title, int $season, int $episode, ?int $tmdb_id = null, ?string $original_title = null, ?int $absolute_episode = null): array
     {
         $consolidated = [
             'direct' => [],
@@ -324,7 +324,7 @@ class ProviderManager
         foreach ($titles as $t) {
             if (empty($t)) continue;
             try {
-                $sources = $provider->searchSeries($t, $season, $episode, $tmdb_id);
+                $sources = $provider->searchSeries($t, $season, $episode, $tmdb_id, $absolute_episode);
                 if (!empty($sources)) {
                     $prov_sources = array_merge($prov_sources, $sources);
                     if (count($sources) >= 5) break;

@@ -225,3 +225,58 @@ function get_tmdb_season_details(int|string $tv_id, int $season_num): array {
 
     return $data_mx;
 }
+
+/**
+ * Obtiene el grupo de episodios de temporadas canónicas de TMDB (type = 6),
+ * resolviendo la anomalía de animes donde TMDB agrupa múltiples temporadas en una sola por emisión japonesa.
+ */
+function get_tmdb_episode_groups_seasons(int|string $tv_id): ?array {
+    $cache_file = CACHE_DIR . "/eg_seasons_{$tv_id}.json";
+    if (file_exists($cache_file) && (time() - filemtime($cache_file) < CACHE_TIME)) {
+        $cached = json_decode((string)@file_get_contents($cache_file), true);
+        if (is_array($cached) && !empty($cached['groups'])) {
+            return $cached;
+        }
+    }
+
+    $groups_data = get_tmdb_data("tv/{$tv_id}/episode_groups");
+    $results = $groups_data['results'] ?? [];
+    if (empty($results)) {
+        return null;
+    }
+
+    $season_group_id = null;
+    foreach ($results as $g) {
+        if (($g['type'] ?? 0) == 6) {
+            $season_group_id = $g['id'];
+            break;
+        }
+    }
+
+    if (!$season_group_id) {
+        foreach ($results as $g) {
+            $name = strtolower($g['name'] ?? '');
+            if (strpos($name, 'season') !== false || strpos($name, 'temporada') !== false) {
+                $season_group_id = $g['id'];
+                break;
+            }
+        }
+    }
+
+    if (!$season_group_id) {
+        return null;
+    }
+
+    $group_details = get_tmdb_data("tv/episode_group/{$season_group_id}");
+    if (empty($group_details['groups'])) {
+        return null;
+    }
+
+    if (!file_exists(CACHE_DIR)) {
+        @mkdir(CACHE_DIR, 0755, true);
+    }
+    @file_put_contents($cache_file, json_encode($group_details));
+
+    return $group_details;
+}
+

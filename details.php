@@ -26,7 +26,21 @@ $backdrop = !empty($details['backdrop_path']) ? "https://image.tmdb.org/t/p/orig
 $rating = isset($details['vote_average']) ? round($details['vote_average'], 1) : null;
 $release_year = !empty($details['release_date']) ? substr($details['release_date'], 0, 4) : (!empty($details['first_air_date']) ? substr($details['first_air_date'], 0, 4) : null);
 $genres = array_map(fn($g) => $g['name'], $details['genres'] ?? []);
-$runtime = isset($details['runtime']) ? $details['runtime'] . ' min' : (isset($details['number_of_seasons']) ? $details['number_of_seasons'] . ' temporadas' : null);
+
+$seasons_count = $details['number_of_seasons'] ?? null;
+if ($type === 'tv' && $id) {
+    $canonical_eg = get_tmdb_episode_groups_seasons($id);
+    if ($canonical_eg && !empty($canonical_eg['groups'])) {
+        $canonical_seasons = array_filter($canonical_eg['groups'], function($g) {
+            $name = strtolower($g['name'] ?? '');
+            return ($g['order'] ?? 0) > 0 && strpos($name, 'special') === false && strpos($name, 'especial') === false;
+        });
+        if (count($canonical_seasons) > ($seasons_count ?? 0)) {
+            $seasons_count = count($canonical_seasons);
+        }
+    }
+}
+$runtime = isset($details['runtime']) ? $details['runtime'] . ' min' : ($seasons_count ? $seasons_count . ' temporadas' : null);
 
 $is_anime = false;
 foreach ($details['genres'] ?? [] as $g) {

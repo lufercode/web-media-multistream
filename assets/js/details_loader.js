@@ -1349,14 +1349,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const loadEpisodeSources = (seasonNum, episodeNum, container, itemTitle, epThumbnail) => {
+    const loadEpisodeSources = (seasonNum, episodeNum, container, itemTitle, epThumbnail, absoluteNum = null) => {
         const epCard = container.closest('.episode-card');
+        const absNum = absoluteNum || epCard?.dataset?.absolute || episodeNum;
+        const requestParams = { id: contentId, type: 'tv', season: seasonNum, episode: episodeNum };
+        if (absNum) {
+            requestParams.absolute = absNum;
+        }
         startProgressiveSourcesLoad(
             container,
-            { id: contentId, type: 'tv', season: seasonNum, episode: episodeNum },
+            requestParams,
             itemTitle,
             epThumbnail,
-            { season: seasonNum, episode: episodeNum, cardElement: epCard }
+            { season: seasonNum, episode: episodeNum, absolute: absNum, cardElement: epCard }
         );
     };
 
@@ -1522,6 +1527,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     epKeys.forEach(epKey => {
                         const ep = episodes[epKey];
                         const epNum = ep.episode_number;
+                        const absNum = ep.absolute_number || epNum;
                         const epName = ep.name || `Episodio ${epNum}`;
                         const epAir = ep.air_date ? `<small class="text-secondary ms-1">(${ep.air_date})</small>` : '';
                         const epRuntime = ep.runtime ? `<span class="badge bg-black bg-opacity-75 text-white position-absolute bottom-0 end-0 m-1 small" style="font-size: 0.72rem;"><i class="far fa-clock me-1 text-info"></i>${ep.runtime}m</span>` : '';
@@ -1538,11 +1544,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         accordionHtml += `
                             <div class="col-12">
-                                <div class="card episode-card p-2 p-md-3 rounded shadow-sm" data-season="${sNum}" data-episode="${epNum}">
+                                <div class="card episode-card p-2 p-md-3 rounded shadow-sm" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}">
                                     <div class="row g-2 g-md-3 align-items-center">
                                         <!-- Miniatura 16:9 del Episodio -->
                                         <div class="col-5 col-sm-4 col-md-3 col-lg-3">
-                                            <div class="episode-thumb-box shadow-sm" data-season="${sNum}" data-episode="${epNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}" title="Ver fuentes de este episodio">
+                                            <div class="episode-thumb-box shadow-sm" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}" title="Ver fuentes de este episodio">
                                                 ${epThumb ? `
                                                     <img src="${epThumb}" alt="${epName.replace(/"/g, '&quot;')}" class="episode-thumb-img" loading="lazy" onerror="this.onerror=null; this.src='${fallbackThumb}';">
                                                 ` : `
@@ -1573,7 +1579,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                                 <div class="btn-group btn-group-sm flex-shrink-0 ms-1">
                                                     <button type="button" class="btn btn-outline-info mark-partially-watched py-1 px-2" title="Marcar como viendo"><i class="fas fa-eye"></i></button>
                                                     <button type="button" class="btn btn-outline-success mark-watched py-1 px-2" title="Marcar como visto"><i class="fas fa-check"></i></button>
-                                                    <button type="button" class="btn btn-primary load-sources-btn py-1 px-2 px-md-3 d-none d-md-inline-flex align-items-center" data-season="${sNum}" data-episode="${epNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}">
+                                                    <button type="button" class="btn btn-primary load-sources-btn py-1 px-2 px-md-3 d-none d-md-inline-flex align-items-center" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}">
                                                         <i class="fas fa-search me-1"></i> Fuentes
                                                     </button>
                                                 </div>
@@ -1581,7 +1587,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                             
                                             <!-- Botón Fuentes visible en móviles -->
                                             <div class="d-md-none mt-1">
-                                                <button type="button" class="btn btn-primary btn-sm w-100 load-sources-btn py-1" data-season="${sNum}" data-episode="${epNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}">
+                                                <button type="button" class="btn btn-primary btn-sm w-100 load-sources-btn py-1" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}">
                                                     <i class="fas fa-search me-1"></i> Buscar Fuentes
                                                 </button>
                                             </div>
@@ -1640,11 +1646,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     box.addEventListener('click', () => {
                         const sNum = box.dataset.season;
                         const eNum = box.dataset.episode;
+                        const absNum = box.dataset.absolute;
                         const epName = box.dataset.epname;
                         const epThumb = box.dataset.thumb;
                         const epTitle = `${data.title || 'Serie'} - T${sNum}:E${eNum}${epName ? ' · ' + epName : ''}`;
                         const container = document.getElementById(`sources_s${sNum}_e${eNum}`);
-                        loadEpisodeSources(sNum, eNum, container, epTitle, epThumb);
+                        loadEpisodeSources(sNum, eNum, container, epTitle, epThumb, absNum);
                     });
                 });
 
@@ -1653,11 +1660,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     btn.addEventListener('click', (e) => {
                         const sNum = btn.dataset.season;
                         const eNum = btn.dataset.episode;
+                        const absNum = btn.dataset.absolute;
                         const epName = btn.dataset.epname;
                         const epThumb = btn.dataset.thumb;
                         const epTitle = `${data.title || 'Serie'} - T${sNum}:E${eNum}${epName ? ' · ' + epName : ''}`;
                         const container = document.getElementById(`sources_s${sNum}_e${eNum}`);
-                        loadEpisodeSources(sNum, eNum, container, epTitle, epThumb);
+                        loadEpisodeSources(sNum, eNum, container, epTitle, epThumb, absNum);
                     });
                 });
 
