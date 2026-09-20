@@ -549,6 +549,7 @@ h2 {
     letter-spacing: -0.5px;
     background: linear-gradient(135deg, #ffffff 40%, #e50914 100%);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -749,6 +750,7 @@ h2 {
     line-height: 1.55;
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin-bottom: 1.5rem;
