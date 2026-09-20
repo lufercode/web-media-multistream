@@ -13,19 +13,43 @@
 
 <body>
 
-    <header class="p-3 mb-3 border-bottom bg-dark">
-        <div class="container">
-            <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start">
-                <a href="index.php" class="navbar-brand d-flex align-items-center mb-2 mb-lg-0 text-white text-decoration-none">
-                    <h1 class="h3 text-white my-0">Mi Buscador</h1>
+    <header class="py-2 px-3 mb-4 sticky-top navbar-glass">
+        <div class="container-fluid px-lg-4">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <!-- Marca / Logo -->
+                <a href="index.php" class="navbar-brand d-flex align-items-center text-decoration-none me-2">
+                    <i class="bi bi-play-circle-fill text-danger fs-3 me-2"></i>
+                    <span class="brand-logo-text">StreamMedia</span>
                 </a>
-                <ul class="nav col-12 col-lg-auto me-lg-auto mb-2 justify-content-center mb-md-0">
-                    <li><a href="index.php" class="nav-link px-2 text-white">Inicio</a></li>
-                </ul>
-                <div class="text-end">
-                    <form action="clear_cache.php" method="post">
-                        <button type="submit" class="btn btn-outline-danger">
-                            <i class="bi bi-trash-fill"></i> Limpiar Caché
+
+                <!-- Navegación de categorías -->
+                <nav class="d-none d-md-flex align-items-center gap-1">
+                    <a href="index.php" class="nav-pill-link"><i class="bi bi-house-door me-1"></i> Inicio</a>
+                    <a href="index.php#section-popular-movies" class="nav-pill-link"><i class="bi bi-film me-1"></i> Películas</a>
+                    <a href="index.php#section-popular-series" class="nav-pill-link"><i class="bi bi-tv me-1"></i> Series</a>
+                    <a href="index.php#section-animation-movies" class="nav-pill-link"><i class="bi bi-stars me-1"></i> Animación</a>
+                    <a href="index.php#watchlist-container" class="nav-pill-link">
+                        <i class="bi bi-bookmark-fill me-1"></i> Mi Lista
+                        <span class="badge bg-danger rounded-pill ms-1 nav-watchlist-count" style="display:none; font-size: 0.68rem;">0</span>
+                    </a>
+                </nav>
+
+                <!-- Buscador en tiempo real y acciones -->
+                <div class="d-flex align-items-center gap-2 flex-grow-1 flex-md-grow-0 justify-content-end">
+                    <form action="search.php" method="get" class="header-search-wrap position-relative">
+                        <input id="search-rakun" 
+                               type="text" 
+                               name="q" 
+                               class="form-control search-input-modern" 
+                               placeholder="Buscar películas, series..." 
+                               required 
+                               autocomplete="off">
+                        <kbd class="kbd-shortcut" title="Presiona '/' para buscar">/</kbd>
+                    </form>
+
+                    <form action="clear_cache.php" method="post" class="d-inline">
+                        <button type="submit" class="btn btn-outline-danger btn-sm px-2 py-1" title="Limpiar Caché de la aplicación">
+                            <i class="bi bi-trash-fill"></i>
                         </button>
                     </form>
                 </div>

@@ -14,22 +14,88 @@ require_once __DIR__ . '/../lib/tmdb.php';
 
 
 /**
- * Genera el HTML para una tarjeta de contenido (película o serie).
+ * Obtiene el contenido destacado para el Hero Banner (el contenido #1 en tendencia con imagen panorámica).
+ */
+function get_hero_featured_content(): ?array
+{
+    $cache_file = CACHE_DIR . '/hero_featured.json';
+    if (file_exists($cache_file) && (time() - filemtime($cache_file) < 3600)) {
+        $cached = json_decode((string)@file_get_contents($cache_file), true);
+        if (is_array($cached) && !empty($cached['backdrop'])) {
+            return $cached;
+        }
+    }
+
+    $trending = get_tmdb_data('trending/all/day');
+    $items = $trending['results'] ?? [];
+
+    if (empty($items)) {
+        $popular = get_popular_content('movie', 10);
+        $items = $popular;
+    }
+
+    $picked = null;
+    foreach ($items as $candidate) {
+        if (!empty($candidate['backdrop_path']) && !empty($candidate['overview'])) {
+            $picked = $candidate;
+            break;
+        }
+    }
+
+    if (!$picked && !empty($items)) {
+        $picked = $items[0];
+    }
+
+    if (!$picked) {
+        return null;
+    }
+
+    $type = $picked['media_type'] ?? (isset($picked['title']) ? 'movie' : 'tv');
+    $title = $type === 'movie' ? ($picked['title'] ?? '') : ($picked['name'] ?? '');
+    $release_date = $picked['release_date'] ?? $picked['first_air_date'] ?? '';
+    $year = !empty($release_date) ? substr($release_date, 0, 4) : '';
+    $rating = isset($picked['vote_average']) && $picked['vote_average'] > 0 ? round((float)$picked['vote_average'], 1) : null;
+    $backdrop = !empty($picked['backdrop_path']) ? "https://image.tmdb.org/t/p/original{$picked['backdrop_path']}" : '';
+    $poster = !empty($picked['poster_path']) ? "https://image.tmdb.org/t/p/w500{$picked['poster_path']}" : '';
+
+    $result = [
+        'id' => (int)$picked['id'],
+        'type' => $type,
+        'title' => $title,
+        'overview' => $picked['overview'] ?? 'Sin descripción disponible.',
+        'backdrop' => $backdrop,
+        'poster' => $poster,
+        'rating' => $rating,
+        'year' => $year
+    ];
+
+    if (!file_exists(CACHE_DIR)) {
+        @mkdir(CACHE_DIR, 0755, true);
+    }
+    @file_put_contents($cache_file, json_encode($result));
+
+    return $result;
+}
+
+/**
+ * Genera el HTML para una tarjeta de contenido (película o serie) con diseño moderno.
  *
  * @param array<string, mixed> $item Array con los datos de la película/serie de TMDB.
  * @param 'movie'|'tv' $type El tipo de contenido.
+ * @param bool $is_carousel Define si se renderiza para carrusel horizontal o grilla estándar.
  * @return string El HTML de la tarjeta.
  */
-function render_content_card(array $item, string $type): string
+function render_content_card(array $item, string $type, bool $is_carousel = false): string
 {
     if (empty($item['poster_path'])) {
         return '';
     }
 
     $id = htmlspecialchars((string)$item['id']);
-    $title = htmlspecialchars($type === 'movie' ? $item['title'] : $item['name']);
+    $title = htmlspecialchars($type === 'movie' ? ($item['title'] ?? 'Sin título') : ($item['name'] ?? 'Sin título'));
     $posterPath = htmlspecialchars($item['poster_path']);
     $year = htmlspecialchars(substr($item['release_date'] ?? $item['first_air_date'] ?? '', 0, 4));
+    $rating = isset($item['vote_average']) && $item['vote_average'] > 0 ? number_format((float)$item['vote_average'], 1) : null;
 
     $watched_indicator = '';
     $progress = read_watched_progress();
@@ -47,11 +113,11 @@ function render_content_card(array $item, string $type): string
                 }
             }
             if ($total_episodes_watched > 0 || $total_episodes_partially_watched > 0) {
-                $watched_indicator = '<span class="position-absolute top-0 start-0 translate-middle badge rounded-pill bg-primary" style="font-size: 0.8em;">';
+                $watched_indicator = '<span class="badge-watched badge rounded-pill bg-primary">';
                 if ($total_episodes_watched > 0 && $total_episodes_partially_watched === 0) {
-                    $watched_indicator .= '<i class="fas fa-check-circle"></i> Visto';
+                    $watched_indicator .= '<i class="fas fa-check-circle me-1"></i>Visto';
                 } elseif ($total_episodes_partially_watched > 0) {
-                    $watched_indicator .= '<i class="fas fa-eye"></i> Parcial';
+                    $watched_indicator .= '<i class="fas fa-eye me-1"></i>Parcial';
                 }
                 $watched_indicator .= '</span>';
             }
@@ -60,29 +126,107 @@ function render_content_card(array $item, string $type): string
         $mov_st = $progress['movie'][$id] ?? null;
         if (is_array($mov_st)) $mov_st = $mov_st['status'] ?? null;
         if ($mov_st === 'watched') {
-            $watched_indicator = '<span class="position-absolute top-0 start-0 translate-middle badge rounded-pill bg-success" style="font-size: 0.8em;"><i class="fas fa-check-circle"></i> Visto</span>';
+            $watched_indicator = '<span class="badge-watched badge rounded-pill bg-success"><i class="fas fa-check-circle me-1"></i>Visto</span>';
         } elseif ($mov_st === 'partially_watched') {
-            $watched_indicator = '<span class="position-absolute top-0 start-0 translate-middle badge rounded-pill bg-info" style="font-size: 0.8em;"><i class="fas fa-eye"></i> Parcial</span>';
+            $watched_indicator = '<span class="badge-watched badge rounded-pill bg-info"><i class="fas fa-eye me-1"></i>Parcial</span>';
         }
     }
 
+    $rating_badge = $rating !== null
+        ? "<span class=\"media-badge rating-badge\"><i class=\"bi bi-star-fill text-warning me-1\"></i>{$rating}</span>"
+        : '';
+
+    $year_badge = !empty($year)
+        ? "<span class=\"media-badge year-badge\">{$year}</span>"
+        : '';
+
+    $type_label = $type === 'movie' ? 'Película' : 'Serie';
+    $wrapper_class = $is_carousel ? 'carousel-card-item' : 'col';
+
     return <<<HTML
-    <div class="col" data-query="{$title}" data-type="{$type}" data-id="{$id}" data-year="{$year}">
-        <a href="details.php?id={$id}&type={$type}" class="text-decoration-none">
-            <div class="card h-100 bg-dark text-white border-0 position-relative">
-                <img src="https://image.tmdb.org/t/p/w500{$posterPath}" class="card-img-top rounded" alt="{$title}">
-                <div class="card-body p-2">
-                    <h5 class="card-title text-truncate mb-0">{$title}</h5>
-                </div>
+    <div class="{$wrapper_class}" data-query="{$title}" data-type="{$type}" data-id="{$id}" data-year="{$year}">
+        <div class="media-card card h-100 bg-transparent border-0 position-relative">
+            <div class="media-poster-wrap position-relative overflow-hidden rounded">
+                <img src="https://image.tmdb.org/t/p/w500{$posterPath}" 
+                     class="card-img-top media-poster" 
+                     alt="{$title}" 
+                     loading="lazy">
+                
+                {$rating_badge}
+                {$year_badge}
                 {$watched_indicator}
-                <span class="search-status-icon position-absolute top-0 end-0 p-2 text-warning" style="font-size: 1.5rem;">
+
+                <span class="search-status-icon position-absolute top-0 end-0 p-2 text-warning" style="font-size: 1.25rem;">
                     <i class="fas fa-spinner fa-spin"></i>
                 </span>
+
+                <div class="card-overlay-actions">
+                    <a href="details.php?id={$id}&type={$type}" class="btn-action-play" title="Reproducir">
+                        <i class="bi bi-play-circle-fill"></i>
+                    </a>
+                    <button type="button" 
+                            class="btn-fav-toggle" 
+                            data-fav-id="{$id}" 
+                            data-fav-type="{$type}" 
+                            data-fav-title="{$title}" 
+                            data-fav-poster="https://image.tmdb.org/t/p/w500{$posterPath}"
+                            data-fav-year="{$year}"
+                            data-fav-rating="{$rating}"
+                            title="Añadir a Mi Lista">
+                        <i class="bi bi-bookmark-plus"></i>
+                    </button>
+                </div>
             </div>
-        </a>
+            <a href="details.php?id={$id}&type={$type}" class="text-decoration-none">
+                <div class="card-body p-2">
+                    <h6 class="card-title text-truncate mb-1 text-white" title="{$title}">{$title}</h6>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <small class="text-secondary">{$type_label}</small>
+                        <small class="text-secondary">{$year}</small>
+                    </div>
+                </div>
+            </a>
+        </div>
     </div>
     HTML;
 }
+
+/**
+ * Renderiza una sección completa de carrusel horizontal deslizable.
+ */
+function render_carousel_row(string $title, string $row_id, string $cards_html, ?string $badge_text = null): string
+{
+    if (empty(trim($cards_html))) {
+        return '';
+    }
+
+    $badge_html = $badge_text ? "<span class=\"badge bg-danger-subtle text-danger border border-danger-subtle ms-2 px-2 py-1\" style=\"font-size: 0.75rem;\">{$badge_text}</span>" : '';
+
+    return <<<HTML
+    <section class="carousel-section mb-4" id="section-{$row_id}">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <h3 class="carousel-title text-white fw-bold mb-0 d-flex align-items-center">
+                <span>{$title}</span>
+                {$badge_html}
+            </h3>
+            <div class="carousel-nav-controls d-flex gap-1">
+                <button type="button" class="btn btn-dark btn-sm carousel-arrow prev" data-target="track-{$row_id}" aria-label="Desplazar hacia la izquierda">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <button type="button" class="btn btn-dark btn-sm carousel-arrow next" data-target="track-{$row_id}" aria-label="Desplazar hacia la derecha">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+        <div class="carousel-track-wrapper position-relative">
+            <div class="carousel-track" id="track-{$row_id}">
+                {$cards_html}
+            </div>
+        </div>
+    </section>
+    HTML;
+}
+
 
 // Función para obtener contenido popular, excluyendo la animación (ID 16) de forma eficiente.
 function get_popular_content(string $type, int $limit = 10): array

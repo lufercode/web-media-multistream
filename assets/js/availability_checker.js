@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const contentCards = Array.from(document.querySelectorAll('.col[data-query]'));
+    const contentCards = Array.from(document.querySelectorAll('[data-query]'));
 
     if (contentCards.length === 0) {
         return;
