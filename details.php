@@ -61,11 +61,11 @@ foreach ($details['genres'] ?? [] as $g) {
 
     <!-- Ficha de Detalles con Fondo Cinematográfico -->
     <div class="card bg-dark border-secondary shadow-lg overflow-hidden mb-4 details-hero-card" <?= $backdrop ? 'style="background: linear-gradient(to right, rgba(16, 18, 27, 0.96) 25%, rgba(16, 18, 27, 0.88) 60%, rgba(16, 18, 27, 0.94) 100%), url(\'' . htmlspecialchars($backdrop) . '\') center/cover no-repeat;"' : '' ?>>
-        <div class="row g-0">
-            <div class="col-md-4 col-lg-3 text-center p-3">
-                <img src="<?= htmlspecialchars($poster) ?>" alt="<?= htmlspecialchars($title) ?>" class="img-fluid rounded shadow" style="max-height: 450px; object-fit: cover;">
+        <div class="row g-0 align-items-center align-items-md-stretch">
+            <div class="col-12 col-md-4 col-lg-3 text-center details-poster-col p-3">
+                <img src="<?= htmlspecialchars($poster) ?>" alt="<?= htmlspecialchars($title) ?>" class="img-fluid rounded shadow details-poster-img" style="max-height: 450px; object-fit: cover;">
             </div>
-            <div class="col-md-8 col-lg-9 p-4 d-flex flex-column justify-content-between">
+            <div class="col-12 col-md-8 col-lg-9 p-3 p-md-4 d-flex flex-column justify-content-between details-info-col">
                 <div>
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                         <h2 class="mb-0 fw-bold text-white"><?= htmlspecialchars($title) ?></h2>
@@ -80,6 +80,20 @@ foreach ($details['genres'] ?? [] as $g) {
                         <?php if ($rating): ?>
                             <span class="badge bg-warning text-dark fs-6"><i class="fas fa-star text-dark me-1"></i> <?= $rating ?></span>
                         <?php endif; ?>
+                    </div>
+
+                    <!-- Botón de Mi Lista (Guardar en Favoritos) -->
+                    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+                        <button type="button" 
+                                class="btn btn-outline-light btn-sm btn-fav-toggle rounded-pill px-3 py-1.5 shadow-sm d-inline-flex align-items-center gap-2 details-fav-btn"
+                                data-fav-id="<?= htmlspecialchars($id) ?>" 
+                                data-fav-type="<?= htmlspecialchars($type) ?>" 
+                                data-fav-title="<?= htmlspecialchars($title) ?>" 
+                                data-fav-poster="<?= htmlspecialchars($poster) ?>"
+                                data-fav-year="<?= htmlspecialchars($release_year ?? '') ?>"
+                                data-fav-rating="<?= htmlspecialchars((string)($rating ?? '')) ?>">
+                            <i class="bi bi-bookmark-plus"></i> <span class="fav-btn-text">Añadir a Mi Lista</span>
+                        </button>
                     </div>
 
                     <?php if (!empty($genres) || $runtime): ?>
@@ -97,7 +111,7 @@ foreach ($details['genres'] ?? [] as $g) {
                     <p class="text-light lead fs-6 lh-base mb-3"><?= nl2br(htmlspecialchars($overview)) ?></p>
                 </div>
 
-                <div class="mt-3 pt-3 border-top border-secondary text-secondary small">
+                <div class="mt-2 pt-3 border-top border-secondary text-secondary small">
                     <span><i class="fas fa-satellite-dish text-success me-1"></i> Búsqueda multi-fuente activa (CDN, Streaming y Torrents).</span>
                 </div>
             </div>
@@ -105,7 +119,7 @@ foreach ($details['genres'] ?? [] as $g) {
     </div>
 
     <!-- Sección de Enlaces y Fuentes -->
-    <div class="card bg-dark border-secondary shadow-lg p-4">
+    <div class="card bg-dark border-secondary shadow-lg p-3 p-md-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4 class="mb-0 text-warning"><i class="fas fa-link me-2"></i> Servidores y Enlaces Disponibles</h4>
             <span class="badge bg-secondary">Multi-Servidor</span>

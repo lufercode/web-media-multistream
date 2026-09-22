@@ -59,15 +59,24 @@ const WatchlistManager = {
             const id = btn.dataset.favId;
             const type = btn.dataset.favType;
             const isFav = this.isItemInList(id, type);
+            const hasLabel = btn.querySelector('.fav-btn-text') || btn.classList.contains('details-fav-btn');
 
             if (isFav) {
                 btn.classList.add('is-favorited');
                 btn.title = 'Quitar de Mi Lista';
-                btn.innerHTML = '<i class="bi bi-bookmark-check-fill"></i>';
+                if (hasLabel) {
+                    btn.innerHTML = '<i class="bi bi-bookmark-check-fill text-warning"></i> <span class="fav-btn-text">En Mi Lista</span>';
+                } else {
+                    btn.innerHTML = '<i class="bi bi-bookmark-check-fill"></i>';
+                }
             } else {
                 btn.classList.remove('is-favorited');
                 btn.title = 'Añadir a Mi Lista';
-                btn.innerHTML = '<i class="bi bi-bookmark-plus"></i>';
+                if (hasLabel) {
+                    btn.innerHTML = '<i class="bi bi-bookmark-plus"></i> <span class="fav-btn-text">Añadir a Mi Lista</span>';
+                } else {
+                    btn.innerHTML = '<i class="bi bi-bookmark-plus"></i>';
+                }
             }
         });
     },

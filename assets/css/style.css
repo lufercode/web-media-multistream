@@ -1062,3 +1062,177 @@ h2 {
     box-shadow: 0 0 12px rgba(229, 9, 20, 0.35);
     transform: translateY(-1px);
 }
+
+/* ==========================================================================
+   Botón de Favorito en Ficha de Detalles
+   ========================================================================== */
+.details-fav-btn {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: #f8fafc !important;
+    font-weight: 500;
+    transition: all 0.25s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.details-fav-btn:hover {
+    background: rgba(255, 255, 255, 0.16) !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    color: #ffffff !important;
+    transform: translateY(-1px);
+}
+
+.details-fav-btn.is-favorited {
+    background: rgba(255, 193, 7, 0.15) !important;
+    border-color: #ffc107 !important;
+    color: #ffc107 !important;
+}
+
+.details-fav-btn.is-favorited:hover {
+    background: rgba(255, 193, 7, 0.25) !important;
+    color: #ffffff !important;
+}
+
+/* ==========================================================================
+   Banner de Continuar Viendo en Series
+   ========================================================================== */
+.continue-watching-banner {
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.continue-watching-banner:hover {
+    box-shadow: 0 4px 20px rgba(13, 110, 253, 0.25) !important;
+}
+
+.continue-thumb-box {
+    transition: transform 0.25s ease;
+}
+
+.continue-watching-banner:hover .continue-thumb-box img {
+    transform: scale(1.05);
+}
+
+/* ==========================================================================
+   Optimizaciones responsivas móviles (iPhone 17 base / 393px, móviles <576px)
+   ========================================================================== */
+@media (max-width: 576px) {
+    .details-hero-card {
+        margin-bottom: 1.25rem !important;
+        border-radius: 10px;
+    }
+
+    .details-hero-card .details-poster-col {
+        padding: 1rem 1rem 0.5rem 1rem !important;
+    }
+
+    .details-hero-card .details-poster-img {
+        max-height: 250px !important;
+        width: auto !important;
+        margin: 0 auto;
+        display: block;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
+    }
+
+    .details-hero-card .details-info-col {
+        padding: 0.85rem 1rem 1rem 1rem !important;
+    }
+
+    .details-hero-card h2 {
+        font-size: 1.3rem !important;
+        line-height: 1.25;
+    }
+
+    .details-fav-btn {
+        font-size: 0.82rem !important;
+        padding: 0.35rem 0.85rem !important;
+    }
+
+    /* Ajustes de tarjetas de episodio en móvil */
+    .episode-card {
+        padding: 0.65rem !important;
+        border-radius: 8px !important;
+    }
+
+    .episode-thumb-box {
+        border-radius: 6px;
+        margin-bottom: 0 !important;
+    }
+
+    .episode-thumb-play-icon {
+        width: 30px !important;
+        height: 30px !important;
+        font-size: 0.72rem !important;
+    }
+
+    .episode-card .load-sources-btn {
+        font-size: 0.82rem !important;
+        padding: 0.45rem 0.75rem !important;
+    }
+
+    .episode-card .btn-group-sm > .btn {
+        padding: 0.22rem 0.45rem !important;
+        font-size: 0.75rem !important;
+    }
+
+    /* Banner Continuar Viendo en móvil */
+    .continue-watching-banner .card-body {
+        padding: 0.65rem 0.85rem !important;
+    }
+
+    .continue-thumb-box {
+        width: 64px !important;
+        height: 38px !important;
+    }
+
+    /* Desplegables de proveedores en móvil */
+    .provider-toggle-btn {
+        padding: 0.45rem 0.7rem !important;
+        font-size: 0.84rem !important;
+    }
+
+    .stream-link-pill {
+        font-size: 0.8rem !important;
+        padding: 0.35rem 0.65rem !important;
+    }
+
+    /* Modal de video ajustado para pantallas compactas */
+    #videoPlayerModal .modal-dialog {
+        margin: 0.35rem !important;
+    }
+
+    #videoPlayerModal .modal-header {
+        padding: 0.45rem 0.75rem !important;
+    }
+
+    #videoPlayerModal #playerModalContentTitle {
+        font-size: 0.88rem !important;
+    }
+
+    #videoPlayerModal .modal-body {
+        min-height: 230px !important;
+    }
+}
+
+/* Ajustes adicionales ultra-compactos para pantallas <= 400px (iPhone SE, etc.) */
+@media (max-width: 400px) {
+    .details-hero-card h2 {
+        font-size: 1.18rem !important;
+    }
+
+    .details-poster-img {
+        max-height: 220px !important;
+    }
+
+    .continue-thumb-box {
+        width: 56px !important;
+        height: 34px !important;
+    }
+
+    .episode-card strong {
+        font-size: 0.85rem !important;
+    }
+}

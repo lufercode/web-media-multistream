@@ -44,6 +44,12 @@ if ($content_type === 'movie') {
         $progress[$content_type][$content_id][$season_num] = [];
     }
     $progress[$content_type][$content_id][$season_num][$episode_num] = $status;
+    $progress[$content_type][$content_id]['_last_watched'] = [
+        'season' => (int)$season_num,
+        'episode' => (int)$episode_num,
+        'status' => $status,
+        'updated_at' => time()
+    ];
 }
 
 if (write_watched_progress($progress)) {

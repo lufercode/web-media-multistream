@@ -60,6 +60,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendProgressUpdate = async (seasonNum, episodeNum, status) => {
         try {
             console.log(`%c📌 [Progreso] Actualizando: ${contentType === 'tv' ? 'S' + seasonNum + 'E' + episodeNum : 'Película'} -> ${status}`, 'color: #0d6efd;');
+            
+            // Actualizar caché en memoria y localStorage de último visto
+            if (contentType === 'tv' && seasonNum && episodeNum) {
+                if (!window._watchedProgressCache) window._watchedProgressCache = {};
+                if (!window._watchedProgressCache[seasonNum]) window._watchedProgressCache[seasonNum] = {};
+                window._watchedProgressCache[seasonNum][episodeNum] = status;
+                window._watchedProgressCache._last_watched = {
+                    season: parseInt(seasonNum, 10),
+                    episode: parseInt(episodeNum, 10),
+                    status: status,
+                    updated_at: Date.now()
+                };
+                try {
+                    localStorage.setItem(`last_watched_${contentType}_${contentId}`, JSON.stringify(window._watchedProgressCache._last_watched));
+                } catch (e) {}
+            }
+
             const response = await fetch('api/update_progress.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -300,6 +317,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const extLinkBtn = document.getElementById('btnExternalLink');
         const provLabel = provider || 'Online';
         
+        // Guardar referencia al elemento activo y posición de scroll previa para evitar saltos en móvil al salir
+        const targetCard = episodeMeta?.cardElement || null;
+        const preModalScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+
+        // Si es episodio de serie, registrar también como último visto de inmediato
+        if (contentType === 'tv' && episodeMeta && episodeMeta.season && episodeMeta.episode) {
+            if (!window._watchedProgressCache) window._watchedProgressCache = {};
+            window._watchedProgressCache._last_watched = {
+                season: parseInt(episodeMeta.season, 10),
+                episode: parseInt(episodeMeta.episode, 10),
+                status: 'partially_watched',
+                updated_at: Date.now()
+            };
+            try {
+                localStorage.setItem(`last_watched_${contentType}_${contentId}`, JSON.stringify(window._watchedProgressCache._last_watched));
+            } catch (e) {}
+        }
+
         // Reiniciar estado de rotación al abrir nuevo modal
         modalEl.classList.remove('modal-force-landscape');
         const btnText = document.getElementById('btnRotateText');
@@ -366,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
             iframe.style.display = 'block';
         }
 
-        const modal = new bootstrap.Modal(modalEl);
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { focus: false });
         modal.show();
 
         try {
@@ -708,6 +743,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (screen.orientation && typeof screen.orientation.unlock === 'function') {
                 try { screen.orientation.unlock(); } catch (e) {}
             }
+
+            // Restaurar posición de scroll exactamente donde estaba el capítulo en versión móvil
+            setTimeout(() => {
+                if (targetCard && document.body.contains(targetCard)) {
+                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else if (preModalScrollY > 0) {
+                    window.scrollTo({ top: preModalScrollY, behavior: 'instant' });
+                }
+            }, 60);
         }, { once: true });
     };
 
@@ -1502,24 +1546,145 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                let accordionHtml = `<div class="accordion" id="seasonsAccordion">`;
+                // Determinar el último capítulo visto o en progreso
+                let lastWatched = null;
 
-                seasonKeys.forEach((sKey, sIdx) => {
+                // 1. Intentar desde _last_watched en respuesta de progreso
+                if (watchedProgress && typeof watchedProgress === 'object') {
+                    if (watchedProgress._last_watched && watchedProgress._last_watched.season && watchedProgress._last_watched.episode) {
+                        const sNum = parseInt(watchedProgress._last_watched.season, 10);
+                        const eNum = parseInt(watchedProgress._last_watched.episode, 10);
+                        const sPad = 'T' + String(sNum).padStart(2, '0');
+                        const ePad = 'E' + String(eNum).padStart(2, '0');
+                        if (seasons[sPad] && seasons[sPad].episodes && seasons[sPad].episodes[ePad]) {
+                            lastWatched = {
+                                season: sNum,
+                                episode: eNum,
+                                seasonKey: sPad,
+                                episodeKey: ePad,
+                                status: watchedProgress._last_watched.status || 'partially_watched',
+                                epData: seasons[sPad].episodes[ePad]
+                            };
+                        }
+                    }
+                }
+
+                // 2. Intentar desde localStorage si aún no se determinó
+                if (!lastWatched) {
+                    try {
+                        const localSaved = localStorage.getItem(`last_watched_${contentType}_${contentId}`);
+                        if (localSaved) {
+                            const parsed = JSON.parse(localSaved);
+                            if (parsed && parsed.season && parsed.episode) {
+                                const sNum = parseInt(parsed.season, 10);
+                                const eNum = parseInt(parsed.episode, 10);
+                                const sPad = 'T' + String(sNum).padStart(2, '0');
+                                const ePad = 'E' + String(eNum).padStart(2, '0');
+                                if (seasons[sPad] && seasons[sPad].episodes && seasons[sPad].episodes[ePad]) {
+                                    lastWatched = {
+                                        season: sNum,
+                                        episode: eNum,
+                                        seasonKey: sPad,
+                                        episodeKey: ePad,
+                                        status: parsed.status || 'partially_watched',
+                                        epData: seasons[sPad].episodes[ePad]
+                                    };
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                // 3. Fallback: Escanear todas las temporadas por el último episodio marcado como watched o partially_watched
+                if (!lastWatched && watchedProgress && typeof watchedProgress === 'object') {
+                    let highestCandidate = null;
+                    seasonKeys.forEach(sKey => {
+                        const sData = seasons[sKey];
+                        const sNum = parseInt(sData.season_number, 10);
+                        const episodes = sData.episodes || {};
+                        Object.keys(episodes).forEach(epKey => {
+                            const ep = episodes[epKey];
+                            const eNum = parseInt(ep.episode_number, 10);
+                            const st = watchedProgress?.[sNum]?.[eNum];
+                            if (st === 'partially_watched' || st === 'watched') {
+                                highestCandidate = {
+                                    season: sNum,
+                                    episode: eNum,
+                                    seasonKey: sKey,
+                                    episodeKey: epKey,
+                                    status: st,
+                                    epData: ep
+                                };
+                            }
+                        });
+                    });
+                    if (highestCandidate) {
+                        lastWatched = highestCandidate;
+                    }
+                }
+
+                // La temporada a desplegar inicialmente: la del último visto o la primera si no ha visto nada
+                const activeSeasonKey = lastWatched ? lastWatched.seasonKey : (seasonKeys[0] || null);
+
+                let accordionHtml = '';
+
+                // Banner destacado "Continuar Viendo" si existe progreso previo
+                if (lastWatched && lastWatched.epData) {
+                    const fallbackThumb = data.backdrop || data.poster || linksContainer.dataset.backdrop || linksContainer.dataset.poster || '';
+                    const resumeThumb = lastWatched.epData.still_path || fallbackThumb;
+                    const resumeTitle = lastWatched.epData.name || `Episodio ${lastWatched.episode}`;
+                    const resumeStatusBadge = lastWatched.status === 'watched'
+                        ? '<span class="badge bg-success badge-status" style="font-size: 0.72rem;"><i class="fas fa-check-circle me-1"></i> Visto</span>'
+                        : '<span class="badge bg-info badge-status" style="font-size: 0.72rem;"><i class="fas fa-eye me-1"></i> Viendo</span>';
+
+                    accordionHtml += `
+                        <div class="continue-watching-banner card border-primary mb-3 shadow-lg overflow-hidden position-relative" style="background: linear-gradient(135deg, rgba(13, 110, 253, 0.22) 0%, rgba(18, 20, 26, 0.96) 65%); border-left: 4px solid #0d6efd !important;">
+                            <div class="card-body p-2 p-sm-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                <div class="d-flex align-items-center gap-2 gap-sm-3 flex-grow-1" style="min-width: 0;">
+                                    <div class="continue-thumb-box position-relative rounded overflow-hidden shadow-sm flex-shrink-0" style="width: 74px; height: 42px; background: #111;">
+                                        ${resumeThumb ? `<img src="${resumeThumb}" alt="${resumeTitle.replace(/"/g, '&quot;')}" class="w-100 h-100 object-fit-cover">` : ''}
+                                        <div class="position-absolute top-50 start-50 translate-middle text-white" style="font-size: 0.75rem; text-shadow: 0 1px 4px rgba(0,0,0,0.8);">
+                                            <i class="fas fa-play"></i>
+                                        </div>
+                                    </div>
+                                    <div class="flex-grow-1 text-truncate" style="min-width: 0;">
+                                        <div class="d-flex align-items-center gap-1 mb-1 flex-wrap">
+                                            <span class="badge bg-primary text-uppercase" style="font-size: 0.68rem;"><i class="fas fa-history me-1"></i>Continuar Viendo</span>
+                                            ${resumeStatusBadge}
+                                        </div>
+                                        <h6 class="text-white mb-0 fw-bold text-truncate" style="font-size: 0.9rem;" title="${resumeTitle.replace(/"/g, '&quot;')}">
+                                            T${lastWatched.season}:E${lastWatched.episode} · ${resumeTitle}
+                                        </h6>
+                                    </div>
+                                </div>
+                                <div class="flex-shrink-0">
+                                    <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 py-1.5 shadow-sm resume-continue-btn d-inline-flex align-items-center gap-1" data-season="${lastWatched.season}" data-episode="${lastWatched.episode}">
+                                        <i class="fas fa-play"></i> <span>Reanudar</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                accordionHtml += `<div class="accordion" id="seasonsAccordion">`;
+
+                seasonKeys.forEach((sKey) => {
                     const sData = seasons[sKey];
                     const sNum = sData.season_number;
                     const sName = sData.name || `Temporada ${sNum}`;
                     const episodes = sData.episodes || {};
                     const epKeys = Object.keys(episodes);
-                    const isFirst = sIdx === 0;
+                    const isExpanded = sKey === activeSeasonKey;
 
                     accordionHtml += `
                         <div class="accordion-item bg-dark border-secondary mb-2 rounded overflow-hidden shadow-sm">
                             <h2 class="accordion-header" id="heading${sKey}">
-                                <button class="accordion-button text-white ${isFirst ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${sKey}" aria-expanded="${isFirst ? 'true' : 'false'}">
+                                <button class="accordion-button text-white ${isExpanded ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${sKey}" aria-expanded="${isExpanded ? 'true' : 'false'}">
                                     <i class="fas fa-folder-open me-2 text-warning"></i> <strong>${sName}</strong> <span class="badge bg-dark border border-secondary text-light ms-2">${epKeys.length} capítulos</span>
                                 </button>
                             </h2>
-                            <div id="collapse${sKey}" class="accordion-collapse collapse ${isFirst ? 'show' : ''}" data-bs-parent="#seasonsAccordion">
+                            <div id="collapse${sKey}" class="accordion-collapse collapse ${isExpanded ? 'show' : ''}" data-bs-parent="#seasonsAccordion">
                                 <div class="accordion-body bg-dark text-light p-2 p-md-3">
                                     <div class="row g-2 g-md-3">
                     `;
@@ -1669,10 +1834,40 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 });
 
-                // Auto-cargar fuentes del primer capítulo de la primera temporada
-                const firstLoadBtn = linksContainer.querySelector('.load-sources-btn');
-                if (firstLoadBtn) {
-                    firstLoadBtn.click();
+                // Auto-cargar fuentes: si hay capítulo previo (último visto o en progreso), cargar ese; si no, el primer capítulo
+                let targetAutoLoadBtn = null;
+                if (lastWatched) {
+                    targetAutoLoadBtn = linksContainer.querySelector(`.load-sources-btn[data-season="${lastWatched.season}"][data-episode="${lastWatched.episode}"]`);
+                }
+                if (!targetAutoLoadBtn) {
+                    targetAutoLoadBtn = linksContainer.querySelector('.load-sources-btn');
+                }
+
+                if (targetAutoLoadBtn) {
+                    targetAutoLoadBtn.click();
+                    if (lastWatched) {
+                        const targetCard = targetAutoLoadBtn.closest('.episode-card');
+                        if (targetCard) {
+                            setTimeout(() => {
+                                targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }, 350);
+                        }
+                    }
+                }
+
+                // Evento en botón de reanudar del banner "Continuar Viendo"
+                const resumeBannerBtn = linksContainer.querySelector('.resume-continue-btn');
+                if (resumeBannerBtn) {
+                    resumeBannerBtn.addEventListener('click', (e) => {
+                        const s = e.currentTarget.dataset.season;
+                        const ep = e.currentTarget.dataset.episode;
+                        const epCard = linksContainer.querySelector(`.episode-card[data-season="${s}"][data-episode="${ep}"]`);
+                        if (epCard) {
+                            epCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            const btn = epCard.querySelector('.load-sources-btn');
+                            if (btn) btn.click();
+                        }
+                    });
                 }
             }
         })
