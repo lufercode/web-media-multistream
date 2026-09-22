@@ -168,6 +168,7 @@ h2 {
 .accordion-item {
     background-color: #141720 !important;
     border: 1px solid #292e3d !important;
+    scroll-margin-top: 85px;
 }
 
 .accordion-button {
@@ -1007,7 +1008,7 @@ h2 {
     background: #ff1e27;
 }
 
-.btn-fav-toggle {
+.btn-fav-toggle:not(.details-fav-btn) {
     width: 36px;
     height: 36px;
     border-radius: 50%;
@@ -1022,13 +1023,13 @@ h2 {
     transition: all 0.2s ease;
 }
 
-.btn-fav-toggle:hover {
+.btn-fav-toggle:not(.details-fav-btn):hover {
     background: #3b82f6;
     border-color: #3b82f6;
     transform: scale(1.1);
 }
 
-.btn-fav-toggle.is-favorited {
+.btn-fav-toggle:not(.details-fav-btn).is-favorited {
     background: #e50914 !important;
     border-color: #e50914 !important;
     color: #ffffff !important;
@@ -1067,31 +1068,55 @@ h2 {
    Botón de Favorito en Ficha de Detalles
    ========================================================================== */
 .details-fav-btn {
+    width: auto !important;
+    height: auto !important;
+    min-width: 140px;
+    min-height: 38px !important;
+    white-space: nowrap !important;
+    border-radius: 9999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.5rem !important;
+    padding: 0.45rem 1.15rem !important;
+    font-size: 0.9rem !important;
     background: rgba(255, 255, 255, 0.08) !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.22) !important;
     color: #f8fafc !important;
     font-weight: 500;
-    transition: all 0.25s ease;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 .details-fav-btn:hover {
     background: rgba(255, 255, 255, 0.16) !important;
-    border-color: rgba(255, 255, 255, 0.4) !important;
+    border-color: rgba(255, 255, 255, 0.45) !important;
     color: #ffffff !important;
     transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
 }
 
 .details-fav-btn.is-favorited {
-    background: rgba(255, 193, 7, 0.15) !important;
-    border-color: #ffc107 !important;
-    color: #ffc107 !important;
+    background: rgba(229, 9, 20, 0.18) !important;
+    border-color: #e50914 !important;
+    color: #ffffff !important;
 }
 
 .details-fav-btn.is-favorited:hover {
-    background: rgba(255, 193, 7, 0.25) !important;
+    background: rgba(229, 9, 20, 0.28) !important;
     color: #ffffff !important;
+}
+
+.details-fav-btn i {
+    font-size: 1.05rem;
+    line-height: 1;
+}
+
+.details-fav-btn .fav-btn-text {
+    white-space: nowrap !important;
+    line-height: 1;
 }
 
 /* ==========================================================================

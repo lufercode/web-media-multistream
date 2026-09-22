@@ -1033,6 +1033,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const safeTitle = (itemTitle || '').replace(/"/g, '&quot;');
         const safeThumb = (thumbnail || '').replace(/"/g, '&quot;');
 
+        targetContainer.dataset.loading = 'true';
+        targetContainer.dataset.loaded = 'false';
+
         targetContainer.innerHTML = `
             <div class="live-sources-controller">
                 <!-- Banner de Progreso en Vivo -->
@@ -1113,7 +1116,13 @@ document.addEventListener('DOMContentLoaded', () => {
             counterBadgeEl.textContent = `${completedProviders} / ${totalProviders} proveedores`;
             linksBadgeEl.textContent = `${totalLinksFound} ${totalLinksFound === 1 ? 'enlace' : 'enlaces'}`;
 
+            if (totalLinksFound > 0) {
+                targetContainer.dataset.loaded = 'true';
+            }
+
             if (completedProviders >= totalProviders) {
+                targetContainer.dataset.loading = 'false';
+                targetContainer.dataset.loaded = 'true';
                 spinnerEl.classList.add('d-none');
                 checkEl.classList.remove('d-none');
                 bannerEl.classList.add('is-done');
@@ -1393,7 +1402,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const loadEpisodeSources = (seasonNum, episodeNum, container, itemTitle, epThumbnail, absoluteNum = null) => {
+    const loadEpisodeSources = (seasonNum, episodeNum, container, itemTitle, epThumbnail, absoluteNum = null, forceReload = false) => {
+        // Evitar reiniciar peticiones si las fuentes ya están cargándose o listas
+        if (!forceReload && (container.dataset.loading === 'true' || container.dataset.loaded === 'true')) {
+            console.log(`%c⚡ [Fuentes] Fuentes ya solicitadas o disponibles para S${seasonNum}E${episodeNum}`, 'color: #ffc107;');
+            return;
+        }
         const epCard = container.closest('.episode-card');
         const absNum = absoluteNum || epCard?.dataset?.absolute || episodeNum;
         const requestParams = { id: contentId, type: 'tv', season: seasonNum, episode: episodeNum };
@@ -1779,6 +1793,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 accordionHtml += `</div>`;
                 linksContainer.innerHTML = accordionHtml;
 
+                // Estabilización de scroll al colapsar/desplegar temporadas
+                const seasonsAccordion = document.getElementById('seasonsAccordion');
+                if (seasonsAccordion) {
+                    seasonsAccordion.addEventListener('show.bs.collapse', (e) => {
+                        const item = e.target.closest('.accordion-item');
+                        if (!item) return;
+
+                        // Anclar activamente la vista al encabezado de la temporada que se está abriendo
+                        // para evitar que el colapso de la temporada previa desplace bruscamente la pantalla al final
+                        const startTime = performance.now();
+                        const duration = 400; // ms (cubre la animación de colapso de 350ms de Bootstrap)
+
+                        function lockScrollToHeader(now) {
+                            item.scrollIntoView({ behavior: 'auto', block: 'start' });
+                            if (now - startTime < duration) {
+                                requestAnimationFrame(lockScrollToHeader);
+                            }
+                        }
+                        requestAnimationFrame(lockScrollToHeader);
+                    });
+
+                    seasonsAccordion.addEventListener('shown.bs.collapse', (e) => {
+                        const item = e.target.closest('.accordion-item');
+                        if (item) {
+                            setTimeout(() => {
+                                item.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }, 30);
+                        }
+                    });
+                }
+
                 // Eventos de marcar visto / viendo
                 linksContainer.querySelectorAll('.mark-watched').forEach(btn => {
                     btn.addEventListener('click', (e) => {
@@ -1864,6 +1909,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         const epCard = linksContainer.querySelector(`.episode-card[data-season="${s}"][data-episode="${ep}"]`);
                         if (epCard) {
                             epCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                            // Si ya hay un reproductor o servidor en línea cargado, iniciar reproducción de inmediato
+                            const firstStreamPlayBtn = epCard.querySelector('.stream-play-btn');
+                            if (firstStreamPlayBtn) {
+                                firstStreamPlayBtn.click();
+                                return;
+                            }
+
+                            // Si las fuentes ya están consultadas o en proceso de carga, no reiniciar peticiones
+                            const sourcesBox = epCard.querySelector('.sources-container');
+                            if (sourcesBox && (sourcesBox.dataset.loaded === 'true' || sourcesBox.dataset.loading === 'true')) {
+                                return;
+                            }
+
                             const btn = epCard.querySelector('.load-sources-btn');
                             if (btn) btn.click();
                         }
