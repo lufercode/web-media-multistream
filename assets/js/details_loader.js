@@ -744,14 +744,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 try { screen.orientation.unlock(); } catch (e) {}
             }
 
-            // Restaurar posición de scroll exactamente donde estaba el capítulo en versión móvil
+            // Restaurar posición de scroll exactamente donde estaba el usuario antes de abrir el reproductor
             setTimeout(() => {
-                if (targetCard && document.body.contains(targetCard)) {
-                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                } else if (preModalScrollY > 0) {
+                if (preModalScrollY > 0) {
                     window.scrollTo({ top: preModalScrollY, behavior: 'instant' });
+                } else if (targetCard && document.body.contains(targetCard)) {
+                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }
-            }, 60);
+            }, 50);
         }, { once: true });
     };
 
@@ -1149,6 +1149,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="badge bg-dark text-info me-1"><i class="fas fa-cloud me-1"></i>${provName}</span>
                 <i class="fas fa-download me-1"></i> ${srv} <span class="badge bg-black ms-1">${qlt}</span>
             `;
+            a.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
             directBox.appendChild(a);
             secDirect.style.display = 'block';
         };
@@ -1206,7 +1209,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.type = 'button';
                 btn.className = 'btn btn-sm btn-outline-success stream-play-btn shadow-sm d-inline-flex align-items-center py-1 px-2';
                 btn.innerHTML = `<i class="fas fa-play text-success me-1"></i><strong>${srv}</strong> ${lang} ${qlt}`;
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     openStreamModal(url, safeTitle, srv, provName, safeThumb, episodeMeta || { isMovie: true });
                 });
                 slot.appendChild(btn);
@@ -1277,6 +1282,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${size}
                     ${lang}
                 `;
+                a.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
                 slot.appendChild(a);
             });
 
@@ -1796,14 +1804,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Estabilización de scroll al colapsar/desplegar temporadas
                 const seasonsAccordion = document.getElementById('seasonsAccordion');
                 if (seasonsAccordion) {
+                    const isDirectSeasonCollapse = (target) => {
+                        if (!target) return false;
+                        // Solo procesar colapsos directos de temporadas (hijos directos de seasonsAccordion)
+                        // para NO alterar el scroll al desplegar proveedores, servidores o torrents dentro de un capítulo
+                        return target.classList.contains('accordion-collapse') && 
+                               target.getAttribute('data-bs-parent') === '#seasonsAccordion' &&
+                               target.parentElement && target.parentElement.parentElement === seasonsAccordion;
+                    };
+
                     seasonsAccordion.addEventListener('show.bs.collapse', (e) => {
+                        // IGNORAR ABSOLUTAMENTE eventos de proveedores, servidores o torrents internos
+                        if (!isDirectSeasonCollapse(e.target)) return;
+
                         const item = e.target.closest('.accordion-item');
-                        if (!item) return;
+                        if (!item || item.parentElement !== seasonsAccordion) return;
 
                         // Anclar activamente la vista al encabezado de la temporada que se está abriendo
                         // para evitar que el colapso de la temporada previa desplace bruscamente la pantalla al final
                         const startTime = performance.now();
-                        const duration = 400; // ms (cubre la animación de colapso de 350ms de Bootstrap)
+                        const duration = 380; // ms (cubre la animación de colapso de 350ms de Bootstrap)
 
                         function lockScrollToHeader(now) {
                             item.scrollIntoView({ behavior: 'auto', block: 'start' });
@@ -1815,8 +1835,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     seasonsAccordion.addEventListener('shown.bs.collapse', (e) => {
+                        // IGNORAR ABSOLUTAMENTE eventos de proveedores, servidores o torrents internos
+                        if (!isDirectSeasonCollapse(e.target)) return;
+
                         const item = e.target.closest('.accordion-item');
-                        if (item) {
+                        if (item && item.parentElement === seasonsAccordion) {
                             setTimeout(() => {
                                 item.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }, 30);
