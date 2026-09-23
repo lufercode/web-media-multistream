@@ -157,7 +157,7 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
                 {$watched_indicator}
 
                 <span class="badge-availability" style="display: none;">
-                    <i class="fas fa-check-circle me-1"></i>Disponible
+                    <i class="fas fa-spinner fa-spin me-1"></i>Buscando...
                 </span>
 
                 <div class="card-overlay-actions">

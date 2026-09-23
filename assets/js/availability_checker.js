@@ -122,6 +122,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         card.dataset.checked = 'true';
 
+        if (badge) {
+            badge.className = 'badge-availability badge-searching';
+            badge.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Buscando...';
+            badge.style.display = 'inline-flex';
+        }
+
         console.log(`%c🔍 [Buscador] Verificando en fuentes: "${query}" (${type})`, 'color: #ffc107;');
 
         try {
@@ -144,7 +150,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn(`%c⚠️ [Almacenamiento] Servidor CDN fuera de línea o inaccesible para "${query}": ${data.message}`, 'color: #dc3545; font-weight: bold;');
                 showStorageOfflineToast(data.message);
                 disableRemainingCards();
-                if (badge) badge.style.display = 'none';
+                if (badge) {
+                    badge.className = 'badge-availability badge-unavailable';
+                    badge.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>No disponible';
+                    badge.style.display = 'inline-flex';
+                }
                 return;
             }
 
@@ -154,20 +164,25 @@ document.addEventListener('DOMContentLoaded', () => {
             if (badge) {
                 if (data.status === 'found') {
                     console.log(`%c✅ [Buscador] DISPONIBLE: "${query}"`, 'color: #198754; font-weight: bold;');
+                    badge.className = 'badge-availability badge-available';
                     badge.innerHTML = '<i class="fas fa-check-circle me-1"></i>Disponible';
-                    badge.classList.remove('search-status-icon', 'text-warning', 'text-danger');
-                    badge.classList.add('badge-availability', 'badge-available');
                     badge.style.display = 'inline-flex';
                 } else {
                     console.log(`%c❌ [Buscador] No encontrado: "${query}"`, 'color: #adb5bd;');
-                    badge.style.display = 'none';
+                    badge.className = 'badge-availability badge-unavailable';
+                    badge.innerHTML = '<i class="fas fa-times-circle me-1"></i>No disponible';
+                    badge.style.display = 'inline-flex';
                 }
             }
 
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.error(`❌ [Buscador] Error al verificar "${query}":`, error);
-                if (badge) badge.style.display = 'none';
+                if (badge) {
+                    badge.className = 'badge-availability badge-unavailable';
+                    badge.innerHTML = '<i class="fas fa-times-circle me-1"></i>No disponible';
+                    badge.style.display = 'inline-flex';
+                }
             }
         }
     };
