@@ -156,8 +156,8 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
                 {$year_badge}
                 {$watched_indicator}
 
-                <span class="search-status-icon position-absolute top-0 end-0 p-2 text-warning" style="font-size: 1.25rem;">
-                    <i class="fas fa-spinner fa-spin"></i>
+                <span class="badge-availability" style="display: none;">
+                    <i class="fas fa-check-circle me-1"></i>Disponible
                 </span>
 
                 <div class="card-overlay-actions">

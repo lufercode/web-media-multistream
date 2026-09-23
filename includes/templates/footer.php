@@ -29,7 +29,7 @@
     </footer>
 
     <!-- Scripts de la plataforma de streaming -->
-    <script src="assets/js/availability_checker.js" defer></script>
+    <script src="assets/js/availability_checker.js?v=<?= file_exists(__DIR__ . '/../../assets/js/availability_checker.js') ? filemtime(__DIR__ . '/../../assets/js/availability_checker.js') : time() ?>" defer></script>
     <script src="assets/js/carousel.js" defer></script>
     <script src="assets/js/live_search.js" defer></script>
     <script src="assets/js/watchlist.js" defer></script>

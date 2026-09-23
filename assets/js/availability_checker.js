@@ -98,12 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const disableRemainingCards = () => {
         contentCards.forEach(card => {
-            const icon = card.querySelector('.search-status-icon');
-            if (icon) {
-                const iconElement = icon.querySelector('i');
-                if (iconElement && iconElement.classList.contains('fa-spinner')) {
-                    icon.style.display = 'none';
-                }
+            const badge = card.querySelector('.badge-availability, .search-status-icon');
+            if (badge) {
+                badge.style.display = 'none';
             }
         });
     };
@@ -117,14 +114,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const type = card.dataset.type;
         const id = card.dataset.id || '';
         const year = card.dataset.year || '';
-        const icon = card.querySelector('.search-status-icon');
+        const badge = card.querySelector('.badge-availability, .search-status-icon');
 
-        if (!query || !type || !icon || card.dataset.checked === 'true') {
+        if (!query || !type || card.dataset.checked === 'true') {
             return;
         }
 
         card.dataset.checked = 'true';
-        icon.style.display = 'block';
 
         console.log(`%c🔍 [Buscador] Verificando en fuentes: "${query}" (${type})`, 'color: #ffc107;');
 
@@ -148,31 +144,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn(`%c⚠️ [Almacenamiento] Servidor CDN fuera de línea o inaccesible para "${query}": ${data.message}`, 'color: #dc3545; font-weight: bold;');
                 showStorageOfflineToast(data.message);
                 disableRemainingCards();
-                icon.style.display = 'none';
+                if (badge) badge.style.display = 'none';
                 return;
             }
 
             // CDN responde con éxito: mostrar toast de confirmación (una vez por página)
             showStorageOnlineToast();
 
-            if (data.status === 'found') {
-                console.log(`%c✅ [Buscador] DISPONIBLE: "${query}"`, 'color: #198754; font-weight: bold;');
-            } else {
-                console.log(`%c❌ [Buscador] No encontrado: "${query}"`, 'color: #adb5bd;');
-            }
-
-            const iconElement = icon.querySelector('i');
-            if (iconElement) {
-                iconElement.classList.remove('fa-spinner', 'fa-spin');
-                iconElement.classList.add(data.status === 'found' ? 'fa-check-circle' : 'fa-times-circle');
-                icon.classList.remove('text-warning');
-                icon.classList.add(data.status === 'found' ? 'text-success' : 'text-danger');
+            if (badge) {
+                if (data.status === 'found') {
+                    console.log(`%c✅ [Buscador] DISPONIBLE: "${query}"`, 'color: #198754; font-weight: bold;');
+                    badge.innerHTML = '<i class="fas fa-check-circle me-1"></i>Disponible';
+                    badge.classList.remove('search-status-icon', 'text-warning', 'text-danger');
+                    badge.classList.add('badge-availability', 'badge-available');
+                    badge.style.display = 'inline-flex';
+                } else {
+                    console.log(`%c❌ [Buscador] No encontrado: "${query}"`, 'color: #adb5bd;');
+                    badge.style.display = 'none';
+                }
             }
 
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.error(`❌ [Buscador] Error al verificar "${query}":`, error);
-                icon.style.display = 'none';
+                if (badge) badge.style.display = 'none';
             }
         }
     };

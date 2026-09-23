@@ -134,6 +134,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <a id="btnExternalLink" href="#" target="_blank" class="btn btn-sm btn-outline-secondary text-light py-1 px-2 d-inline-flex align-items-center" title="Abrir en pestaña externa">
                                 <i class="fas fa-external-link-alt"></i>
                             </a>
+                            <button type="button" id="btnAntiPopupModal" class="btn btn-sm btn-outline-secondary py-1 px-2 d-inline-flex align-items-center" title="Protección activa: Bloquea pestañas emergentes y anuncios intrusivos">
+                                <i class="fas fa-shield-alt text-success me-1"></i> <span id="btnAntiPopupText" class="d-none d-sm-inline">Sin Pestañas</span>
+                            </button>
                             <button type="button" id="btnRotateModal" class="btn btn-sm btn-outline-warning py-1 px-2 d-inline-flex align-items-center" title="Girar a horizontal (sin desactivar bloqueo en móvil)">
                                 <i class="fas fa-sync-alt me-1"></i> <span id="btnRotateText" class="d-none d-sm-inline">Girar</span>
                             </button>
@@ -147,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </div>
                     <div class="modal-body p-0 bg-black" style="min-height: 480px; position: relative;">
-                        <iframe id="playerIframe" src="" style="width: 100%; height: 520px; border: 0;" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+                        <iframe id="playerIframe" src="" style="width: 100%; height: 520px; border: 0;" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; fullscreen" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
                         <div id="artplayerContainer" style="width: 100%; height: 520px; display: none;"></div>
                     </div>
                 </div>
@@ -282,6 +285,71 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const btnRotate = document.getElementById('btnRotateModal');
         if (btnRotate) btnRotate.addEventListener('click', togglePlayerOrientation);
+
+        // Controlador de Bloqueo de Pestañas / Anuncios Emergentes (Sandbox inteligente)
+        let isAntiPopupActive = true;
+        const toggleAntiPopup = () => {
+            isAntiPopupActive = !isAntiPopupActive;
+            const iframe = document.getElementById('playerIframe');
+            const btn = document.getElementById('btnAntiPopupModal');
+            const text = document.getElementById('btnAntiPopupText');
+            const icon = btn ? btn.querySelector('i') : null;
+
+            if (isAntiPopupActive) {
+                if (iframe) {
+                    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation');
+                }
+                if (btn) {
+                    btn.classList.remove('btn-outline-warning');
+                    btn.classList.add('btn-outline-secondary');
+                    btn.title = 'Protección activa: Las pestañas y anuncios emergentes están bloqueados.';
+                }
+                if (icon) {
+                    icon.className = 'fas fa-shield-alt text-success me-1';
+                }
+                if (text) {
+                    text.textContent = 'Sin Pestañas';
+                }
+            } else {
+                if (iframe) {
+                    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation allow-popups');
+                }
+                if (btn) {
+                    btn.classList.remove('btn-outline-secondary');
+                    btn.classList.add('btn-outline-warning');
+                    btn.title = 'Modo compatibilidad: Pestañas permitidas (úsalo solo si algún servidor no inicia).';
+                }
+                if (icon) {
+                    icon.className = 'fas fa-shield-alt text-warning me-1';
+                }
+                if (text) {
+                    text.textContent = 'Pestañas OK';
+                }
+            }
+
+            // Recargar iframe suavemente si tiene una fuente activa
+            if (iframe && iframe.src && iframe.src !== 'about:blank') {
+                const currentSrc = iframe.src;
+                iframe.src = 'about:blank';
+                setTimeout(() => {
+                    iframe.src = currentSrc;
+                }, 60);
+            }
+        };
+
+        const btnAntiPopup = document.getElementById('btnAntiPopupModal');
+        if (btnAntiPopup) btnAntiPopup.addEventListener('click', toggleAntiPopup);
+
+        // Interceptar intentos de abrir nuevas pestañas en la ventana principal mientras el reproductor está activo
+        const originalWindowOpen = window.open;
+        window.open = function(url, target, features) {
+            const modalEl = document.getElementById('videoPlayerModal');
+            if (modalEl && modalEl.classList.contains('show') && isAntiPopupActive) {
+                console.warn('🛡️ [AntiPopup] Intento de ventana emergente bloqueado en ventana principal:', url);
+                return null;
+            }
+            return originalWindowOpen.apply(this, arguments);
+        };
 
         // Limpieza integral al cerrar el modal (normal o minimizado)
         playerModal.addEventListener('hidden.bs.modal', () => {

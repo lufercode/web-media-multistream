@@ -203,22 +203,48 @@ h2 {
     color: #cbd5e1 !important;
 }
 
-/* Íconos de disponibilidad */
+/* Badge de disponibilidad en la tarjeta de contenido (Inferior derecha) */
+.badge-availability {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    z-index: 3;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.2rem 0.45rem;
+    border-radius: 6px;
+    display: none;
+    align-items: center;
+    line-height: 1;
+    pointer-events: none;
+    letter-spacing: 0.2px;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.badge-availability.badge-available {
+    background: rgba(25, 135, 84, 0.92);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    animation: fadeInAvailability 0.3s ease-out;
+}
+
+@keyframes fadeInAvailability {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Compatibilidad hacia atrás para íconos antiguos */
 .search-status-icon i {
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
     -webkit-text-stroke: 0.5px #ffffff;
-}
-
-.search-status-icon .text-success {
-    color: #28a745 !important;
-}
-
-.search-status-icon .text-danger {
-    color: #dc3545 !important;
-}
-
-.search-status-icon .text-warning {
-    color: #ffc107 !important;
 }
 
 /* ==========================================================================
@@ -365,6 +391,7 @@ body.has-minimized-player .modal-backdrop {
 
 #videoPlayerModal.player-minimized #playerModalBadges,
 #videoPlayerModal.player-minimized #btnRotateModal,
+#videoPlayerModal.player-minimized #btnAntiPopupModal,
 #videoPlayerModal.player-minimized #btnExternalLink,
 #videoPlayerModal.player-minimized #btnMinimizeModal {
     display: none !important;
