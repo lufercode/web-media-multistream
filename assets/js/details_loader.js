@@ -150,6 +150,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         <iframe id="playerIframe" src="" style="width: 100%; height: 520px; border: 0;" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
                         <div id="artplayerContainer" style="width: 100%; height: 520px; display: none;"></div>
                     </div>
+                    <div id="playerAdTipBar" class="py-1 px-3 bg-dark bg-opacity-75 border-top border-secondary d-flex align-items-center justify-content-between text-secondary" style="font-size: 0.76rem;">
+                        <span class="d-flex align-items-center text-truncate me-2">
+                            <i class="fas fa-lightbulb text-warning me-2 flex-shrink-0"></i>
+                            <span class="text-truncate"><strong>Tip:</strong> Si un servidor externo abre pestañas de publicidad, recomendamos usar <strong class="text-info">Brave Browser</strong> o <strong class="text-info">uBlock Origin</strong>.</span>
+                        </span>
+                        <button type="button" class="btn-close btn-close-white flex-shrink-0" style="font-size: 0.65rem;" onclick="document.getElementById('playerAdTipBar').style.display='none'" title="Ocultar aviso"></button>
+                    </div>
                 </div>
             </div>
         `;
@@ -641,6 +648,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             iframe.src = 'about:blank';
                         }
                         artContainer.style.display = 'block';
+                        const tipBar = document.getElementById('playerAdTipBar');
+                        if (tipBar) tipBar.style.display = 'none';
 
                         const art = new Artplayer({
                             container: '#artplayerContainer',
@@ -882,6 +891,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 iframe.style.display = 'block';
                 iframe.src = cleanUrl;
+                const tipBar = document.getElementById('playerAdTipBar');
+                if (tipBar) tipBar.style.display = 'flex';
             }
         } catch (e) {
             if (artContainer) {
@@ -891,6 +902,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (iframe) {
                 iframe.style.display = 'block';
                 iframe.src = url;
+                const tipBar = document.getElementById('playerAdTipBar');
+                if (tipBar) tipBar.style.display = 'flex';
             }
             if (badgesEl) {
                 badgesEl.innerHTML = `

@@ -412,7 +412,9 @@ body.has-minimized-player .modal-backdrop {
 #videoPlayerModal.player-minimized #playerModalBadges,
 #videoPlayerModal.player-minimized #btnRotateModal,
 #videoPlayerModal.player-minimized #btnExternalLink,
-#videoPlayerModal.player-minimized #btnMinimizeModal {
+#videoPlayerModal.player-minimized #btnMinimizeModal,
+#videoPlayerModal.player-minimized #playerAdTipBar,
+#videoPlayerModal.modal-force-landscape #playerAdTipBar {
     display: none !important;
 }
 
