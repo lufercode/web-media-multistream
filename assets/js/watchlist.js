@@ -117,10 +117,13 @@ const WatchlistManager = {
                 <div class="carousel-card-item" data-query="${escapeHtml(item.title)}" data-type="${item.type}" data-id="${item.id}" data-year="${item.year || ''}">
                     <div class="media-card card h-100 bg-transparent border-0 position-relative">
                         <div class="media-poster-wrap position-relative overflow-hidden rounded">
-                            <img src="${item.poster}" class="card-img-top media-poster" alt="${escapeHtml(item.title)}" loading="lazy">
+                            <a href="details.php?id=${item.id}&type=${item.type}" class="poster-main-link" aria-label="Ver ${escapeHtml(item.title)}">
+                                <img src="${item.poster}" class="card-img-top media-poster" alt="${escapeHtml(item.title)}" loading="lazy">
+                            </a>
                             ${ratingBadge}
                             ${yearBadge}
                             <div class="card-overlay-actions">
+                                <a href="details.php?id=${item.id}&type=${item.type}" class="poster-overlay-backdrop" aria-label="Ver ${escapeHtml(item.title)}"></a>
                                 <a href="details.php?id=${item.id}&type=${item.type}" class="btn-action-play" title="Reproducir">
                                     <i class="bi bi-play-circle-fill"></i>
                                 </a>

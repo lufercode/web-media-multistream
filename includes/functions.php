@@ -147,10 +147,12 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
     <div class="{$wrapper_class}" data-query="{$title}" data-type="{$type}" data-id="{$id}" data-year="{$year}">
         <div class="media-card card h-100 bg-transparent border-0 position-relative">
             <div class="media-poster-wrap position-relative overflow-hidden rounded">
-                <img src="https://image.tmdb.org/t/p/w500{$posterPath}" 
-                     class="card-img-top media-poster" 
-                     alt="{$title}" 
-                     loading="lazy">
+                <a href="details.php?id={$id}&type={$type}" class="poster-main-link" aria-label="Ver {$title}">
+                    <img src="https://image.tmdb.org/t/p/w500{$posterPath}" 
+                         class="card-img-top media-poster" 
+                         alt="{$title}" 
+                         loading="lazy">
+                </a>
                 
                 {$rating_badge}
                 {$year_badge}
@@ -161,6 +163,7 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
                 </span>
 
                 <div class="card-overlay-actions">
+                    <a href="details.php?id={$id}&type={$type}" class="poster-overlay-backdrop" aria-label="Ver {$title}"></a>
                     <a href="details.php?id={$id}&type={$type}" class="btn-action-play" title="Reproducir">
                         <i class="bi bi-play-circle-fill"></i>
                     </a>
