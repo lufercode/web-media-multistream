@@ -18,3 +18,4 @@ if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQ
 $referer = $_SERVER['HTTP_REFERER'] ?? '../index.php';
 header("Location: {$referer}");
 exit;
+

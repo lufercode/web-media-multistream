@@ -85,3 +85,4 @@ echo json_encode([
     'message' => 'Sesión iniciada con éxito.',
     'user' => $user_data
 ]);
+

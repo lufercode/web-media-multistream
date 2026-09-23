@@ -14,8 +14,8 @@ define('PROGRESS_DIR', ROOT_DIR . '/data/progress');
 define('WATCHLIST_DIR', ROOT_DIR . '/data/watchlist');
 
 // Autenticación con Google (Google Identity Services - OAuth 2.0 Web)
-// Reemplaza con tu Client ID gratuito generado en Google Cloud Console
-define('GOOGLE_CLIENT_ID', 'TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com');
+// Client ID de Google Cloud Console (web-media-multistream)
+define('GOOGLE_CLIENT_ID', '474518961918-0r1n29n2gegd6clc3etvidmp21t4c4kh.apps.googleusercontent.com');
 
 // Interruptores de Proveedores (Habilitar / Deshabilitar fuentes individuales)
 $PROVIDERS_CONFIG = [
