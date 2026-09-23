@@ -55,13 +55,22 @@ $tmdb_id = (int)$item['id'];
 $metadata_only = isset($_GET['metadata_only']) && $_GET['metadata_only'] === '1';
 $requested_provider = isset($_GET['provider']) ? trim($_GET['provider']) : null;
 
+// Determinar si el contenido es animación o anime según géneros de TMDB
+$is_anime = false;
+foreach ($item['genres'] ?? [] as $g) {
+    if (($g['id'] ?? 0) === 16 || stripos($g['name'] ?? '', 'animaci') !== false || stripos($g['name'] ?? '', 'animation') !== false) {
+        $is_anime = true;
+        break;
+    }
+}
+
 // Caso 1: Búsqueda atómica de un único proveedor en paralelo
 if ($requested_provider !== null && $requested_provider !== '') {
     $provObj = $manager->getProvider($requested_provider);
     if ($type === 'movie') {
-        $single_links = $manager->searchMovieSingleProvider($requested_provider, $title, $release_year, $tmdb_id, $original_title);
+        $single_links = $manager->searchMovieSingleProvider($requested_provider, $title, $release_year, $tmdb_id, $original_title, $is_anime);
     } elseif ($requested_season !== null && $requested_episode !== null) {
-        $single_links = $manager->searchSeriesSingleProvider($requested_provider, $title, $requested_season, $requested_episode, $tmdb_id, $original_title, $requested_absolute);
+        $single_links = $manager->searchSeriesSingleProvider($requested_provider, $title, $requested_season, $requested_episode, $tmdb_id, $original_title, $requested_absolute, $is_anime);
     } else {
         $single_links = ['direct' => [], 'streaming' => [], 'torrent' => []];
     }
@@ -209,7 +218,8 @@ if ($metadata_only) {
         'poster' => !empty($item['poster_path']) ? "https://image.tmdb.org/t/p/w500{$item['poster_path']}" : null,
         'overview' => $item['overview'] ?? '',
         'runtime' => $item['runtime'] ?? (!empty($item['episode_run_time']) ? $item['episode_run_time'][0] : null),
-        'providers' => $manager->getEnabledProvidersList(),
+        'is_anime' => $is_anime,
+        'providers' => $manager->getEnabledProvidersList($is_anime),
         'links' => $all_links
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
@@ -217,9 +227,9 @@ if ($metadata_only) {
 
 // Caso 3: Búsqueda monolítica tradicional (compatibilidad hacia atrás)
 if ($type === 'movie') {
-    $all_links = $manager->searchMovie($title, $release_year, $tmdb_id, $original_title);
+    $all_links = $manager->searchMovie($title, $release_year, $tmdb_id, $original_title, $is_anime);
 } elseif ($requested_season !== null && $requested_episode !== null) {
-    $all_links = $manager->searchSeries($title, $requested_season, $requested_episode, $tmdb_id, $original_title, $requested_absolute);
+    $all_links = $manager->searchSeries($title, $requested_season, $requested_episode, $tmdb_id, $original_title, $requested_absolute, $is_anime);
 }
 
 echo json_encode([

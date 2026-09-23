@@ -29,7 +29,20 @@ if (file_exists($cache_file) && (time() - filemtime($cache_file) < AVAILABILITY_
 }
 
 $manager = new ProviderManager();
-$available = $manager->checkAvailability($query, $type, $year, $tmdb_id, $original_title);
+$is_anime = true;
+if ($tmdb_id) {
+    $item_data = get_tmdb_data("{$type}/{$tmdb_id}");
+    if (!empty($item_data['genres'])) {
+        $is_anime = false;
+        foreach ($item_data['genres'] as $g) {
+            if (($g['id'] ?? 0) === 16 || stripos($g['name'] ?? '', 'animaci') !== false || stripos($g['name'] ?? '', 'animation') !== false) {
+                $is_anime = true;
+                break;
+            }
+        }
+    }
+}
+$available = $manager->checkAvailability($query, $type, $year, $tmdb_id, $original_title, $is_anime);
 
 $response = [
     'status' => $available ? 'found' : 'not_found',

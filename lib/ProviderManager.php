@@ -77,12 +77,14 @@ class ProviderManager
     /**
      * Comprueba de forma rápida si un contenido está disponible en al menos un proveedor
      */
-    public function checkAvailability(string $title, string $type, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null): bool
+    public function checkAvailability(string $title, string $type, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null, bool $is_anime = true): bool
     {
         if (connection_aborted()) exit;
+        $anime_providers = ['anime', 'tioanime'];
 
         foreach ($this->providers as $provider) {
             if (!$provider->isEnabled()) continue;
+            if (!$is_anime && in_array($provider->getId(), $anime_providers, true)) continue;
 
             try {
                 if ($type === 'movie') {
@@ -112,7 +114,7 @@ class ProviderManager
      * Busca todas las fuentes para una película y las agrupa por categoría,
      * consultando tanto el título en español como el título original si difiere.
      */
-    public function searchMovie(string $title, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null): array
+    public function searchMovie(string $title, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null, bool $is_anime = true): array
     {
         $consolidated = [
             'direct' => [],
@@ -121,10 +123,12 @@ class ProviderManager
         ];
 
         $titles = array_filter(array_unique([$title, $original_title]));
+        $anime_providers = ['anime', 'tioanime'];
 
         foreach ($this->providers as $provider) {
             if (connection_aborted()) exit;
             if (!$provider->isEnabled()) continue;
+            if (!$is_anime && in_array($provider->getId(), $anime_providers, true)) continue;
 
             $prov_sources = [];
             foreach ($titles as $t) {
@@ -171,7 +175,7 @@ class ProviderManager
      * Busca todas las fuentes para un episodio de serie,
      * consultando tanto el título en español como el título original si difiere.
      */
-    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?string $original_title = null, ?int $absolute_episode = null): array
+    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?string $original_title = null, ?int $absolute_episode = null, bool $is_anime = true): array
     {
         $consolidated = [
             'direct' => [],
@@ -180,10 +184,12 @@ class ProviderManager
         ];
 
         $titles = array_filter(array_unique([$title, $original_title]));
+        $anime_providers = ['anime', 'tioanime'];
 
         foreach ($this->providers as $provider) {
             if (connection_aborted()) exit;
             if (!$provider->isEnabled()) continue;
+            if (!$is_anime && in_array($provider->getId(), $anime_providers, true)) continue;
 
             $prov_sources = [];
             foreach ($titles as $t) {
@@ -229,10 +235,14 @@ class ProviderManager
     /**
      * Retorna la lista de proveedores activos con sus metadatos
      */
-    public function getEnabledProvidersList(): array
+    public function getEnabledProvidersList(bool $is_anime = true): array
     {
         $list = [];
+        $anime_providers = ['anime', 'tioanime'];
         foreach ($this->providers as $provider) {
+            if (!$is_anime && in_array($provider->getId(), $anime_providers, true)) {
+                continue;
+            }
             if ($provider->isEnabled()) {
                 $list[] = [
                     'id' => $provider->getId(),
@@ -247,13 +257,18 @@ class ProviderManager
     /**
      * Busca fuentes para una película en un único proveedor específico
      */
-    public function searchMovieSingleProvider(string $provider_id, string $title, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null): array
+    public function searchMovieSingleProvider(string $provider_id, string $title, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null, bool $is_anime = true): array
     {
         $consolidated = [
             'direct' => [],
             'streaming' => [],
             'torrent' => []
         ];
+
+        $anime_providers = ['anime', 'tioanime'];
+        if (!$is_anime && in_array($provider_id, $anime_providers, true)) {
+            return $consolidated;
+        }
 
         $provider = $this->getProvider($provider_id);
         if (!$provider || !$provider->isEnabled()) {
@@ -305,13 +320,18 @@ class ProviderManager
     /**
      * Busca fuentes para un episodio de serie en un único proveedor específico
      */
-    public function searchSeriesSingleProvider(string $provider_id, string $title, int $season, int $episode, ?int $tmdb_id = null, ?string $original_title = null, ?int $absolute_episode = null): array
+    public function searchSeriesSingleProvider(string $provider_id, string $title, int $season, int $episode, ?int $tmdb_id = null, ?string $original_title = null, ?int $absolute_episode = null, bool $is_anime = true): array
     {
         $consolidated = [
             'direct' => [],
             'streaming' => [],
             'torrent' => []
         ];
+
+        $anime_providers = ['anime', 'tioanime'];
+        if (!$is_anime && in_array($provider_id, $anime_providers, true)) {
+            return $consolidated;
+        }
 
         $provider = $this->getProvider($provider_id);
         if (!$provider || !$provider->isEnabled()) {

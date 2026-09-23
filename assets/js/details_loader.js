@@ -1003,7 +1003,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const startProgressiveSourcesLoad = (targetContainer, requestParams, itemTitle, thumbnail, episodeMeta = null) => {
-        const providers = (window._cachedProvidersList && window._cachedProvidersList.length > 0) ? window._cachedProvidersList : [
+        const isAnimeContent = linksContainer?.dataset?.isAnime === '1';
+        let rawProviders = (window._cachedProvidersList && window._cachedProvidersList.length > 0) ? window._cachedProvidersList : [
             { id: 'local_cdn', name: 'CDN Propio', type: 'direct' },
             { id: 'cuevana', name: 'Cuevana', type: 'streaming' },
             { id: 'pelispedia', name: 'PelisPedia', type: 'streaming' },
@@ -1020,6 +1021,8 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 'anime', name: 'JKAnime', type: 'streaming' },
             { id: 'tioanime', name: 'TioAnime', type: 'streaming' }
         ];
+
+        const providers = isAnimeContent ? rawProviders : rawProviders.filter(p => p.id !== 'anime' && p.id !== 'tioanime');
 
         const totalProviders = providers.length;
         let completedProviders = 0;

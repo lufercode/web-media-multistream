@@ -518,7 +518,12 @@ function is_anime_title_match(string $query_title, string $candidate_title): boo
 
     if (strpos($c, $q) === 0) {
         $remainder = trim(substr($c, strlen($q)));
-        if (empty($remainder) || preg_match('/^(?:(?:\d+|[1-9]nd|[1-9]rd|[1-9]th|season|temporada|part|parte|the|final|movie|pelicula|shimetsu|zenpen|kouhen|[\p{L}]+)\s*)+$/iu', $remainder)) {
+        if (empty($remainder)) return true;
+
+        // Debe coincidir estrictamente con patrones numéricos de temporada, secuelas o arcos canónicos (NO palabras arbitrarias)
+        $valid_season_pattern = '/^(?:(?:\d+|[1-9]nd|[1-9]rd|[1-9]th|s\d+|season|temporada|part|parte|the|final|movie|pelicula|cour|kanketsu|hen|arc|arco|zenpen|kouhen|ii|iii|iv|v|vi|vii|viii|ix|x|shibuya\s+jihen|sennen\s+kessen\s+hen|yuukaku\s+hen|katanakaji\s+no\s+sato\s+hen|hashira\s+geiko\s+hen|shimetsu\s+kaiyuu)\s*)+$/iu';
+
+        if (preg_match($valid_season_pattern, $remainder)) {
             return true;
         }
     }
