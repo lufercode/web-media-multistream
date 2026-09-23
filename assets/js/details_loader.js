@@ -116,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
         playerModal.id = 'videoPlayerModal';
         playerModal.className = 'modal fade';
         playerModal.tabIndex = -1;
+        playerModal.setAttribute('data-bs-backdrop', 'static');
         playerModal.innerHTML = `
             <div class="modal-dialog modal-xl modal-dialog-centered">
                 <div class="modal-content bg-dark text-white border-secondary shadow-lg">
@@ -165,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Controladores de Minimizar / Maximizar (PiP estilo YouTube)
         const minimizePlayer = () => {
             const modalEl = document.getElementById('videoPlayerModal');
-            if (!modalEl || !modalEl.classList.contains('show')) return;
+            if (!modalEl || !modalEl.classList.contains('show') || modalEl.classList.contains('player-minimized')) return;
 
             wasPlayerEverMinimized = true;
 
@@ -251,6 +252,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+
+        // Cerrar modal completamente al presionar botón X
+        const btnClose = document.getElementById('btnClosePlayerModal');
+        if (btnClose) {
+            btnClose.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const modal = bootstrap.Modal.getInstance(playerModal);
+                if (modal) modal.hide();
+            });
+        }
+
+        // Minimizar automáticamente al hacer clic fuera del reproductor (en el backdrop/fondo oscuro)
+        let isMouseDownOutsideModal = false;
+
+        playerModal.addEventListener('mousedown', (e) => {
+            isMouseDownOutsideModal = !e.target.closest('.modal-content');
+        });
+
+        playerModal.addEventListener('click', (e) => {
+            if (isMouseDownOutsideModal && !e.target.closest('.modal-content')) {
+                const modalEl = document.getElementById('videoPlayerModal');
+                if (modalEl && modalEl.classList.contains('show') && !modalEl.classList.contains('player-minimized')) {
+                    minimizePlayer();
+                }
+            }
+            isMouseDownOutsideModal = false;
+        });
+
+        playerModal.addEventListener('hidePrevented.bs.modal', (e) => {
+            if (e.preventDefault) e.preventDefault();
+            const modalEl = document.getElementById('videoPlayerModal');
+            if (modalEl && modalEl.classList.contains('show') && !modalEl.classList.contains('player-minimized')) {
+                minimizePlayer();
+            }
+        });
 
         // Controlador único para girar la pantalla en móvil (rotación virtual CSS)
         const togglePlayerOrientation = () => {
@@ -596,7 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Abrir modal solo si no está ya minimizado
         if (!isCurrentlyMinimized) {
-            const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { focus: false });
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: 'static', focus: false });
             modal.show();
         }
 

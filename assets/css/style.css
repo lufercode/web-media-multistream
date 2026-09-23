@@ -353,6 +353,10 @@ body.has-minimized-player .modal-backdrop {
     visibility: hidden !important;
 }
 
+#videoPlayerModal.modal-static .modal-dialog {
+    transform: none !important;
+}
+
 #videoPlayerModal.player-minimized {
     position: fixed !important;
     top: auto !important;
