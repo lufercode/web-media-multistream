@@ -20,6 +20,13 @@ const WatchlistManager = {
             this.updateBadgeCount();
             this.renderWatchlistRow();
             this.syncButtonStates();
+
+            // Sincronización en segundo plano con la identidad activa
+            fetch('api/sync_watchlist.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: items })
+            }).catch(() => {});
         } catch (e) {
             console.error('Error al guardar watchlist:', e);
         }
@@ -185,4 +192,22 @@ document.addEventListener('DOMContentLoaded', () => {
     WatchlistManager.syncButtonStates();
     WatchlistManager.updateBadgeCount();
     WatchlistManager.renderWatchlistRow();
+
+    // Sincronización inicial en segundo plano con la identidad activa
+    fetch('api/sync_watchlist.php')
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.items && Array.isArray(data.items)) {
+                const localItems = WatchlistManager.getWatchlist();
+                if (data.items.length > 0 && localItems.length === 0) {
+                    localStorage.setItem(WatchlistManager.STORAGE_KEY, JSON.stringify(data.items));
+                    WatchlistManager.updateBadgeCount();
+                    WatchlistManager.renderWatchlistRow();
+                    WatchlistManager.syncButtonStates();
+                } else if (localItems.length > 0 && data.items.length === 0) {
+                    WatchlistManager.saveWatchlist(localItems);
+                }
+            }
+        })
+        .catch(() => {});
 });

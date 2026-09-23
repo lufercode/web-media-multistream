@@ -317,58 +317,229 @@ function sort_tmdb_results_by_popularity($a, $b) {
 }
 
 /**
- * Lee el progreso de visualización desde el archivo JSON.
- * @return array
+/**
+ * Obtiene la identidad activa (Usuario autenticado con Google o Dispositivo individual).
+ * @return array ['type' => 'user'|'device', 'id' => string, 'name' => string, 'email' => string, 'picture' => ?string]
  */
-function read_watched_progress(): array {
-    if (!defined('WATCHED_PROGRESS_FILE')) {
-        return [];
+function get_current_identity(): array {
+    if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+        session_start();
     }
-    if (!file_exists(WATCHED_PROGRESS_FILE)) {
-        return [];
+
+    // 1. ¿Hay usuario autenticado con Google?
+    if (!empty($_SESSION['user']) && !empty($_SESSION['user']['id'])) {
+        return [
+            'type' => 'user',
+            'id' => (string)$_SESSION['user']['id'],
+            'email' => (string)($_SESSION['user']['email'] ?? ''),
+            'name' => (string)($_SESSION['user']['name'] ?? 'Usuario'),
+            'picture' => !empty($_SESSION['user']['picture']) ? (string)$_SESSION['user']['picture'] : null
+        ];
     }
-    $content = file_get_contents(WATCHED_PROGRESS_FILE);
-    if ($content === false) {
-        return [];
+
+    // 2. Si no hay sesión, usar identidad por dispositivo (Cookie persistente)
+    $device_cookie_name = 'stream_device_id';
+    $device_id = null;
+
+    if (!empty($_COOKIE[$device_cookie_name])) {
+        $candidate = trim((string)$_COOKIE[$device_cookie_name]);
+        if (preg_match('/^[a-f0-9\-]{16,64}$/i', $candidate)) {
+            $device_id = $candidate;
+        }
     }
-    $data = json_decode($content, true);
-    return is_array($data) ? $data : [];
+
+    if (!$device_id) {
+        $device_id = bin2hex(random_bytes(16));
+        $_COOKIE[$device_cookie_name] = $device_id;
+        if (!headers_sent()) {
+            setcookie($device_cookie_name, $device_id, [
+                'expires' => time() + (86400 * 365 * 2), // 2 años de persistencia
+                'path' => '/',
+                'httponly' => false,
+                'samesite' => 'Lax'
+            ]);
+        }
+    }
+
+    return [
+        'type' => 'device',
+        'id' => $device_id,
+        'email' => '',
+        'name' => 'Dispositivo ' . substr($device_id, 0, 6),
+        'picture' => null
+    ];
 }
 
 /**
- * Escribe el progreso de visualización en el archivo JSON.
+ * Retorna la ruta al archivo de progreso según la identidad (dispositivo o usuario).
+ * @param array|null $identity
+ * @return string
+ */
+function get_watched_progress_file(?array $identity = null): string {
+    if ($identity === null) {
+        $identity = get_current_identity();
+    }
+
+    $base_dir = defined('PROGRESS_DIR') ? PROGRESS_DIR : (defined('ROOT_DIR') ? ROOT_DIR . '/data/progress' : __DIR__ . '/../data/progress');
+    if (!is_dir($base_dir)) {
+        @mkdir($base_dir, 0755, true);
+    }
+
+    $prefix = $identity['type'] === 'user' ? 'user_' : 'device_';
+    $safe_id = preg_replace('/[^a-zA-Z0-9_\-]/', '', $identity['id']);
+    return "{$base_dir}/{$prefix}{$safe_id}.json";
+}
+
+/**
+ * Lee el progreso de visualización de la identidad activa (con caché estática en memoria).
+ * @param bool $force_reload
+ * @return array
+ */
+function read_watched_progress(bool $force_reload = false): array {
+    static $memory_cache = [];
+
+    $identity = get_current_identity();
+    $cache_key = "{$identity['type']}_{$identity['id']}";
+
+    if (!$force_reload && isset($memory_cache[$cache_key])) {
+        return $memory_cache[$cache_key];
+    }
+
+    $file = get_watched_progress_file($identity);
+
+    if (!file_exists($file)) {
+        $memory_cache[$cache_key] = [];
+        return [];
+    }
+
+    $content = file_get_contents($file);
+    if ($content === false) {
+        $memory_cache[$cache_key] = [];
+        return [];
+    }
+
+    $data = json_decode($content, true);
+    $result = is_array($data) ? $data : [];
+    $memory_cache[$cache_key] = $result;
+    return $result;
+}
+
+/**
+ * Escribe el progreso de visualización de la identidad activa.
  * @param array $progress
  * @return bool
  */
 function write_watched_progress(array $progress): bool {
-    if (!defined('WATCHED_PROGRESS_FILE')) {
-        return false;
-    }
-    $dir = dirname(WATCHED_PROGRESS_FILE);
+    $identity = get_current_identity();
+    $file = get_watched_progress_file($identity);
+
+    $dir = dirname($file);
     if (!is_dir($dir)) {
-        mkdir($dir, 0755, true);
+        @mkdir($dir, 0755, true);
     }
-    return file_put_contents(WATCHED_PROGRESS_FILE, json_encode($progress, JSON_PRETTY_PRINT)) !== false;
+
+    $success = file_put_contents($file, json_encode($progress, JSON_PRETTY_PRINT)) !== false;
+    if ($success) {
+        read_watched_progress(true); // Refrescar caché estática
+    }
+    return $success;
 }
 
 /**
- * Obtiene una lista de series recientemente vistas.
+ * Fusiona el progreso de un dispositivo local dentro de la cuenta del usuario logueado.
+ * @param string $device_id
+ * @param string $user_id
+ * @return bool
+ */
+function merge_device_progress_to_user(string $device_id, string $user_id): bool {
+    $dev_file = get_watched_progress_file(['type' => 'device', 'id' => $device_id]);
+    if (!file_exists($dev_file)) return false;
+
+    $dev_content = file_get_contents($dev_file);
+    $dev_data = json_decode($dev_content, true);
+    if (!is_array($dev_data) || empty($dev_data)) return false;
+
+    $user_file = get_watched_progress_file(['type' => 'user', 'id' => $user_id]);
+    $user_data = [];
+    if (file_exists($user_file)) {
+        $u_content = file_get_contents($user_file);
+        $user_data = json_decode($u_content, true) ?: [];
+    }
+
+    // Fusionar series
+    if (isset($dev_data['tv']) && is_array($dev_data['tv'])) {
+        if (!isset($user_data['tv'])) $user_data['tv'] = [];
+        foreach ($dev_data['tv'] as $s_id => $s_val) {
+            if (!isset($user_data['tv'][$s_id])) {
+                $user_data['tv'][$s_id] = $s_val;
+            } else {
+                foreach ($s_val as $s_num => $ep_val) {
+                    if ($s_num === '_last_watched') {
+                        $dev_time = $s_val['_last_watched']['updated_at'] ?? 0;
+                        $user_time = $user_data['tv'][$s_id]['_last_watched']['updated_at'] ?? 0;
+                        if ($dev_time > $user_time) {
+                            $user_data['tv'][$s_id]['_last_watched'] = $s_val['_last_watched'];
+                        }
+                    } elseif (is_array($ep_val)) {
+                        if (!isset($user_data['tv'][$s_id][$s_num])) {
+                            $user_data['tv'][$s_id][$s_num] = [];
+                        }
+                        foreach ($ep_val as $e_num => $e_st) {
+                            $user_data['tv'][$s_id][$s_num][$e_num] = $e_st;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fusionar películas
+    if (isset($dev_data['movie']) && is_array($dev_data['movie'])) {
+        if (!isset($user_data['movie'])) $user_data['movie'] = [];
+        foreach ($dev_data['movie'] as $m_id => $m_st) {
+            if (!isset($user_data['movie'][$m_id]) || $user_data['movie'][$m_id] !== 'watched') {
+                $user_data['movie'][$m_id] = $m_st;
+            }
+        }
+    }
+
+    return file_put_contents($user_file, json_encode($user_data, JSON_PRETTY_PRINT)) !== false;
+}
+
+/**
+ * Obtiene una lista de series y películas recientemente vistas ordenadas por actividad.
  * @return array Un array de arrays, cada uno con 'id' y 'type'.
  */
 function get_recently_watched_series(): array {
     $progress = read_watched_progress();
     $recently_watched = [];
 
-    if (isset($progress['tv'])) {
+    if (isset($progress['tv']) && is_array($progress['tv'])) {
         foreach ($progress['tv'] as $series_id => $series_progress) {
-            $recently_watched[] = ['id' => $series_id, 'type' => 'tv'];
+            $updated_at = $series_progress['_last_watched']['updated_at'] ?? 0;
+            $recently_watched[] = [
+                'id' => $series_id,
+                'type' => 'tv',
+                'updated_at' => $updated_at
+            ];
         }
     }
-    if (isset($progress['movie'])) {
+    if (isset($progress['movie']) && is_array($progress['movie'])) {
         foreach ($progress['movie'] as $movie_id => $movie_progress) {
-            $recently_watched[] = ['id' => $movie_id, 'type' => 'movie'];
+            $updated_at = is_array($movie_progress) ? ($movie_progress['updated_at'] ?? 0) : 0;
+            $recently_watched[] = [
+                'id' => $movie_id,
+                'type' => 'movie',
+                'updated_at' => $updated_at
+            ];
         }
     }
+
+    // Ordenar de más reciente a más antiguo si hay fecha disponible
+    usort($recently_watched, function($a, $b) {
+        return ($b['updated_at'] ?? 0) <=> ($a['updated_at'] ?? 0);
+    });
+
     return $recently_watched;
 }
 

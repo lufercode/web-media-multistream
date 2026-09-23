@@ -39,5 +39,9 @@ scratch/
 data/cache/*
 !data/cache/.gitkeep
 
-# Historial local de visualización del usuario
+# Historial local de visualización del usuario y dispositivos
 data/watched_progress.json
+data/progress/*
+!data/progress/.gitkeep
+data/watchlist/*
+!data/watchlist/.gitkeep

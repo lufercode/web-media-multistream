@@ -9,7 +9,13 @@ define('ROOT_DIR', dirname(__DIR__));
 define('CACHE_DIR', ROOT_DIR . '/data/cache');
 define('CACHE_TIME', 604800);               // 7 días de caché para TMDB
 define('AVAILABILITY_CACHE_TIME', 86400);    // 24 horas de caché para disponibilidad
-define('WATCHED_PROGRESS_FILE', ROOT_DIR . '/data/watched_progress.json');
+define('WATCHED_PROGRESS_FILE', ROOT_DIR . '/data/watched_progress.json'); // Compatibilidad hacia atrás
+define('PROGRESS_DIR', ROOT_DIR . '/data/progress');
+define('WATCHLIST_DIR', ROOT_DIR . '/data/watchlist');
+
+// Autenticación con Google (Google Identity Services - OAuth 2.0 Web)
+// Reemplaza con tu Client ID gratuito generado en Google Cloud Console
+define('GOOGLE_CLIENT_ID', 'TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com');
 
 // Interruptores de Proveedores (Habilitar / Deshabilitar fuentes individuales)
 $PROVIDERS_CONFIG = [

@@ -15,8 +15,12 @@ if (!$content_id || !$content_type) {
 $progress = read_watched_progress();
 $content_progress = $progress[$content_type][$content_id] ?? [];
 
-if ($content_type === 'movie' && is_string($content_progress)) {
-    $content_progress = ['status' => $content_progress];
+if ($content_type === 'movie') {
+    if (is_string($content_progress)) {
+        $content_progress = ['status' => $content_progress];
+    } elseif (is_array($content_progress) && isset($content_progress['status'])) {
+        $content_progress = ['status' => $content_progress['status']];
+    }
 }
 
 echo json_encode($content_progress);

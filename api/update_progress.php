@@ -30,7 +30,10 @@ if (!isset($progress[$content_type])) {
 }
 
 if ($content_type === 'movie') {
-    $progress[$content_type][$content_id] = $status;
+    $progress[$content_type][$content_id] = [
+        'status' => $status,
+        'updated_at' => time()
+    ];
 } else {
     if (!$season_num || !$episode_num) {
         http_response_code(400);
