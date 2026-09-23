@@ -70,6 +70,7 @@ $user_data = [
 ];
 
 $_SESSION['user'] = $user_data;
+session_write_close();
 
 // Si había progreso en el dispositivo actual, fusionarlo dentro de la cuenta Google del usuario
 $device_cookie_name = 'stream_device_id';

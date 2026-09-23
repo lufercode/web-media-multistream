@@ -324,6 +324,7 @@ function sort_tmdb_results_by_popularity($a, $b) {
 function get_current_identity(): array {
     if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
         session_start();
+        session_write_close();
     }
 
     // 1. ¿Hay usuario autenticado con Google?
