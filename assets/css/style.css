@@ -411,7 +411,6 @@ body.has-minimized-player .modal-backdrop {
 
 #videoPlayerModal.player-minimized #playerModalBadges,
 #videoPlayerModal.player-minimized #btnRotateModal,
-#videoPlayerModal.player-minimized #btnAntiPopupModal,
 #videoPlayerModal.player-minimized #btnExternalLink,
 #videoPlayerModal.player-minimized #btnMinimizeModal {
     display: none !important;
