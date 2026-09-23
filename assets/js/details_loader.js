@@ -104,6 +104,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     window.addEventListener('pagehide', () => abortController.abort());
 
+    // Estado y variables del reproductor
+    let playerTargetCard = null;
+    let playerPreModalScrollY = 0;
+    let wasPlayerEverMinimized = false;
+
     // Crear modal de reproductor integrado
     let playerModal = document.getElementById('videoPlayerModal');
     if (!playerModal) {
@@ -114,10 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
         playerModal.innerHTML = `
             <div class="modal-dialog modal-xl modal-dialog-centered">
                 <div class="modal-content bg-dark text-white border-secondary shadow-lg">
-                    <div class="modal-header border-secondary py-2 px-3 d-flex justify-content-between align-items-center bg-dark">
-                        <div class="flex-grow-1 me-2" style="min-width: 0;">
+                    <div class="modal-header border-secondary py-2 px-3 d-flex justify-content-between align-items-center bg-dark" id="playerModalHeader">
+                        <div class="flex-grow-1 me-2" style="min-width: 0;" id="playerModalHeaderTitleArea" title="Clic para expandir a pantalla completa">
                             <div class="d-flex align-items-center" style="min-width: 0;">
-                                <i class="fas fa-play-circle text-success me-2 flex-shrink-0"></i>
+                                <span class="mini-player-indicator d-none" id="playerMiniIndicator" title="Reproduciendo en segundo plano"></span>
+                                <i class="fas fa-play-circle text-success me-2 flex-shrink-0" id="playerModalIcon"></i>
                                 <strong class="text-white text-truncate d-block" id="playerModalContentTitle" style="font-size: 0.95rem;" title="Reproductor">Reproductor</strong>
                             </div>
                             <div class="d-flex align-items-center gap-1 mt-1 flex-wrap" id="playerModalBadges" style="font-size: 0.75rem;">
@@ -129,9 +135,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <i class="fas fa-external-link-alt"></i>
                             </a>
                             <button type="button" id="btnRotateModal" class="btn btn-sm btn-outline-warning py-1 px-2 d-inline-flex align-items-center" title="Girar a horizontal (sin desactivar bloqueo en móvil)">
-                                <i class="fas fa-sync-alt me-1"></i> <span id="btnRotateText">Girar</span>
+                                <i class="fas fa-sync-alt me-1"></i> <span id="btnRotateText" class="d-none d-sm-inline">Girar</span>
                             </button>
-                            <button type="button" class="btn-close btn-close-white ms-1" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                            <button type="button" id="btnMinimizeModal" class="btn btn-sm btn-outline-info py-1 px-2 d-inline-flex align-items-center" title="Minimizar para seguir navegando">
+                                <i class="fas fa-compress-alt me-1"></i> <span id="btnMinimizeText" class="d-none d-sm-inline">Minimizar</span>
+                            </button>
+                            <button type="button" id="btnMaximizeModal" class="btn btn-sm btn-outline-success py-1 px-2 align-items-center" style="display: none;" title="Maximizar reproductor">
+                                <i class="fas fa-expand-alt me-1"></i> <span id="btnMaximizeText" class="d-none d-sm-inline">Maximizar</span>
+                            </button>
+                            <button type="button" class="btn-close btn-close-white ms-1" id="btnClosePlayerModal" data-bs-dismiss="modal" aria-label="Cerrar" title="Cerrar reproductor"></button>
                         </div>
                     </div>
                     <div class="modal-body p-0 bg-black" style="min-height: 480px; position: relative;">
@@ -142,6 +154,96 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
         document.body.appendChild(playerModal);
+
+        // Controladores de Minimizar / Maximizar (PiP estilo YouTube)
+        const minimizePlayer = () => {
+            const modalEl = document.getElementById('videoPlayerModal');
+            if (!modalEl || !modalEl.classList.contains('show')) return;
+
+            wasPlayerEverMinimized = true;
+
+            // Desactivar rotación virtual si estaba activa
+            modalEl.classList.remove('modal-force-landscape');
+            if (screen.orientation && typeof screen.orientation.unlock === 'function') {
+                try { screen.orientation.unlock(); } catch (e) {}
+            }
+            const btnRotate = document.getElementById('btnRotateModal');
+            if (btnRotate) {
+                btnRotate.classList.remove('btn-warning');
+                btnRotate.classList.add('btn-outline-warning');
+                const btnRotateText = document.getElementById('btnRotateText');
+                if (btnRotateText) btnRotateText.textContent = 'Girar';
+            }
+
+            modalEl.classList.add('player-minimized');
+            document.body.classList.add('has-minimized-player');
+
+            const miniIndicator = document.getElementById('playerMiniIndicator');
+            if (miniIndicator) miniIndicator.classList.remove('d-none');
+
+            const icon = document.getElementById('playerModalIcon');
+            if (icon) icon.classList.add('d-none');
+
+            const btnMin = document.getElementById('btnMinimizeModal');
+            if (btnMin) btnMin.style.setProperty('display', 'none', 'important');
+
+            const btnMax = document.getElementById('btnMaximizeModal');
+            if (btnMax) btnMax.style.setProperty('display', 'inline-flex', 'important');
+
+            if (window._currentArtplayer && typeof window._currentArtplayer.resize === 'function') {
+                setTimeout(() => window._currentArtplayer.resize(), 100);
+            }
+        };
+
+        const maximizePlayer = () => {
+            const modalEl = document.getElementById('videoPlayerModal');
+            if (!modalEl || !modalEl.classList.contains('player-minimized')) return;
+
+            modalEl.classList.remove('player-minimized');
+            document.body.classList.remove('has-minimized-player');
+
+            const miniIndicator = document.getElementById('playerMiniIndicator');
+            if (miniIndicator) miniIndicator.classList.add('d-none');
+
+            const icon = document.getElementById('playerModalIcon');
+            if (icon) icon.classList.remove('d-none');
+
+            const btnMin = document.getElementById('btnMinimizeModal');
+            if (btnMin) btnMin.style.removeProperty('display');
+
+            const btnMax = document.getElementById('btnMaximizeModal');
+            if (btnMax) btnMax.style.setProperty('display', 'none', 'important');
+
+            if (window._currentArtplayer && typeof window._currentArtplayer.resize === 'function') {
+                setTimeout(() => window._currentArtplayer.resize(), 100);
+            }
+        };
+
+        const btnMin = document.getElementById('btnMinimizeModal');
+        if (btnMin) {
+            btnMin.addEventListener('click', (e) => {
+                e.stopPropagation();
+                minimizePlayer();
+            });
+        }
+
+        const btnMax = document.getElementById('btnMaximizeModal');
+        if (btnMax) {
+            btnMax.addEventListener('click', (e) => {
+                e.stopPropagation();
+                maximizePlayer();
+            });
+        }
+
+        const headerTitleArea = document.getElementById('playerModalHeaderTitleArea');
+        if (headerTitleArea) {
+            headerTitleArea.addEventListener('click', (e) => {
+                const modalEl = document.getElementById('videoPlayerModal');
+                if (modalEl && modalEl.classList.contains('player-minimized')) {
+                    maximizePlayer();
+                }
+            });
+        }
 
         // Controlador único para girar la pantalla en móvil (rotación virtual CSS)
         const togglePlayerOrientation = () => {
@@ -180,6 +282,83 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const btnRotate = document.getElementById('btnRotateModal');
         if (btnRotate) btnRotate.addEventListener('click', togglePlayerOrientation);
+
+        // Limpieza integral al cerrar el modal (normal o minimizado)
+        playerModal.addEventListener('hidden.bs.modal', () => {
+            const modalEl = document.getElementById('videoPlayerModal');
+            if (modalEl) {
+                modalEl.classList.remove('player-minimized');
+                modalEl.classList.remove('modal-force-landscape');
+            }
+            document.body.classList.remove('has-minimized-player');
+
+            const miniIndicator = document.getElementById('playerMiniIndicator');
+            if (miniIndicator) miniIndicator.classList.add('d-none');
+
+            const icon = document.getElementById('playerModalIcon');
+            if (icon) icon.classList.remove('d-none');
+
+            const btnMin = document.getElementById('btnMinimizeModal');
+            if (btnMin) btnMin.style.removeProperty('display');
+
+            const btnMax = document.getElementById('btnMaximizeModal');
+            if (btnMax) btnMax.style.setProperty('display', 'none', 'important');
+
+            if (window._autoProgressTimer) {
+                clearTimeout(window._autoProgressTimer);
+                window._autoProgressTimer = null;
+            }
+            currentModalAutoProgressTriggered = false;
+
+            if (window._currentArtplayer) {
+                try {
+                    if (window._currentArtplayer.hls) {
+                        window._currentArtplayer.hls.destroy();
+                    }
+                    window._currentArtplayer.destroy(false);
+                } catch (e) {}
+                window._currentArtplayer = null;
+            }
+
+            const artContainer = document.getElementById('artplayerContainer');
+            if (artContainer) {
+                artContainer.style.display = 'none';
+                artContainer.innerHTML = '';
+            }
+
+            const iframe = document.getElementById('playerIframe');
+            if (iframe) {
+                iframe.src = 'about:blank';
+                iframe.style.display = 'block';
+            }
+
+            const realBadge = document.getElementById('playerRealResolutionBadge');
+            if (realBadge) realBadge.remove();
+
+            const btnRotateText = document.getElementById('btnRotateText');
+            if (btnRotateText) btnRotateText.textContent = 'Girar';
+            const btnModal = document.getElementById('btnRotateModal');
+            if (btnModal) {
+                btnModal.classList.remove('btn-warning');
+                btnModal.classList.add('btn-outline-warning');
+            }
+            if (screen.orientation && typeof screen.orientation.unlock === 'function') {
+                try { screen.orientation.unlock(); } catch (e) {}
+            }
+
+            // Restaurar posición de scroll SOLO si nunca fue minimizado
+            // (si navegó por la página mientras estaba minimizado, se respeta la posición actual del usuario)
+            if (!wasPlayerEverMinimized) {
+                setTimeout(() => {
+                    if (playerPreModalScrollY > 0) {
+                        window.scrollTo({ top: playerPreModalScrollY, behavior: 'instant' });
+                    } else if (playerTargetCard && document.body.contains(playerTargetCard)) {
+                        playerTargetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }, 50);
+            }
+            wasPlayerEverMinimized = false;
+        });
     }
 
     const loadHlsScript = (onSuccess, onError) => {
@@ -317,9 +496,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const extLinkBtn = document.getElementById('btnExternalLink');
         const provLabel = provider || 'Online';
         
-        // Guardar referencia al elemento activo y posición de scroll previa para evitar saltos en móvil al salir
-        const targetCard = episodeMeta?.cardElement || null;
-        const preModalScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+        const isCurrentlyMinimized = modalEl && modalEl.classList.contains('player-minimized');
+
+        // Guardar referencia al elemento activo y posición de scroll previa solo si abrimos desde vista normal
+        if (!isCurrentlyMinimized) {
+            playerTargetCard = episodeMeta?.cardElement || null;
+            playerPreModalScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+            wasPlayerEverMinimized = false;
+        }
 
         // Si es episodio de serie, registrar también como último visto de inmediato
         if (contentType === 'tv' && episodeMeta && episodeMeta.season && episodeMeta.episode) {
@@ -335,15 +519,17 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {}
         }
 
-        // Reiniciar estado de rotación al abrir nuevo modal
-        modalEl.classList.remove('modal-force-landscape');
-        const btnText = document.getElementById('btnRotateText');
-        if (btnText) btnText.textContent = 'Girar';
+        // Reiniciar estado de rotación al abrir nuevo modal solo si no está minimizado
+        if (!isCurrentlyMinimized) {
+            modalEl.classList.remove('modal-force-landscape');
+            const btnText = document.getElementById('btnRotateText');
+            if (btnText) btnText.textContent = 'Girar';
 
-        const btnModal = document.getElementById('btnRotateModal');
-        if (btnModal) {
-            btnModal.classList.remove('btn-warning');
-            btnModal.classList.add('btn-outline-warning');
+            const btnModal = document.getElementById('btnRotateModal');
+            if (btnModal) {
+                btnModal.classList.remove('btn-warning');
+                btnModal.classList.add('btn-outline-warning');
+            }
         }
 
         // Reiniciar y configurar temporizador de auto-progreso
@@ -401,8 +587,11 @@ document.addEventListener('DOMContentLoaded', () => {
             iframe.style.display = 'block';
         }
 
-        const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { focus: false });
-        modal.show();
+        // Abrir modal solo si no está ya minimizado
+        if (!isCurrentlyMinimized) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { focus: false });
+            modal.show();
+        }
 
         try {
             console.log(`%c⚡ [Resolver] Resolviendo enlace limpio para: ${url}`, 'color: #9b59b6;');
@@ -664,6 +853,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         });
 
+                        art.on('ready', () => {
+                            const m = document.getElementById('videoPlayerModal');
+                            if (m && m.classList.contains('player-minimized')) {
+                                art.resize();
+                            }
+                        });
+
                     }, () => {
                         artContainer.style.display = 'none';
                         if (iframe) {
@@ -703,56 +899,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
         }
-
-        modalEl.addEventListener('hidden.bs.modal', () => {
-            if (window._autoProgressTimer) {
-                clearTimeout(window._autoProgressTimer);
-                window._autoProgressTimer = null;
-            }
-            currentModalAutoProgressTriggered = false;
-
-            if (window._currentArtplayer) {
-                try {
-                    if (window._currentArtplayer.hls) {
-                        window._currentArtplayer.hls.destroy();
-                    }
-                    window._currentArtplayer.destroy(false);
-                } catch (e) {}
-                window._currentArtplayer = null;
-            }
-
-            if (artContainer) {
-                artContainer.style.display = 'none';
-                artContainer.innerHTML = '';
-            }
-
-            if (iframe) {
-                iframe.src = 'about:blank';
-                iframe.style.display = 'block';
-            }
-
-            const realBadge = document.getElementById('playerRealResolutionBadge');
-            if (realBadge) realBadge.remove();
-
-            modalEl.classList.remove('modal-force-landscape');
-            if (btnText) btnText.textContent = 'Girar';
-            if (btnModal) {
-                btnModal.classList.remove('btn-warning');
-                btnModal.classList.add('btn-outline-warning');
-            }
-            if (screen.orientation && typeof screen.orientation.unlock === 'function') {
-                try { screen.orientation.unlock(); } catch (e) {}
-            }
-
-            // Restaurar posición de scroll exactamente donde estaba el usuario antes de abrir el reproductor
-            setTimeout(() => {
-                if (preModalScrollY > 0) {
-                    window.scrollTo({ top: preModalScrollY, behavior: 'instant' });
-                } else if (targetCard && document.body.contains(targetCard)) {
-                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }
-            }, 50);
-        }, { once: true });
     };
 
     let blockUidCounter = 0;

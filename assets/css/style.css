@@ -290,6 +290,138 @@ h2 {
     background: #000;
 }
 
+/* ==========================================================================
+   Mini-Reproductor Flotante (Picture-in-Picture estilo YouTube)
+   Permite minimizar la ventana de reproducción para seguir navegando
+   libremente por el catálogo, temporadas y servidores sin cortar el video.
+   ========================================================================== */
+body.has-minimized-player {
+    overflow: auto !important;
+    padding-right: 0 !important;
+}
+
+body.has-minimized-player .modal-backdrop {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+}
+
+#videoPlayerModal.player-minimized {
+    position: fixed !important;
+    top: auto !important;
+    left: auto !important;
+    right: 20px !important;
+    bottom: 20px !important;
+    width: 360px !important;
+    max-width: calc(100vw - 30px) !important;
+    height: auto !important;
+    z-index: 1070 !important;
+    overflow: visible !important;
+    pointer-events: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+}
+
+#videoPlayerModal.player-minimized .modal-dialog {
+    position: static !important;
+    pointer-events: auto !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    transform: none !important;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease !important;
+}
+
+#videoPlayerModal.player-minimized .modal-content {
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.85), 0 0 1px 1px rgba(255, 255, 255, 0.12) !important;
+    overflow: hidden !important;
+    background: #111 !important;
+}
+
+#videoPlayerModal.player-minimized .modal-header {
+    background: rgba(22, 22, 22, 0.95) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    padding: 6px 10px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s ease;
+}
+
+#videoPlayerModal.player-minimized .modal-header:hover {
+    background: rgba(35, 35, 35, 0.98) !important;
+}
+
+#videoPlayerModal.player-minimized #playerModalContentTitle {
+    font-size: 0.82rem !important;
+    max-width: 185px !important;
+    line-height: 1.2;
+}
+
+#videoPlayerModal.player-minimized #playerModalBadges,
+#videoPlayerModal.player-minimized #btnRotateModal,
+#videoPlayerModal.player-minimized #btnExternalLink,
+#videoPlayerModal.player-minimized #btnMinimizeModal {
+    display: none !important;
+}
+
+#videoPlayerModal.player-minimized #btnMaximizeModal {
+    display: inline-flex !important;
+}
+
+#videoPlayerModal.player-minimized .modal-body {
+    min-height: unset !important;
+    height: auto !important;
+    position: relative !important;
+    background: #000 !important;
+    aspect-ratio: 16 / 9;
+}
+
+#videoPlayerModal.player-minimized #playerIframe,
+#videoPlayerModal.player-minimized #artplayerContainer {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: 16 / 9;
+    max-height: 220px !important;
+}
+
+/* Indicador de reproductor minimizado en cabecera */
+.mini-player-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background-color: #20c997;
+    border-radius: 50%;
+    margin-right: 6px;
+    flex-shrink: 0;
+    animation: miniPlayerPulse 1.8s infinite;
+}
+
+@keyframes miniPlayerPulse {
+    0% { transform: scale(0.9); opacity: 0.7; box-shadow: 0 0 0 0 rgba(32, 201, 151, 0.7); }
+    70% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 0 6px rgba(32, 201, 151, 0); }
+    100% { transform: scale(0.9); opacity: 0.7; box-shadow: 0 0 0 0 rgba(32, 201, 151, 0); }
+}
+
+/* Adaptación para pantallas móviles */
+@media (max-width: 576px) {
+    #videoPlayerModal.player-minimized {
+        right: 10px !important;
+        bottom: 12px !important;
+        width: 290px !important;
+        max-width: calc(100vw - 20px) !important;
+    }
+    #videoPlayerModal.player-minimized #playerModalContentTitle {
+        max-width: 135px !important;
+        font-size: 0.78rem !important;
+    }
+}
+
 /* Ocultamiento total de barra de carga, controles y cursor al reproducir en pantalla completa o normal */
 .art-video-player:not(.art-control-show):not(.art-hover) .art-bottom,
 .art-video-player.art-mini-progress-bar:not(.art-control-show):not(.art-hover) .art-bottom {
