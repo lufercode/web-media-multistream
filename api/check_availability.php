@@ -20,11 +20,18 @@ if (!$query) {
 $cache_key = 'avail_' . md5($type . '_' . $query . '_' . ($year ?? '') . '_' . ($tmdb_id ?? ''));
 $cache_file = CACHE_DIR . '/' . $cache_key . '.json';
 
-if (file_exists($cache_file) && (time() - filemtime($cache_file) < AVAILABILITY_CACHE_TIME)) {
+if (file_exists($cache_file)) {
     $cached = @file_get_contents($cache_file);
     if ($cached) {
-        echo $cached;
-        exit;
+        $cached_data = json_decode($cached, true);
+        $ttl = (($cached_data['status'] ?? '') === 'found')
+            ? (defined('AVAILABILITY_CACHE_FOUND') ? AVAILABILITY_CACHE_FOUND : 86400)
+            : (defined('AVAILABILITY_CACHE_NOT_FOUND') ? AVAILABILITY_CACHE_NOT_FOUND : 14400);
+
+        if (time() - filemtime($cache_file) < $ttl) {
+            echo $cached;
+            exit;
+        }
     }
 }
 
@@ -41,6 +48,9 @@ if ($tmdb_id) {
             }
         }
     }
+    if (!$original_title && !empty($item_data)) {
+        $original_title = $item_data['original_title'] ?? $item_data['original_name'] ?? null;
+    }
 }
 $available = $manager->checkAvailability($query, $type, $year, $tmdb_id, $original_title, $is_anime);
 
@@ -55,6 +65,11 @@ if (!is_dir(CACHE_DIR)) {
     @mkdir(CACHE_DIR, 0755, true);
 }
 @file_put_contents($cache_file, $json);
+
+// Ejecutar limpieza automática en segundo plano (máx. 1 vez al día)
+if (function_exists('clean_expired_cache')) {
+    clean_expired_cache();
+}
 
 echo $json;
 

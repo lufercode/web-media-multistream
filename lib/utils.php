@@ -702,4 +702,91 @@ function is_anime_title_match(string $query_title, string $candidate_title): boo
     return false;
 }
 
+/**
+ * Limpiador automático de archivos caducados en la carpeta de caché (Garbage Collector).
+ * Se ejecuta silenciosamente máximo una vez al día para evitar sobrecarga y proteger el límite de inodos.
+ *
+ * @param bool $force Si es true, omite la verificación de intervalo diario.
+ * @return int Cantidad de archivos eliminados.
+ */
+function clean_expired_cache(bool $force = false): int {
+    if (!defined('CACHE_DIR') || !is_dir(CACHE_DIR)) {
+        return 0;
+    }
+
+    $gc_marker = CACHE_DIR . '/.last_gc';
+    $now = time();
+
+    // Ejecutar como máximo una vez cada 24 horas (86400s)
+    if (!$force && file_exists($gc_marker) && ($now - filemtime($gc_marker) < 86400)) {
+        return 0;
+    }
+
+    @touch($gc_marker);
+
+    $deleted_count = 0;
+    $max_days = defined('CACHE_MAX_RETENTION_DAYS') ? CACHE_MAX_RETENTION_DAYS : 15;
+    $max_retention_sec = $max_days * 86400;
+
+    $avail_found_ttl = defined('AVAILABILITY_CACHE_FOUND') ? AVAILABILITY_CACHE_FOUND : 86400;
+    $avail_not_found_ttl = defined('AVAILABILITY_CACHE_NOT_FOUND') ? AVAILABILITY_CACHE_NOT_FOUND : 14400;
+    $links_ttl = defined('LINKS_CACHE_TIME') ? LINKS_CACHE_TIME * 2 : 3600; // 1 hora máx para enlaces temporales
+
+    $files = @scandir(CACHE_DIR);
+    if (!is_array($files)) {
+        return 0;
+    }
+
+    foreach ($files as $file) {
+        if ($file === '.' || $file === '..' || $file === '.last_gc' || $file === '.gitignore') {
+            continue;
+        }
+
+        $file_path = CACHE_DIR . '/' . $file;
+        if (!is_file($file_path)) {
+            continue;
+        }
+
+        $mtime = @filemtime($file_path);
+        if (!$mtime) {
+            continue;
+        }
+
+        $age = $now - $mtime;
+
+        // 1. Enlaces por proveedor: eliminar si tienen más de 1 hora
+        if (strpos($file, 'links_') === 0) {
+            if ($age > $links_ttl) {
+                @unlink($file_path);
+                $deleted_count++;
+            }
+            continue;
+        }
+
+        // 2. Disponibilidad: eliminar según TTL asimétrico
+        if (strpos($file, 'avail_') === 0) {
+            if ($age > $avail_found_ttl) {
+                @unlink($file_path);
+                $deleted_count++;
+            } elseif ($age > $avail_not_found_ttl) {
+                $content = @file_get_contents($file_path);
+                if ($content && strpos($content, '"not_found"') !== false) {
+                    @unlink($file_path);
+                    $deleted_count++;
+                }
+            }
+            continue;
+        }
+
+        // 3. Fichas de TMDB y otros: eliminar si superan la retención máxima (15 días)
+        if ($age > $max_retention_sec) {
+            @unlink($file_path);
+            $deleted_count++;
+        }
+    }
+
+    return $deleted_count;
+}
+
+
 

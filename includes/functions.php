@@ -93,6 +93,7 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
 
     $id = htmlspecialchars((string)$item['id']);
     $title = htmlspecialchars($type === 'movie' ? ($item['title'] ?? 'Sin título') : ($item['name'] ?? 'Sin título'));
+    $original_title = htmlspecialchars($type === 'movie' ? ($item['original_title'] ?? '') : ($item['original_name'] ?? ''));
     $posterPath = htmlspecialchars($item['poster_path']);
     $year = htmlspecialchars(substr($item['release_date'] ?? $item['first_air_date'] ?? '', 0, 4));
     $rating = isset($item['vote_average']) && $item['vote_average'] > 0 ? number_format((float)$item['vote_average'], 1) : null;
@@ -144,7 +145,7 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
     $wrapper_class = $is_carousel ? 'carousel-card-item' : 'col';
 
     return <<<HTML
-    <div class="{$wrapper_class}" data-query="{$title}" data-type="{$type}" data-id="{$id}" data-year="{$year}">
+    <div class="{$wrapper_class}" data-query="{$title}" data-original-title="{$original_title}" data-type="{$type}" data-id="{$id}" data-year="{$year}">
         <div class="media-card card h-100 bg-transparent border-0 position-relative">
             <div class="media-poster-wrap position-relative overflow-hidden rounded">
                 <a href="details.php?id={$id}&type={$type}" class="poster-main-link" aria-label="Ver {$title}">

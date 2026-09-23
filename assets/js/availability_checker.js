@@ -111,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const query = card.dataset.query;
+        const originalTitle = card.dataset.originalTitle || '';
         const type = card.dataset.type;
         const id = card.dataset.id || '';
         const year = card.dataset.year || '';
@@ -131,12 +132,22 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`%c🔍 [Buscador] Verificando en fuentes: "${query}" (${type})`, 'color: #ffc107;');
 
         try {
+            const bodyParams = new URLSearchParams({
+                query: query,
+                type: type,
+                id: id,
+                year: year
+            });
+            if (originalTitle) {
+                bodyParams.append('original_title', originalTitle);
+            }
+
             const response = await fetch('api/check_availability.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `query=${encodeURIComponent(query)}&type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}&year=${encodeURIComponent(year)}`,
+                body: bodyParams.toString(),
                 signal: abortController.signal,
             });
 

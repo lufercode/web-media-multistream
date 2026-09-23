@@ -7,8 +7,12 @@ define('MAX_TIMEOUT', 3);      // Timeout en segundos para peticiones de red
 // Configuración de almacenamiento local y caché
 define('ROOT_DIR', dirname(__DIR__));
 define('CACHE_DIR', ROOT_DIR . '/data/cache');
-define('CACHE_TIME', 604800);               // 7 días de caché para TMDB
-define('AVAILABILITY_CACHE_TIME', 86400);    // 24 horas de caché para disponibilidad
+define('CACHE_TIME', 604800);                         // 7 días de caché para TMDB
+define('AVAILABILITY_CACHE_TIME', 86400);              // Fallback compatibilidad (24h)
+define('AVAILABILITY_CACHE_FOUND', 86400);            // 24 horas si fue encontrado disponible
+define('AVAILABILITY_CACHE_NOT_FOUND', 14400);        // 4 horas si no fue encontrado (reintentar estrenos)
+define('LINKS_CACHE_TIME', 1800);                     // 30 minutos de caché para enlaces por proveedor
+define('CACHE_MAX_RETENTION_DAYS', 15);               // 15 días retención máxima para limpieza automática
 define('WATCHED_PROGRESS_FILE', ROOT_DIR . '/data/watched_progress.json'); // Compatibilidad hacia atrás
 define('PROGRESS_DIR', ROOT_DIR . '/data/progress');
 define('WATCHLIST_DIR', ROOT_DIR . '/data/watchlist');

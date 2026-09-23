@@ -67,6 +67,20 @@ foreach ($item['genres'] ?? [] as $g) {
 // Caso 1: Búsqueda atómica de un único proveedor en paralelo
 if ($requested_provider !== null && $requested_provider !== '') {
     $provObj = $manager->getProvider($requested_provider);
+
+    // Clave de caché para enlaces del proveedor específico
+    $links_cache_time = defined('LINKS_CACHE_TIME') ? LINKS_CACHE_TIME : 1800;
+    $links_cache_key = 'links_' . md5($requested_provider . '_' . $type . '_' . $id . '_' . ($requested_season ?? '') . '_' . ($requested_episode ?? '') . '_' . ($requested_absolute ?? ''));
+    $links_cache_file = CACHE_DIR . '/' . $links_cache_key . '.json';
+
+    if (file_exists($links_cache_file) && (time() - filemtime($links_cache_file) < $links_cache_time)) {
+        $cached_resp = @file_get_contents($links_cache_file);
+        if ($cached_resp) {
+            echo $cached_resp;
+            exit;
+        }
+    }
+
     if ($type === 'movie') {
         $single_links = $manager->searchMovieSingleProvider($requested_provider, $title, $release_year, $tmdb_id, $original_title, $is_anime);
     } elseif ($requested_season !== null && $requested_episode !== null) {
@@ -75,13 +89,26 @@ if ($requested_provider !== null && $requested_provider !== '') {
         $single_links = ['direct' => [], 'streaming' => [], 'torrent' => []];
     }
 
-    echo json_encode([
+    $response_payload = [
         'status' => 'success',
         'provider' => $requested_provider,
         'provider_name' => $provObj ? $provObj->getName() : $requested_provider,
         'provider_type' => $provObj ? $provObj->getType() : 'unknown',
         'links' => $single_links
-    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    ];
+
+    $json_output = json_encode($response_payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+    // Solo cachear si devolvió al menos un enlace (evita fijar fallos temporales de red)
+    $has_links = !empty($single_links['direct']) || !empty($single_links['streaming']) || !empty($single_links['torrent']);
+    if ($has_links) {
+        if (!is_dir(CACHE_DIR)) {
+            @mkdir(CACHE_DIR, 0755, true);
+        }
+        @file_put_contents($links_cache_file, $json_output);
+    }
+
+    echo $json_output;
     exit;
 }
 
