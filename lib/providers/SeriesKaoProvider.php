@@ -36,55 +36,62 @@ class SeriesKaoProvider implements ProviderInterface
         }
 
         $results = [];
-        $clean_query = preg_replace('/[^\w\s]/u', ' ', $title);
-        $clean_query = trim(preg_replace('/\s+/', ' ', $clean_query));
+        $clean_query = trim($title);
         if (empty($clean_query)) return [];
+
+        $queries = [$clean_query];
+        $simplified = trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s]/u', ' ', $title)));
+        if (!empty($simplified) && strcasecmp($simplified, $clean_query) !== 0) {
+            $queries[] = $simplified;
+        }
 
         foreach ($this->hosts as $host) {
             if (connection_aborted()) exit;
 
-            $search_url = rtrim($host, '/') . '/search?s=' . urlencode($clean_query);
-            $headers = ['Referer' => rtrim($host, '/') . '/'];
+            foreach ($queries as $q) {
+                $search_url = rtrim($host, '/') . '/search?s=' . urlencode($q);
+                $headers = ['Referer' => rtrim($host, '/') . '/'];
 
-            $html = http_get($search_url, ['headers' => $headers, 'timeout' => 6]);
-            if (!$html || strlen($html) < 500) continue;
+                $html = http_get($search_url, ['headers' => $headers, 'timeout' => 6]);
+                if (!$html || strlen($html) < 500) continue;
 
-            preg_match_all('/<article class="card".*?<\/article>/s', $html, $cards);
-            if (empty($cards[0])) continue;
+                preg_match_all('/<article class="card".*?<\/article>/s', $html, $cards);
+                if (empty($cards[0])) continue;
 
-            $matched_url = null;
-            $matched_title = null;
+                $matched_url = null;
+                $matched_title = null;
 
-            foreach ($cards[0] as $card) {
-                if (connection_aborted()) exit;
-                if (!preg_match('/href="([^"]+)"/', $card, $mUrl)) continue;
-                if (strpos($mUrl[1], '/pelicula/') === false) continue;
+                foreach ($cards[0] as $card) {
+                    if (connection_aborted()) exit;
+                    if (!preg_match('/href="([^"]+)"/', $card, $mUrl)) continue;
+                    if (strpos($mUrl[1], '/pelicula/') === false && strpos($mUrl[1], '/peliculas/') === false && strpos($mUrl[1], '/anime/') === false && strpos($mUrl[1], '/animes/') === false) continue;
 
-                preg_match('/<h2 class="card__title">([^<]+)<\/h2>/', $card, $mTitle);
-                $card_title = $mTitle[1] ?? '';
-                $card_year = preg_match('/<span class="card__badge card__badge--year">([^<]+)<\/span>/', $card, $mY) ? $mY[1] : null;
+                    preg_match('/<h2 class="card__title">([^<]+)<\/h2>/', $card, $mTitle);
+                    $card_title = $mTitle[1] ?? '';
+                    $card_year = preg_match('/<span class="card__badge card__badge--year">([^<]+)<\/span>/', $card, $mY) ? $mY[1] : null;
 
-                $clean_cand = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $card_title);
-                $clean_cand = trim(preg_replace('/\[.*?\]/', '', $clean_cand));
+                    $clean_cand = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $card_title);
+                    $clean_cand = trim(preg_replace('/\[.*?\]/', '', $clean_cand));
 
-                if (is_strict_title_match($title, $clean_cand, $year, $card_year)) {
-                    $matched_url = $mUrl[1];
-                    $matched_title = $card_title ?: $title;
-                    break;
-                }
-            }
-
-            if ($matched_url) {
-                if (strpos($matched_url, 'http') !== 0) {
-                    $matched_url = rtrim($host, '/') . $matched_url;
+                    if (is_strict_title_match($title, $clean_cand, $year, $card_year)) {
+                        $matched_url = $mUrl[1];
+                        $matched_title = $card_title ?: $title;
+                        break;
+                    }
                 }
 
-                $detail_html = http_get($matched_url, ['headers' => $headers, 'timeout' => 6]);
-                if ($detail_html) {
-                    $extracted = $this->extractPlayers($detail_html, $matched_url, $matched_title, $host);
-                    $results = array_merge($results, $extracted);
+                if ($matched_url) {
+                    if (strpos($matched_url, 'http') !== 0) {
+                        $matched_url = rtrim($host, '/') . $matched_url;
+                    }
+
+                    $detail_html = http_get($matched_url, ['headers' => $headers, 'timeout' => 6]);
+                    if ($detail_html) {
+                        $extracted = $this->extractPlayers($detail_html, $matched_url, $matched_title, $host);
+                        $results = array_merge($results, $extracted);
+                    }
+                    break 2;
                 }
-                break;
             }
         }
 
@@ -98,88 +105,95 @@ class SeriesKaoProvider implements ProviderInterface
         }
 
         $results = [];
-        $clean_query = preg_replace('/[^\w\s]/u', ' ', $title);
-        $clean_query = trim(preg_replace('/\s+/', ' ', $clean_query));
+        $clean_query = trim($title);
         if (empty($clean_query)) return [];
+
+        $queries = [$clean_query];
+        $simplified = trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s]/u', ' ', $title)));
+        if (!empty($simplified) && strcasecmp($simplified, $clean_query) !== 0) {
+            $queries[] = $simplified;
+        }
 
         foreach ($this->hosts as $host) {
             if (connection_aborted()) exit;
 
-            $search_url = rtrim($host, '/') . '/search?s=' . urlencode($clean_query);
-            $headers = ['Referer' => rtrim($host, '/') . '/'];
+            foreach ($queries as $q) {
+                $search_url = rtrim($host, '/') . '/search?s=' . urlencode($q);
+                $headers = ['Referer' => rtrim($host, '/') . '/'];
 
-            $html = http_get($search_url, ['headers' => $headers, 'timeout' => 6]);
-            if (!$html || strlen($html) < 500) continue;
+                $html = http_get($search_url, ['headers' => $headers, 'timeout' => 6]);
+                if (!$html || strlen($html) < 500) continue;
 
-            preg_match_all('/<article class="card".*?<\/article>/s', $html, $cards);
-            if (empty($cards[0])) continue;
+                preg_match_all('/<article class="card".*?<\/article>/s', $html, $cards);
+                if (empty($cards[0])) continue;
 
-            $matched_url = null;
-            $matched_title = null;
+                $matched_url = null;
+                $matched_title = null;
 
-            foreach ($cards[0] as $card) {
-                if (connection_aborted()) exit;
-                if (!preg_match('/href="([^"]+)"/', $card, $mUrl)) continue;
-                if (strpos($mUrl[1], '/serie/') === false && strpos($mUrl[1], '/animes/') === false) continue;
+                foreach ($cards[0] as $card) {
+                    if (connection_aborted()) exit;
+                    if (!preg_match('/href="([^"]+)"/', $card, $mUrl)) continue;
+                    if (strpos($mUrl[1], '/serie/') === false && strpos($mUrl[1], '/series/') === false && strpos($mUrl[1], '/anime/') === false && strpos($mUrl[1], '/animes/') === false) continue;
 
-                preg_match('/<h2 class="card__title">([^<]+)<\/h2>/', $card, $mTitle);
-                $card_title = $mTitle[1] ?? '';
+                    preg_match('/<h2 class="card__title">([^<]+)<\/h2>/', $card, $mTitle);
+                    $card_title = $mTitle[1] ?? '';
 
-                $clean_cand = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $card_title);
-                $clean_cand = trim(preg_replace('/\[.*?\]/', '', $clean_cand));
+                    $clean_cand = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $card_title);
+                    $clean_cand = trim(preg_replace('/\[.*?\]/', '', $clean_cand));
 
-                if (is_strict_title_match($title, $clean_cand)) {
-                    $matched_url = $mUrl[1];
-                    $matched_title = $clean_cand ?: $title;
-                    break;
-                }
-            }
-
-            if ($matched_url) {
-                if (strpos($matched_url, 'http') !== 0) {
-                    $matched_url = rtrim($host, '/') . $matched_url;
+                    if (is_strict_title_match($title, $clean_cand)) {
+                        $matched_url = $mUrl[1];
+                        $matched_title = $clean_cand ?: $title;
+                        break;
+                    }
                 }
 
-                $series_html = http_get($matched_url, ['headers' => $headers, 'timeout' => 6]);
-                if (!$series_html) continue;
+                if ($matched_url) {
+                    if (strpos($matched_url, 'http') !== 0) {
+                        $matched_url = rtrim($host, '/') . $matched_url;
+                    }
 
-                // Localizar el bloque de la temporada: id="season-{season}"
-                $matched_ep_url = null;
-                if (preg_match('/id="season-' . $season . '"(.*?)(?:id="season-\d+"|(?:\s*<\/div>\s*){2,}|$)/is', $series_html, $mSeasonBlock)) {
-                    preg_match_all('/<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/is', $mSeasonBlock[1], $epItems, PREG_SET_ORDER);
-                    foreach ($epItems as $item) {
-                        if (preg_match('/<span class="episode-item__number">\s*' . $episode . '\s*<\/span>/i', $item[2])) {
-                            $matched_ep_url = $item[1];
-                            break;
+                    $series_html = http_get($matched_url, ['headers' => $headers, 'timeout' => 6]);
+                    if (!$series_html) continue;
+
+                    // Localizar el bloque de la temporada: id="season-{season}"
+                    $matched_ep_url = null;
+                    if (preg_match('/id="season-' . $season . '"(.*?)(?:id="season-\d+"|(?:\s*<\/div>\s*){2,}|$)/is', $series_html, $mSeasonBlock)) {
+                        preg_match_all('/<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/is', $mSeasonBlock[1], $epItems, PREG_SET_ORDER);
+                        foreach ($epItems as $item) {
+                            if (preg_match('/<span class="episode-item__number">\s*' . $episode . '\s*<\/span>/i', $item[2])) {
+                                $matched_ep_url = $item[1];
+                                break;
+                            }
+                            if (preg_match('/\/capitulo\/' . $episode . '\/?$/i', $item[1])) {
+                                $matched_ep_url = $item[1];
+                                break;
+                            }
                         }
-                        if (preg_match('/\/capitulo\/' . $episode . '\/?$/i', $item[1])) {
-                            $matched_ep_url = $item[1];
-                            break;
+                    }
+
+                    // Respaldo de búsqueda por URL de capítulo en toda la página
+                    if (!$matched_ep_url) {
+                        $fallback_pat = sprintf('/<a[^>]+href="([^"]*\/temporada\/%d\/capitulo\/%d\/?)"/i', $season, $episode);
+                        if (preg_match($fallback_pat, $series_html, $mFallback)) {
+                            $matched_ep_url = $mFallback[1];
                         }
                     }
-                }
 
-                // Respaldo de búsqueda por URL de capítulo en toda la página
-                if (!$matched_ep_url) {
-                    $fallback_pat = sprintf('/<a[^>]+href="([^"]*\/temporada\/%d\/capitulo\/%d\/?)"/i', $season, $episode);
-                    if (preg_match($fallback_pat, $series_html, $mFallback)) {
-                        $matched_ep_url = $mFallback[1];
-                    }
-                }
+                    if ($matched_ep_url) {
+                        if (strpos($matched_ep_url, 'http') !== 0) {
+                            $matched_ep_url = rtrim($host, '/') . $matched_ep_url;
+                        }
 
-                if ($matched_ep_url) {
-                    if (strpos($matched_ep_url, 'http') !== 0) {
-                        $matched_ep_url = rtrim($host, '/') . $matched_ep_url;
+                        $ep_html = http_get($matched_ep_url, ['headers' => ['Referer' => $matched_url], 'timeout' => 6]);
+                        if ($ep_html) {
+                            $formatted_title = sprintf('%s S%02dE%02d', $matched_title, $season, $episode);
+                            $extracted = $this->extractPlayers($ep_html, $matched_ep_url, $formatted_title, $host);
+                            $results = array_merge($results, $extracted);
+                        }
                     }
-
-                    $ep_html = http_get($matched_ep_url, ['headers' => ['Referer' => $matched_url], 'timeout' => 6]);
-                    if ($ep_html) {
-                        $formatted_title = sprintf('%s S%02dE%02d', $matched_title, $season, $episode);
-                        $extracted = $this->extractPlayers($ep_html, $matched_ep_url, $formatted_title, $host);
-                        $results = array_merge($results, $extracted);
-                    }
+                    break 2;
                 }
-                break;
             }
         }
 
@@ -241,10 +255,12 @@ class SeriesKaoProvider implements ProviderInterface
             }
             $server_name = $this->detectServerName($decoded_url, $srv);
 
+            $is_dl = (stripos($decoded_url, '/download') !== false || stripos($rawLi, 'download') !== false || stripos($srv, 'descarga') !== false);
+
             $links[] = [
                 'provider' => $this->getId(),
                 'provider_name' => 'SeriesKao',
-                'type' => 'streaming',
+                'type' => $is_dl ? 'direct' : 'streaming',
                 'title' => $item_title,
                 'server' => $server_name,
                 'quality' => '1080p Full HD',
@@ -296,8 +312,8 @@ class SeriesKaoProvider implements ProviderInterface
             $raw_lang = $group['video_language'] ?? 'LAT';
             $language = $this->formatLanguage($raw_lang);
 
-            $embeds = array_merge($group['sortedEmbeds'] ?? [], $group['downloadEmbeds'] ?? []);
-            foreach ($embeds as $emb) {
+            // Enlaces de streaming
+            foreach ($group['sortedEmbeds'] ?? [] as $emb) {
                 $crypto = $emb['link'] ?? '';
                 if (empty($crypto)) continue;
 
@@ -310,6 +326,29 @@ class SeriesKaoProvider implements ProviderInterface
                     'provider' => $this->getId(),
                     'provider_name' => 'SeriesKao',
                     'type' => 'streaming',
+                    'title' => $item_title,
+                    'server' => $server_name,
+                    'quality' => '1080p Full HD',
+                    'language' => $language,
+                    'url' => $decrypted_url,
+                    'size' => null
+                ];
+            }
+
+            // Enlaces de descarga directa
+            foreach ($group['downloadEmbeds'] ?? [] as $emb) {
+                $crypto = $emb['link'] ?? '';
+                if (empty($crypto)) continue;
+
+                $decrypted_url = $this->decryptAesCbc($crypto, $aesKey);
+                if (!$decrypted_url || strpos($decrypted_url, 'http') !== 0) continue;
+
+                $server_name = $this->detectServerName($decrypted_url, $emb['servername'] ?? '');
+
+                $links[] = [
+                    'provider' => $this->getId(),
+                    'provider_name' => 'SeriesKao',
+                    'type' => 'direct',
                     'title' => $item_title,
                     'server' => $server_name,
                     'quality' => '1080p Full HD',
@@ -370,7 +409,7 @@ class SeriesKaoProvider implements ProviderInterface
         $seen = [];
         $unique = [];
         foreach ($results as $item) {
-            $key = ($item['server'] ?? '') . '|' . ($item['url'] ?? '');
+            $key = ($item['type'] ?? '') . '|' . ($item['server'] ?? '') . '|' . ($item['url'] ?? '');
             if (!isset($seen[$key])) {
                 $seen[$key] = true;
                 $unique[] = $item;
@@ -379,4 +418,5 @@ class SeriesKaoProvider implements ProviderInterface
         return $unique;
     }
 }
+
 

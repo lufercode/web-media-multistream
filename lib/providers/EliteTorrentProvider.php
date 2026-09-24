@@ -189,48 +189,62 @@ class EliteTorrentProvider implements ProviderInterface
         if (!$this->isEnabled()) return [];
 
         $results = [];
-        $query = "{$title} {$season}x{$episode}";
-        $searchUrl = $this->hosts[0] . '/?s=' . urlencode($query);
+        $padded = sprintf('%dx%02d', $season, $episode);
+        $s_padded = sprintf('S%02dE%02d', $season, $episode);
+        $queries = [
+            "{$title} {$padded}",
+            "{$title} {$s_padded}",
+            "{$title} {$season}x{$episode}"
+        ];
 
-        $html = http_get($searchUrl, [
-            'timeout' => 7,
-            'headers' => [
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            ]
-        ]);
+        foreach ($this->hosts as $host) {
+            foreach ($queries as $query) {
+                if (connection_aborted()) exit;
+                $searchUrl = rtrim($host, '/') . '/?s=' . urlencode($query);
 
-        if (!$html || strlen($html) < 500) return [];
+                $html = http_get($searchUrl, [
+                    'timeout' => 7,
+                    'headers' => [
+                        'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    ]
+                ]);
 
-        if (!preg_match_all('/<div class="meta">.*?<a href="([^"]+)".*?title="([^"]+)".*?<\/div>/is', $html, $matches)) {
-            return [];
-        }
+                if (!$html || strlen($html) < 500) continue;
 
-        foreach (array_slice($matches[1], 0, 3) as $idx => $epUrl) {
-            $epTitle = html_entity_decode($matches[2][$idx], ENT_QUOTES, 'UTF-8');
+                if (!preg_match_all('/<div class="meta">.*?<a href="([^"]+)".*?title="([^"]+)".*?<\/div>/is', $html, $matches)) {
+                    continue;
+                }
 
-            $detailHtml = http_get($epUrl, ['timeout' => 7]);
-            if (!$detailHtml) continue;
+                foreach (array_slice($matches[1], 0, 3) as $idx => $epUrl) {
+                    $epTitle = html_entity_decode($matches[2][$idx], ENT_QUOTES, 'UTF-8');
 
-            $magnet = null;
-            if (preg_match('/href=["\'](magnet:\?[^"\']+)["\']/i', $detailHtml, $mm)) {
-                $magnet = html_entity_decode($mm[1]);
-            } elseif (preg_match('/href=["\']https?:\/\/acortame-esto\.com\/s\.php\?i=([^"\']+)["\']/i', $detailHtml, $am)) {
-                $magnet = $this->decodeAcortameEsto($am[1]);
+                    $detailHtml = http_get($epUrl, ['timeout' => 7]);
+                    if (!$detailHtml) continue;
+
+                    $magnet = null;
+                    if (preg_match('/href=["\'](magnet:\?[^"\']+)["\']/i', $detailHtml, $mm)) {
+                        $magnet = html_entity_decode($mm[1]);
+                    } elseif (preg_match('/href=["\']https?:\/\/acortame-esto\.com\/s\.php\?i=([^"\']+)["\']/i', $detailHtml, $am)) {
+                        $magnet = $this->decodeAcortameEsto($am[1]);
+                    }
+
+                    if (!$magnet || strpos($magnet, 'magnet:?') !== 0) continue;
+
+                    $results[] = [
+                        'provider' => $this->getId(),
+                        'provider_name' => 'EliteTorrent (Torrent)',
+                        'type' => 'torrent',
+                        'title' => $epTitle,
+                        'server' => 'BitTorrent Magnet',
+                        'quality' => '720p / 1080p HDTV',
+                        'language' => 'Castellano / Latino',
+                        'url' => $magnet,
+                        'size' => null
+                    ];
+                }
+
+                if (!empty($results)) break 2;
             }
-
-            if (!$magnet || strpos($magnet, 'magnet:?') !== 0) continue;
-
-            $results[] = [
-                'provider' => $this->getId(),
-                'provider_name' => 'EliteTorrent (Torrent)',
-                'type' => 'torrent',
-                'title' => $epTitle,
-                'server' => 'BitTorrent Magnet',
-                'quality' => '720p / 1080p HDTV',
-                'language' => 'Castellano / Latino',
-                'url' => $magnet,
-                'size' => null
-            ];
         }
 
         return $results;

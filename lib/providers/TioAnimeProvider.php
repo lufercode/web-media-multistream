@@ -102,6 +102,39 @@ class TioAnimeProvider implements ProviderInterface
                 }
             }
 
+            // Extraer enlaces de descarga directa de table-downloads
+            if (preg_match('/<table[^>]*table-downloads[^>]*>(.*?)<\/table>/is', $ep_html, $mTable)) {
+                preg_match_all('/<tr[^>]*>(.*?)<\/tr>/is', $mTable[1], $rows);
+                foreach ($rows[1] as $row) {
+                    if (!preg_match('/<a[^>]+href="([^"]+)"/i', $row, $mLink)) continue;
+                    $dl_url = trim($mLink[1]);
+                    if (empty($dl_url) || strpos($dl_url, 'http') === false) continue;
+                    if (stripos($dl_url, 'zippyshare.com') !== false) continue;
+
+                    preg_match_all('/<td[^>]*>(.*?)<\/td>/is', $row, $cols);
+                    $srv = !empty($cols[1][0]) ? trim(strip_tags($cols[1][0])) : 'Direct';
+                    $raw_lang = !empty($cols[1][1]) ? trim(strip_tags($cols[1][1])) : '';
+                    $lang = 'Japonés (Subtitulado)';
+                    if (stripos($raw_lang, 'lat') !== false) {
+                        $lang = 'Español Latino';
+                    } elseif (stripos($raw_lang, 'esp') !== false || stripos($raw_lang, 'castellano') !== false) {
+                        $lang = 'Español Castellano';
+                    }
+
+                    $results[] = [
+                        'provider' => $this->getId(),
+                        'provider_name' => 'TioAnime',
+                        'type' => 'direct',
+                        'title' => "{$att['title']} Ep. {$target_ep}",
+                        'server' => ucfirst($srv),
+                        'quality' => '1080p Full HD',
+                        'language' => $lang,
+                        'url' => $dl_url,
+                        'size' => null
+                    ];
+                }
+            }
+
             if (!empty($results)) break;
         }
 

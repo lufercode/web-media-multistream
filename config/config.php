@@ -94,6 +94,10 @@ $PROVIDERS_CONFIG = [
     'poseidonhd' => [
         'enabled' => true,
         'name' => 'PoseidonHD (Películas y Series HD / Alfa)'
+    ],
+    'nyaa' => [
+        'enabled' => true,
+        'name' => 'Nyaa (Anime Torrents HD / Multi-Sub)'
     ]
 ];
 
