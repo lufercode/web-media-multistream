@@ -1400,6 +1400,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (id.includes('elitetorrent')) return 'fas fa-crown text-warning';
             if (id.includes('yts')) return 'fas fa-film text-info';
             if (id.includes('nyaa')) return 'fas fa-paw text-danger';
+            if (id.includes('thepiratebay') || id.includes('piratebay') || id.includes('tpb')) return 'fas fa-ship text-warning';
             return 'fas fa-magnet text-warning';
         }
         if (id.includes('cuevana')) return 'fas fa-play-circle text-primary';
@@ -1632,7 +1633,8 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 'local_cdn', name: 'CDN Propio', type: 'direct' },
             { id: 'cuevana', name: 'Cuevana', type: 'streaming' },
             { id: 'pelispedia', name: 'PelisPedia', type: 'streaming' },
-            { id: 'cinecalidad', name: 'Cinecalidad', type: 'mixed' },
+            { id: 'cinecalidad', name: 'Cinecalidad (Dual Latino)', type: 'mixed' },
+            { id: 'thepiratebay', name: 'The Pirate Bay (Dual Latino)', type: 'torrent' },
             { id: 'yts', name: 'YTS (YIFY)', type: 'torrent' },
             { id: 'elitetorrent', name: 'EliteTorrent', type: 'torrent' },
             { id: 'dontorrent', name: 'DonTorrent', type: 'torrent' },
@@ -1923,9 +1925,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Ordenar proveedores por prioridad y velocidad esperada
         const priorityOrder = [
-            'local_cdn', 'yts', 'cinecalidad', 'cuevana', 'allpeliculas', 
+            'local_cdn', 'cinecalidad', 'thepiratebay', 'yts', 'cuevana', 'allpeliculas', 
             'pelispedia', 'hacktorrent', 'elitetorrent', 'dontorrent', 
-            'lamovie', 'gnula', 'serieskao', 'retrotve', 'anime', 'tioanime'
+            'lamovie', 'gnula', 'serieskao', 'retrotve', 'anime', 'tioanime', 'nyaa'
         ];
         
         const sortedProviders = [...providers].sort((a, b) => {

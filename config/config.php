@@ -98,6 +98,10 @@ $PROVIDERS_CONFIG = [
     'nyaa' => [
         'enabled' => true,
         'name' => 'Nyaa (Anime Torrents HD / Multi-Sub)'
+    ],
+    'thepiratebay' => [
+        'enabled' => true,
+        'name' => 'The Pirate Bay (Dual Latino / 4K / HD)'
     ]
 ];
 

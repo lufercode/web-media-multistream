@@ -9,9 +9,9 @@ class CinecalidadProvider implements ProviderInterface
      * Cualquier dominio puede contener tanto servidores de streaming como torrents (4K/1080p) y descargas directas.
      */
     private array $hosts = [
-        'https://cinecalidad.tel/',
         'https://www.cinecalidad.ro/',
-        'https://www.cinecalidad.vg/',
+        'https://cinecalidad.re/',
+        'https://cinecalidad.fun/',
         'https://www.cinecalidad.my/'
     ];
 
@@ -53,8 +53,10 @@ class CinecalidadProvider implements ProviderInterface
         }
 
         $all_results = [];
-        $query_clean = preg_replace('/[^\w\s]/u', ' ', $title);
-        $query_clean = trim(preg_replace('/\s+/', ' ', $query_clean));
+        $search_titles = array_unique(array_filter([
+            trim($title),
+            trim(preg_replace('/^(the|los|las|el|la)\s+/i', '', $title))
+        ]));
 
         $has_streaming = false;
         $has_4k_torrent = false;
@@ -62,69 +64,39 @@ class CinecalidadProvider implements ProviderInterface
         foreach ($this->hosts as $host) {
             if (connection_aborted()) exit;
 
-            // Si ya encontramos streaming y torrent 4K UHD, evitamos peticiones redundantes
             if ($has_streaming && $has_4k_torrent) {
                 break;
             }
 
-            $search_url = rtrim($host, '/') . '/?s=' . urlencode($query_clean);
-            $html = http_get($search_url, ['timeout' => 4]);
-            if (!$html || strlen($html) < 300) {
-                continue;
-            }
+            foreach ($search_titles as $search_term) {
+                $query_clean = preg_replace('/[^\w\s]/u', ' ', $search_term);
+                $query_clean = trim(preg_replace('/\s+/', ' ', $query_clean));
 
-            $matched_url = null;
-            $matched_title = null;
-
-            // 1. Formato WordPress / LiteSpeed (artículos con <article>)
-            if (preg_match_all('/<article[^>]*>(.*?)<\/article>/is', $html, $articles) && !empty($articles[0])) {
-                foreach ($articles[0] as $art) {
-                    if (connection_aborted()) exit;
-
-                    if (!preg_match('/href=(["\']?)(https?:\/\/[^"\'\s>]*\/(?:pelicula|movies)\/[^"\'\s>]+)\1/i', $art, $hm)) {
-                        continue;
-                    }
-                    $movie_url = $hm[2];
-
-                    $movie_title = '';
-                    if (preg_match('/<span class="sr-only">(.*?)<\/span>/is', $art, $sm)) {
-                        $movie_title = trim(strip_tags($sm[1]));
-                    } elseif (preg_match('/<h[1-6][^>]*>(.*?)<\/h[1-6]>/is', $art, $tm)) {
-                        $movie_title = trim(strip_tags($tm[1]));
-                    } elseif (preg_match('/alt=(["\']?)([^"\'\>]+)\1/i', $art, $am)) {
-                        $movie_title = trim($am[2]);
-                    }
-
-                    $cand_year = null;
-                    if (preg_match('/\b(19\d{2}|20\d{2})\b/', $art . ' ' . $movie_url, $ym)) {
-                        $cand_year = $ym[1];
-                    }
-
-                    $clean_t = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $movie_title);
-                    $clean_t = preg_replace('/\[.*?\]/', '', $clean_t);
-                    $clean_t = trim($clean_t);
-
-                    if (is_strict_title_match($title, $clean_t, $year, $cand_year)) {
-                        $matched_url = $movie_url;
-                        $matched_title = $movie_title ?: $title;
-                        break;
-                    }
+                $search_url = rtrim($host, '/') . '/?s=' . urlencode($query_clean);
+                $html = http_get($search_url, ['timeout' => 4]);
+                if (!$html || strlen($html) < 300) {
+                    continue;
                 }
-            }
 
-            // 2. Formato clásico (enlaces directos <a>)
-            if (!$matched_url) {
-                preg_match_all('/<a[^>]+href=(["\']?)(https?:\/\/[^"\'\s>]*\/(?:pelicula|movies)\/[^"\'\s>]+)\1[^>]*>(.*?)<\/a>/is', $html, $matches, PREG_SET_ORDER);
+                $matched_url = null;
+                $matched_title = null;
+
+                preg_match_all('/<a[^>]+href=([\'"]?)(https?:\/\/[^\'"\s>]*(?:pelicula|movies)\/[^\'"\s>]+)\1[^>]*>(.*?)<\/a>/is', $html, $matches, PREG_SET_ORDER);
                 foreach ($matches as $m) {
                     if (connection_aborted()) exit;
 
                     $movie_url = $m[2];
+                    $inner = $m[3];
                     $movie_title = '';
-                    if (preg_match('/alt=(["\']?)([^"\'\>]+)\1/i', $m[3], $alt)) {
-                        $movie_title = $alt[2];
+                    if (preg_match('/alt=([\'"]?)([^\'"\>]+)\1/i', $inner, $alt)) {
+                        $movie_title = html_entity_decode($alt[2], ENT_QUOTES, 'UTF-8');
+                    } elseif (preg_match('/<span[^>]*class=[\'"]sr-only[\'"][^>]*>(.*?)<\/span>/is', $inner, $sm)) {
+                        $movie_title = trim(strip_tags($sm[1]));
                     } else {
-                        $movie_title = trim(strip_tags($m[3]));
+                        $movie_title = trim(strip_tags($inner));
                     }
+
+                    if (empty($movie_title)) continue;
 
                     $cand_year = null;
                     if (preg_match('/\b(19\d{2}|20\d{2})\b/', $movie_title . ' ' . $movie_url, $ym)) {
@@ -133,31 +105,36 @@ class CinecalidadProvider implements ProviderInterface
 
                     $clean_t = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $movie_title);
                     $clean_t = preg_replace('/\[.*?\]/', '', $clean_t);
+                    $clean_t = preg_replace('/&lt;!--.*?--&gt;/i', '', $clean_t);
                     $clean_t = trim($clean_t);
 
-                    if (is_strict_title_match($title, $clean_t, $year, $cand_year)) {
+                    $is_match = false;
+                    foreach ($search_titles as $st) {
+                        if (is_strict_title_match($st, $clean_t, $year, $cand_year) || stripos($clean_t, $st) !== false) {
+                            $is_match = true;
+                            break;
+                        }
+                    }
+
+                    if ($is_match) {
                         $matched_url = $movie_url;
                         $matched_title = $movie_title ?: $title;
                         break;
                     }
                 }
-            }
 
-            if (!$matched_url) {
-                continue;
-            }
-
-            // Extraer TODOS los tipos de enlaces que contenga el detalle (Streaming, Torrents, Directas)
-            $detail_html = http_get($matched_url, ['timeout' => 5]);
-            if (!$detail_html) {
-                continue;
-            }
-
-            $extracted = $this->extractAllSourcesFromDetail($detail_html, $matched_title, $host);
-            foreach ($extracted as $src) {
-                if ($src['type'] === 'streaming') $has_streaming = true;
-                if ($src['type'] === 'torrent' && stripos($src['quality'], '4K') !== false) $has_4k_torrent = true;
-                $all_results[] = $src;
+                if ($matched_url) {
+                    $detail_html = http_get($matched_url, ['timeout' => 5]);
+                    if ($detail_html) {
+                        $extracted = $this->extractAllSourcesFromDetail($detail_html, $matched_title, $host);
+                        foreach ($extracted as $src) {
+                            if ($src['type'] === 'streaming') $has_streaming = true;
+                            if (stripos($src['quality'], '4K') !== false) $has_4k_torrent = true;
+                            $all_results[] = $src;
+                        }
+                    }
+                    break 2;
+                }
             }
         }
 

@@ -37,13 +37,16 @@ class NyaaProvider implements ProviderInterface
         $results = [];
         $seen_hashes = [];
 
-        // Buscar primero en categoría 1_2 (Anime - English/Multi translated)
-        $categories = ['1_2', '0_0'];
+        // Búsqueda priorizando versiones con doblaje Latino y multi-idioma
+        $movieQueries = [
+            $clean_title . ' Latino',
+            $clean_title
+        ];
 
-        foreach ($categories as $cat) {
+        foreach (array_unique($movieQueries) as $q) {
             if (connection_aborted()) exit;
 
-            $url = $this->host . '?f=0&c=' . $cat . '&q=' . urlencode($clean_title);
+            $url = $this->host . '?f=0&c=0_0&q=' . urlencode($q);
             $html = http_get($url, [
                 'timeout' => 8,
                 'headers' => [
@@ -127,6 +130,9 @@ class NyaaProvider implements ProviderInterface
         $s_padded = sprintf('S%02dE%02d', $season, $episode);
 
         $queries = [];
+        // Priorizar versiones con audio Latino
+        $queries[] = "{$clean_title} Latino {$padded_ep}";
+        $queries[] = "{$clean_title} Latino {$s_padded}";
         $queries[] = "{$clean_title} {$s_padded}";
 
         if ($season === 1) {
@@ -146,7 +152,8 @@ class NyaaProvider implements ProviderInterface
         foreach (array_unique($queries) as $q) {
             if (connection_aborted()) exit;
 
-            $url = $this->host . '?f=0&c=1_2&q=' . urlencode($q);
+            // c=0_0 busca en todas las categorías, incluyendo 1_3 (Non-English translated / Latino)
+            $url = $this->host . '?f=0&c=0_0&q=' . urlencode($q);
             $html = http_get($url, [
                 'timeout' => 8,
                 'headers' => [
@@ -255,14 +262,14 @@ class NyaaProvider implements ProviderInterface
 
     private function detectLanguage(string $title): string
     {
-        if (stripos($title, 'Dual-Audio') !== false || stripos($title, 'Dual Audio') !== false) {
-            return 'Dual Audio (Jap/Eng/Sub)';
-        }
         if (stripos($title, 'Latino') !== false || stripos($title, 'Español Latino') !== false) {
-            return 'Español Latino';
+            return (stripos($title, 'Dual') !== false || stripos($title, 'Multi') !== false) ? 'Español Latino (Dual)' : 'Español Latino';
         }
         if (stripos($title, 'Castellano') !== false || stripos($title, 'Spanish') !== false) {
             return 'Español Castellano';
+        }
+        if (stripos($title, 'Dual-Audio') !== false || stripos($title, 'Dual Audio') !== false) {
+            return 'Dual Audio (Jap/Eng/Sub)';
         }
         if (stripos($title, 'Multi-Sub') !== false || stripos($title, 'Multi Sub') !== false || stripos($title, 'Multi-Audio') !== false) {
             return 'Multi-Sub (Inc. Español)';
