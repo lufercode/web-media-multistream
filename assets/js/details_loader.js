@@ -370,12 +370,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             autoNextTriggered = false;
             hasDismissedManualIntro = false;
-            activeSkipTimes = null;
-
             const btnNextModal = document.getElementById('btnNextEpisodeModal');
             if (btnNextModal) {
                 btnNextModal.classList.add('d-none');
                 btnNextModal.classList.remove('d-inline-flex');
+            }
+
+            if (window._torrentStatusPollInterval) {
+                clearInterval(window._torrentStatusPollInterval);
+                window._torrentStatusPollInterval = null;
+            }
+            if (window._activeTorrentStreamHash) {
+                const hToStop = window._activeTorrentStreamHash;
+                window._activeTorrentStreamHash = null;
+                fetch(`api/torrent_stream.php?action=stop&infoHash=${hToStop}`, { method: 'POST' }).catch(() => {});
             }
 
             if (window._currentArtplayer) {
@@ -1378,6 +1386,210 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const openTorrentStreamModal = async (magnetUrl, title, server, provider, thumbnail, episodeMeta) => {
+        const modalEl = document.getElementById('videoPlayerModal');
+        const iframe = document.getElementById('playerIframe');
+        const artContainer = document.getElementById('artplayerContainer');
+        const titleTextEl = document.getElementById('playerModalContentTitle');
+        const badgesEl = document.getElementById('playerModalBadges');
+        const extLinkBtn = document.getElementById('btnExternalLink');
+        const provLabel = provider || 'Torrent';
+
+        if (window._torrentStatusPollInterval) {
+            clearInterval(window._torrentStatusPollInterval);
+            window._torrentStatusPollInterval = null;
+        }
+
+        if (window._currentArtplayer) {
+            try {
+                if (window._currentArtplayer.hls) window._currentArtplayer.hls.destroy();
+                window._currentArtplayer.destroy(false);
+            } catch (e) {}
+            window._currentArtplayer = null;
+        }
+
+        if (iframe) {
+            iframe.src = 'about:blank';
+            iframe.style.display = 'none';
+        }
+
+        if (titleTextEl) {
+            titleTextEl.textContent = title;
+            titleTextEl.title = title;
+        }
+
+        if (badgesEl) {
+            badgesEl.innerHTML = `
+                <span class="badge bg-warning text-dark"><i class="fas fa-magnet me-1"></i>${provLabel}</span>
+                <span class="badge bg-secondary"><i class="fas fa-server me-1"></i>${server}</span>
+                <span class="badge bg-info text-dark" id="torrentSeedsBadge"><i class="fas fa-spinner fa-spin me-1"></i>Conectando a BitTorrent...</span>
+            `;
+        }
+
+        if (extLinkBtn) {
+            extLinkBtn.href = magnetUrl;
+            extLinkBtn.title = 'Abrir magnet en cliente externo (qBittorrent / VLC)';
+        }
+
+        const isCurrentlyMinimized = modalEl && modalEl.classList.contains('player-minimized');
+        if (!isCurrentlyMinimized) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: 'static', focus: false });
+            modal.show();
+        }
+
+        // Renderizar HUD de buffer dinámico
+        artContainer.style.display = 'block';
+        artContainer.innerHTML = `
+            <div id="torrentBufferHUD" class="d-flex flex-column align-items-center justify-content-center text-center p-4" style="min-height: 480px; height: 100%; background: radial-gradient(circle, #181926 0%, #0c0d14 100%);">
+                <div class="spinner-grow text-warning mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+                <h4 class="text-white fw-bold mb-1"><i class="fas fa-magnet text-warning me-2"></i>Conectando al enjambre BitTorrent</h4>
+                <p class="text-secondary small mb-3" id="torrentStatusMsg">Iniciando descarga secuencial y contactando semillas de alta velocidad...</p>
+                <div class="progress w-75 bg-dark border border-secondary mb-2" style="height: 16px;">
+                    <div id="torrentBufferBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning text-dark fw-bold" style="width: 0%; font-size: 0.75rem;">0%</div>
+                </div>
+                <div class="d-flex flex-wrap justify-content-center gap-2 text-secondary small mt-2">
+                    <span class="badge bg-dark border border-secondary py-2 px-3"><i class="fas fa-users text-info me-1"></i>Semillas: <strong class="text-white" id="torrentPeersCount">0</strong></span>
+                    <span class="badge bg-dark border border-secondary py-2 px-3"><i class="fas fa-tachometer-alt text-success me-1"></i>Velocidad: <strong class="text-white" id="torrentSpeedVal">0 KB/s</strong></span>
+                    <span class="badge bg-dark border border-secondary py-2 px-3"><i class="fas fa-hdd text-warning me-1"></i>Descargado: <strong class="text-white" id="torrentDownloadedVal">0 MB</strong></span>
+                </div>
+                <small class="text-muted mt-3"><i class="fas fa-info-circle me-1"></i>La reproducción comenzará automáticamente en cuanto el primer fragmento esté listo.</small>
+            </div>
+        `;
+
+        try {
+            const loadRes = await fetch('api/torrent_stream.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'load', magnet: magnetUrl })
+            });
+            const loadData = await loadRes.json();
+
+            if (!loadData || loadData.status !== 'success' || !loadData.infoHash) {
+                throw new Error(loadData?.error || 'No se pudo inicializar el torrent.');
+            }
+
+            const infoHash = loadData.infoHash;
+            window._activeTorrentStreamHash = infoHash;
+
+            const barEl = document.getElementById('torrentBufferBar');
+            const peersEl = document.getElementById('torrentPeersCount');
+            const speedEl = document.getElementById('torrentSpeedVal');
+            const downEl = document.getElementById('torrentDownloadedVal');
+            const msgEl = document.getElementById('torrentStatusMsg');
+            const seedsBadge = document.getElementById('torrentSeedsBadge');
+
+            let playerStarted = false;
+            let pollAttempts = 0;
+
+            window._torrentStatusPollInterval = setInterval(async () => {
+                pollAttempts++;
+                try {
+                    const sRes = await fetch(`api/torrent_stream.php?action=status&infoHash=${infoHash}`);
+                    if (!sRes.ok) return;
+                    const sData = await sRes.json();
+                    if (!sData || sData.status !== 'success') return;
+
+                    if (peersEl) peersEl.textContent = sData.peers || 0;
+                    if (speedEl) speedEl.textContent = sData.downloadSpeed || '0 KB/s';
+                    if (downEl) downEl.textContent = sData.downloadedSize || '0 MB';
+
+                    const pct = sData.initialBufferPct || 0;
+                    if (barEl) {
+                        barEl.style.width = `${pct}%`;
+                        barEl.textContent = `${pct}%`;
+                    }
+
+                    if (seedsBadge) {
+                        seedsBadge.innerHTML = `<i class="fas fa-arrow-up text-success me-1"></i>${sData.peers} seeds · ${sData.downloadSpeed}`;
+                    }
+
+                    if (msgEl && sData.name) {
+                        msgEl.textContent = `Descargando: ${sData.name} (${sData.downloadedSize} / ${sData.totalSize})`;
+                    }
+
+                    // Actualizar badge en ArtPlayer si ya está reproduciendo
+                    const artStats = document.getElementById('artTorrentStats');
+                    if (artStats) {
+                        artStats.textContent = `${sData.peers} seeds · ${sData.downloadSpeed}`;
+                    }
+
+                    // Iniciar ArtPlayer en cuanto esté listo
+                    if (sData.ready && !playerStarted) {
+                        playerStarted = true;
+                        const streamUrl = sData.streamUrl;
+                        console.log(`%c✨ [Torrent Stream] Búfer listo, iniciando ArtPlayer: ${streamUrl}`, 'color: #f1c40f; font-weight: bold;');
+
+                        loadArtplayerScript(() => {
+                            artContainer.innerHTML = '';
+                            const art = new Artplayer({
+                                container: '#artplayerContainer',
+                                url: streamUrl,
+                                type: 'auto',
+                                title: sData.name || title,
+                                poster: thumbnail || '',
+                                autoplay: true,
+                                autoSize: false,
+                                autoMini: false,
+                                loop: false,
+                                flip: true,
+                                playbackRate: true,
+                                aspectRatio: true,
+                                screenshot: true,
+                                setting: true,
+                                hotkey: true,
+                                pip: true,
+                                mutex: true,
+                                fullscreen: true,
+                                fullscreenWeb: true,
+                                subtitleOffset: true,
+                                miniProgressBar: true,
+                                playsInline: true,
+                                lock: true,
+                                fastForward: true,
+                                autoPlayback: true,
+                                theme: '#f39c12',
+                                controls: [
+                                    {
+                                        name: 'torrent-stats',
+                                        position: 'right',
+                                        html: `<span class="badge bg-warning text-dark fw-bold px-2 py-1" style="font-size: 0.75rem;"><i class="fas fa-magnet me-1"></i><span id="artTorrentStats">${sData.peers} seeds · ${sData.downloadSpeed}</span></span>`,
+                                        tooltip: `Semillas: ${sData.peers} · Velocidad: ${sData.downloadSpeed}`
+                                    }
+                                ]
+                            });
+
+                            art.on('video:timeupdate', () => {
+                                if (art.currentTime >= 10 && episodeMeta) {
+                                    triggerAutoProgress(episodeMeta);
+                                }
+                            });
+
+                            window._currentArtplayer = art;
+                        });
+                    }
+
+                    // Si pasaron 35 segundos y tiene 0 seeds
+                    if (!playerStarted && pollAttempts > 40 && (!sData.peers || sData.peers === 0)) {
+                        if (msgEl) {
+                            msgEl.className = 'text-warning small mb-3';
+                            msgEl.innerHTML = 'El enjambre tiene pocas semillas activas en este momento. La descarga puede demorar un poco más o puedes abrirlo con tu cliente torrent externo.';
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[TorrentStatus] Error en sondeo:', e);
+                }
+            }, 800);
+
+        } catch (err) {
+            console.error('[TorrentStream] Error:', err);
+            const msgEl = document.getElementById('torrentStatusMsg');
+            if (msgEl) {
+                msgEl.className = 'text-danger small mb-3';
+                msgEl.innerHTML = `Error: ${err.message || 'No se pudo conectar al enjambre de BitTorrent'}.<br><a href="${magnetUrl}" class="btn btn-sm btn-outline-warning mt-2"><i class="fas fa-external-link-alt me-1"></i>Abrir en qBittorrent</a>`;
+            }
+        }
+    };
+
     let blockUidCounter = 0;
 
     const cleanProviderName = (src) => {
@@ -1900,22 +2112,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 const qlt = src.quality || 'HD';
                 const lang = src.language ? `<span class="badge bg-warning text-dark ms-1">${src.language}</span>` : '';
                 const size = src.size ? `<span class="badge bg-secondary ms-1">${src.size}</span>` : '';
+                const seeds = (src.seeders !== undefined && src.seeders !== null && src.seeders > 0) ? `<span class="badge bg-dark border border-success text-success ms-1"><i class="fas fa-arrow-up me-1"></i>${src.seeders}</span>` : '';
 
-                const a = document.createElement('a');
-                a.href = url;
-                a.className = 'btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center py-1 px-2';
-                a.title = 'Abrir en cliente torrent (qBittorrent, VLC)';
-                a.innerHTML = `
-                    <i class="fas fa-magnet me-1"></i>
-                    <strong class="me-1">${srv}</strong>
-                    <span class="badge bg-dark border border-warning text-warning ms-1">${qlt}</span>
-                    ${size}
-                    ${lang}
-                `;
-                a.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                });
-                slot.appendChild(a);
+                const itemBox = document.createElement('div');
+                itemBox.className = 'd-inline-flex align-items-center gap-1 bg-dark bg-opacity-75 border border-secondary border-opacity-50 rounded p-1 pop-in-card mb-1';
+
+                if (url && url.startsWith('magnet:?')) {
+                    // Botón principal: Ver en ArtPlayer con streaming secuencial
+                    const btnPlay = document.createElement('button');
+                    btnPlay.type = 'button';
+                    btnPlay.className = 'btn btn-sm btn-warning text-dark fw-bold d-inline-flex align-items-center py-1 px-2 shadow-sm';
+                    btnPlay.title = 'Reproducir directamente en el navegador con ArtPlayer';
+                    btnPlay.innerHTML = `
+                        <i class="fas fa-play-circle me-1"></i>
+                        <span>Ver en Reproductor</span>
+                        <span class="badge bg-black text-warning ms-1">${qlt}</span>
+                        ${size}
+                        ${lang}
+                        ${seeds}
+                    `;
+                    btnPlay.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openTorrentStreamModal(url, safeTitle, srv, src.provider_name || 'Torrent', safeThumb, episodeMeta);
+                    });
+                    itemBox.appendChild(btnPlay);
+
+                    // Botón secundario: Enlace externo para qBittorrent o VLC
+                    const aExt = document.createElement('a');
+                    aExt.href = url;
+                    aExt.className = 'btn btn-sm btn-outline-secondary text-warning py-1 px-2';
+                    aExt.title = 'Abrir en cliente torrent externo (qBittorrent / VLC)';
+                    aExt.innerHTML = '<i class="fas fa-external-link-alt"></i>';
+                    aExt.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                    });
+                    itemBox.appendChild(aExt);
+                } else {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.className = 'btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center py-1 px-2';
+                    a.title = 'Descargar torrent';
+                    a.innerHTML = `
+                        <i class="fas fa-download me-1"></i>
+                        <strong class="me-1">${srv}</strong>
+                        <span class="badge bg-dark border border-warning text-warning ms-1">${qlt}</span>
+                        ${size}
+                        ${lang}
+                        ${seeds}
+                    `;
+                    a.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                    });
+                    itemBox.appendChild(a);
+                }
+
+                slot.appendChild(itemBox);
             });
 
             torrentBox.appendChild(cardWrapper);

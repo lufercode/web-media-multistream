@@ -45,3 +45,15 @@ data/progress/*
 !data/progress/.gitkeep
 data/watchlist/*
 !data/watchlist/.gitkeep
+
+# Caché de streaming de torrents
+data/torrent_cache/*
+!data/torrent_cache/.gitkeep
+temp_cache/
+
+# Dependencias Node.js
+node_modules/
+**/node_modules/
+package-lock.json
+**/package-lock.json
+
