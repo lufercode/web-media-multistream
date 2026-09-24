@@ -18,6 +18,24 @@ $DAEMON_HOST = '127.0.0.1';
 $DAEMON_PORT = 8889;
 $DAEMON_BASE = "http://{$DAEMON_HOST}:{$DAEMON_PORT}";
 
+function findNodeBinary(): string
+{
+    $candidates = [
+        'C:/laragon/bin/nodejs/node-v22/node.exe',
+        'C:/laragon/bin/nodejs/node-v20/node.exe',
+        'C:/Program Files/nodejs/node.exe',
+        'C:/Program Files (x86)/nodejs/node.exe'
+    ];
+    foreach ($candidates as $cand) {
+        if (file_exists($cand)) return $cand;
+    }
+    $laragon_node = glob('C:/laragon/bin/nodejs/*/node.exe');
+    if (!empty($laragon_node) && file_exists($laragon_node[0])) {
+        return $laragon_node[0];
+    }
+    return 'node';
+}
+
 /**
  * Comprueba si el daemon Node.js está respondiendo; si no, lo inicia en segundo plano.
  */
@@ -36,8 +54,9 @@ function ensureDaemonRunning(string $daemon_base, int $timeout_sec = 4): bool
 
     if (strncasecmp(PHP_OS, 'WIN', 3) === 0) {
         $win_tools = str_replace('/', '\\', $tools_dir);
-        $ps_cmd = 'powershell.exe -WindowStyle Hidden -NoProfile -Command "Start-Process node -ArgumentList \'server.js\' -WorkingDirectory \'' . $win_tools . '\'"';
-        pclose(popen($ps_cmd, 'r'));
+        $node_bin = findNodeBinary();
+        $cmd = 'cmd.exe /c "cd /d ' . $win_tools . ' && start "" /B "' . $node_bin . '" server.js > nul 2>&1"';
+        pclose(popen($cmd, 'r'));
     } else {
         // En Linux / macOS
         $cmd = 'cd "' . $tools_dir . '" && node server.js > /dev/null 2>&1 &';
@@ -127,6 +146,8 @@ if ($action === 'status') {
         echo json_encode(['status' => 'error', 'error' => 'Falta el parámetro infoHash']);
         exit;
     }
+
+    ensureDaemonRunning($DAEMON_BASE, 2);
 
     $cleanHash = strtolower(trim($infoHash));
     $status_json = @http_get("{$DAEMON_BASE}/status/{$cleanHash}", ['timeout' => 2]);

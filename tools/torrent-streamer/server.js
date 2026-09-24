@@ -36,7 +36,7 @@ function getMimeType(filename) {
         case '.webm':
             return 'video/webm';
         case '.mkv':
-            return 'video/x-matroska';
+            return 'video/webm';
         case '.avi':
             return 'video/x-msvideo';
         case '.mov':

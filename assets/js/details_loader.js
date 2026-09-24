@@ -1564,6 +1564,27 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
                             });
 
+                            art.on('video:error', () => {
+                                console.warn('[ArtPlayer] Error de reproducción nativa del navegador en este archivo.');
+                                const errBox = document.createElement('div');
+                                errBox.className = 'd-flex flex-column align-items-center justify-content-center p-4 text-center text-light pop-in-card';
+                                errBox.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.92); z-index: 99;';
+                                errBox.innerHTML = `
+                                    <i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2.8rem;"></i>
+                                    <h5 class="fw-bold text-white mb-2">Formato o Codec no compatible con este navegador</h5>
+                                    <p class="text-secondary small mb-3" style="max-width: 500px;">
+                                        Este archivo torrent viene codificado en un formato avanzado (ej. <strong>4K x265 / MKV</strong> o audio multicanal <strong>Dolby 5.1 / DTS</strong>) que tu navegador no puede decodificar de forma nativa.<br><br>
+                                        💡 <em>Te sugerimos elegir una opción <strong>1080p MP4</strong> o abrir este magnet directamente en <strong>VLC / qBittorrent</strong>.</em>
+                                    </p>
+                                    <div class="d-flex gap-2">
+                                        <a href="${magnetUrl}" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm">
+                                            <i class="fas fa-external-link-alt me-1"></i> Abrir en VLC / qBittorrent
+                                        </a>
+                                    </div>
+                                `;
+                                artContainer.appendChild(errBox);
+                            });
+
                             window._currentArtplayer = art;
                         });
                     }
