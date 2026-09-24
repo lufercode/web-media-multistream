@@ -134,6 +134,10 @@ foreach ($details['genres'] ?? [] as $g) {
     </div>
 </div>
 
+<script>
+    window.TORRENT_PLAYER_MODE = '<?= defined("TORRENT_PLAYER_MODE") ? TORRENT_PLAYER_MODE : "webtor" ?>';
+</script>
+<script src="assets/js/webtor-embed.js?v=<?= file_exists(__DIR__ . '/assets/js/webtor-embed.js') ? filemtime(__DIR__ . '/assets/js/webtor-embed.js') : '1.0.0' ?>" defer></script>
 <script src="assets/js/hls.min.js?v=<?= file_exists(__DIR__ . '/assets/js/hls.min.js') ? filemtime(__DIR__ . '/assets/js/hls.min.js') : '1.5.8' ?>"></script>
 <script src="assets/js/artplayer.js?v=<?= file_exists(__DIR__ . '/assets/js/artplayer.js') ? filemtime(__DIR__ . '/assets/js/artplayer.js') : '5.4.0' ?>"></script>
 <script src="assets/js/details_loader.js?v=<?= file_exists(__DIR__ . '/assets/js/details_loader.js') ? filemtime(__DIR__ . '/assets/js/details_loader.js') : time() ?>" defer></script>

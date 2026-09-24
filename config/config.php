@@ -21,6 +21,12 @@ define('WATCHLIST_DIR', ROOT_DIR . '/data/watchlist');
 // Client ID de Google Cloud Console (web-media-multistream)
 define('GOOGLE_CLIENT_ID', '474518961918-0r1n29n2gegd6clc3etvidmp21t4c4kh.apps.googleusercontent.com');
 
+// Modo de reproducción para enlaces BitTorrent / Magnet
+// 'webtor': Reproductor en la nube Webtor.io (100% compatible con InfinityFree, móviles y sin dependencias Node en el host)
+// 'streamer': Servidor Node.js WebTorrent propio con ArtPlayer (para localhost o Render.com)
+// 'auto': Detección inteligente (usa streamer si está disponible, o Webtor como fallback)
+define('TORRENT_PLAYER_MODE', 'webtor');
+
 // Interruptores de Proveedores (Habilitar / Deshabilitar fuentes individuales)
 $PROVIDERS_CONFIG = [
     'local_cdn' => [

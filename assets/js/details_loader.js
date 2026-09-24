@@ -473,6 +473,32 @@ document.addEventListener('DOMContentLoaded', () => {
         document.head.appendChild(s);
     };
 
+    const loadWebtorScript = (onSuccess, onError) => {
+        if (window.webtor && typeof window.webtor.push === 'function') {
+            if (onSuccess) onSuccess();
+            return;
+        }
+        const s = document.createElement('script');
+        s.src = 'assets/js/webtor-embed.js';
+        s.charset = 'utf-8';
+        s.async = true;
+        s.onload = () => {
+            if (onSuccess) onSuccess();
+        };
+        s.onerror = () => {
+            const s2 = document.createElement('script');
+            s2.src = 'https://cdn.jsdelivr.net/npm/@webtor/embed-sdk-js/dist/index.min.js';
+            s2.charset = 'utf-8';
+            s2.async = true;
+            s2.onload = () => {
+                if (onSuccess) onSuccess();
+            };
+            s2.onerror = onError;
+            document.head.appendChild(s2);
+        };
+        document.head.appendChild(s);
+    };
+
     let _audioCtx = null;
     const _sourceNodeMap = new WeakMap();
 
@@ -1386,58 +1412,137 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const openTorrentStreamModal = async (magnetUrl, title, server, provider, thumbnail, episodeMeta) => {
-        const modalEl = document.getElementById('videoPlayerModal');
-        const iframe = document.getElementById('playerIframe');
+    const playWithWebtor = (magnetUrl, title, server, provLabel, thumbnail, episodeMeta) => {
         const artContainer = document.getElementById('artplayerContainer');
-        const titleTextEl = document.getElementById('playerModalContentTitle');
         const badgesEl = document.getElementById('playerModalBadges');
-        const extLinkBtn = document.getElementById('btnExternalLink');
-        const provLabel = provider || 'Torrent';
-
-        if (window._torrentStatusPollInterval) {
-            clearInterval(window._torrentStatusPollInterval);
-            window._torrentStatusPollInterval = null;
-        }
-
-        if (window._currentArtplayer) {
-            try {
-                if (window._currentArtplayer.hls) window._currentArtplayer.hls.destroy();
-                window._currentArtplayer.destroy(false);
-            } catch (e) {}
-            window._currentArtplayer = null;
-        }
-
-        if (iframe) {
-            iframe.src = 'about:blank';
-            iframe.style.display = 'none';
-        }
-
-        if (titleTextEl) {
-            titleTextEl.textContent = title;
-            titleTextEl.title = title;
-        }
 
         if (badgesEl) {
             badgesEl.innerHTML = `
                 <span class="badge bg-warning text-dark"><i class="fas fa-magnet me-1"></i>${provLabel}</span>
-                <span class="badge bg-secondary"><i class="fas fa-server me-1"></i>${server}</span>
+                <span class="badge bg-primary text-white"><i class="fas fa-cloud me-1"></i>Webtor Online</span>
                 <span class="badge bg-info text-dark" id="torrentSeedsBadge"><i class="fas fa-spinner fa-spin me-1"></i>Conectando a BitTorrent...</span>
+                <button type="button" class="btn btn-xs btn-outline-secondary text-light py-0 px-2 ms-1 border-secondary" id="btnSwitchToLocalStreamer" style="font-size: 0.72rem;" title="Cambiar a reproductor local (Node.js)">
+                    <i class="fas fa-exchange-alt me-1"></i>Modo Local
+                </button>
             `;
+            const btnSwitch = document.getElementById('btnSwitchToLocalStreamer');
+            if (btnSwitch) {
+                btnSwitch.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    localStorage.setItem('torrent_player_mode', 'streamer');
+                    openTorrentStreamModal(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+                });
+            }
         }
 
-        if (extLinkBtn) {
-            extLinkBtn.href = magnetUrl;
-            extLinkBtn.title = 'Abrir magnet en cliente externo (qBittorrent / VLC)';
+        artContainer.style.display = 'block';
+        artContainer.innerHTML = `
+            <div id="torrentBufferHUD" class="d-flex flex-column align-items-center justify-content-center text-center p-4" style="min-height: 500px; height: 100%; background: radial-gradient(circle, #181926 0%, #0c0d14 100%);">
+                <div class="spinner-grow text-warning mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+                <h4 class="text-white fw-bold mb-1"><i class="fas fa-cloud text-warning me-2"></i>Conectando a Webtor Cloud</h4>
+                <p class="text-secondary small mb-3">Estableciendo conexión P2P para reproducción directa en el navegador...</p>
+                <div class="progress w-75 bg-dark border border-secondary mb-2" style="height: 12px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 100%;"></div>
+                </div>
+                <small class="text-muted mt-2"><i class="fas fa-check-circle text-success me-1"></i>Sin descargas locales • Transcodificación automática en la nube</small>
+            </div>
+        `;
+
+        loadWebtorScript(() => {
+            artContainer.innerHTML = '<div id="webtorEmbedTarget" style="width: 100%; height: 100%; min-height: 500px;"></div>';
+            try {
+                window.webtor = window.webtor || [];
+                window.webtor.push({
+                    id: 'webtorEmbedTarget',
+                    magnet: magnetUrl,
+                    width: '100%',
+                    height: '100%',
+                    title: title,
+                    poster: thumbnail || '',
+                    lang: 'es',
+                    header: true,
+                    features: {
+                        subtitles: true,
+                        settings: true,
+                        fullscreen: true,
+                        playpause: true,
+                        currentTime: true,
+                        timeline: true,
+                        duration: true,
+                        volume: true,
+                        chromecast: true
+                    },
+                    on: function(e) {
+                        const seedsBadge = document.getElementById('torrentSeedsBadge');
+                        if (e.name === (window.webtor.TORRENT_FETCHED || 'torrent fetched')) {
+                            if (seedsBadge) {
+                                const peers = (e.data && e.data.totalPeers) ? `${e.data.totalPeers} seeds` : 'Enjambre Activo';
+                                seedsBadge.className = 'badge bg-success text-white';
+                                seedsBadge.innerHTML = `<i class="fas fa-check-circle me-1"></i>${peers}`;
+                            }
+                        } else if (e.name === (window.webtor.TORRENT_ERROR || 'torrent error')) {
+                            if (seedsBadge) {
+                                seedsBadge.className = 'badge bg-danger text-white';
+                                seedsBadge.innerHTML = `<i class="fas fa-exclamation-triangle me-1"></i>Error en torrent`;
+                            }
+                        } else if (e.name === (window.webtor.CURRENT_TIME || 'current time')) {
+                            if (typeof e.data === 'number' && e.data >= 10 && episodeMeta) {
+                                triggerAutoProgress(episodeMeta);
+                            }
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error('[Webtor] Error inicializando SDK:', err);
+                artContainer.innerHTML = `
+                    <div class="d-flex flex-column align-items-center justify-content-center p-4 text-center text-light" style="min-height: 500px; background: rgba(10, 10, 15, 0.95);">
+                        <i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2.5rem;"></i>
+                        <h5 class="fw-bold text-white mb-2">No se pudo inicializar Webtor</h5>
+                        <p class="text-secondary small mb-3" style="max-width: 480px;">Ocurrió un error al cargar el reproductor en la nube. Puedes abrir el enlace directamente en tu cliente BitTorrent externo.</p>
+                        <a href="${magnetUrl}" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm">
+                            <i class="fas fa-external-link-alt me-1"></i> Abrir en VLC / qBittorrent
+                        </a>
+                    </div>
+                `;
+            }
+        }, (err) => {
+            console.error('[Webtor] Error cargando SDK:', err);
+            artContainer.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center p-4 text-center text-light" style="min-height: 500px; background: rgba(10, 10, 15, 0.95);">
+                    <i class="fas fa-wifi text-danger mb-2" style="font-size: 2.5rem;"></i>
+                    <h5 class="fw-bold text-white mb-2">Error de conexión con Webtor SDK</h5>
+                    <p class="text-secondary small mb-3" style="max-width: 480px;">No se pudo conectar con el componente de reproducción en la nube. Puedes abrir el enlace directamente en tu cliente BitTorrent externo.</p>
+                    <a href="${magnetUrl}" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm">
+                        <i class="fas fa-external-link-alt me-1"></i> Abrir en VLC / qBittorrent
+                    </a>
+                </div>
+            `;
+        });
+    };
+
+    const playWithLocalStreamer = async (magnetUrl, title, server, provLabel, thumbnail, episodeMeta) => {
+        const artContainer = document.getElementById('artplayerContainer');
+        const badgesEl = document.getElementById('playerModalBadges');
+
+        if (badgesEl) {
+            badgesEl.innerHTML = `
+                <span class="badge bg-warning text-dark"><i class="fas fa-magnet me-1"></i>${provLabel}</span>
+                <span class="badge bg-secondary"><i class="fas fa-server me-1"></i>Local Node</span>
+                <span class="badge bg-info text-dark" id="torrentSeedsBadge"><i class="fas fa-spinner fa-spin me-1"></i>Conectando a BitTorrent...</span>
+                <button type="button" class="btn btn-xs btn-outline-info text-info py-0 px-2 ms-1 border-info" id="btnSwitchToWebtor" style="font-size: 0.72rem;" title="Cambiar a reproductor en la nube Webtor">
+                    <i class="fas fa-cloud me-1"></i>Modo Webtor
+                </button>
+            `;
+            const btnSwitchW = document.getElementById('btnSwitchToWebtor');
+            if (btnSwitchW) {
+                btnSwitchW.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    localStorage.setItem('torrent_player_mode', 'webtor');
+                    openTorrentStreamModal(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+                });
+            }
         }
 
-        const isCurrentlyMinimized = modalEl && modalEl.classList.contains('player-minimized');
-        if (!isCurrentlyMinimized) {
-            const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: 'static', focus: false });
-            modal.show();
-        }
-
-        // Renderizar HUD de buffer dinámico
         artContainer.style.display = 'block';
         artContainer.innerHTML = `
             <div id="torrentBufferHUD" class="d-flex flex-column align-items-center justify-content-center text-center p-4" style="min-height: 480px; height: 100%; background: radial-gradient(circle, #181926 0%, #0c0d14 100%);">
@@ -1462,6 +1567,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'load', magnet: magnetUrl })
             });
+
+            if (!loadRes.ok) {
+                throw new Error(`Servidor Node no respondió (HTTP ${loadRes.status})`);
+            }
+
             const loadData = await loadRes.json();
 
             if (!loadData || loadData.status !== 'success' || !loadData.infoHash) {
@@ -1507,17 +1617,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         msgEl.textContent = `Descargando: ${sData.name} (${sData.downloadedSize} / ${sData.totalSize})`;
                     }
 
-                    // Actualizar badge en ArtPlayer si ya está reproduciendo
                     const artStats = document.getElementById('artTorrentStats');
                     if (artStats) {
                         artStats.textContent = `${sData.peers} seeds · ${sData.downloadSpeed}`;
                     }
 
-                    // Iniciar ArtPlayer en cuanto esté listo
                     if (sData.ready && !playerStarted) {
                         playerStarted = true;
                         const streamUrl = sData.streamUrl;
-                        console.log(`%c✨ [Torrent Stream] Búfer listo, iniciando ArtPlayer: ${streamUrl}`, 'color: #f1c40f; font-weight: bold;');
 
                         loadArtplayerScript(() => {
                             artContainer.innerHTML = '';
@@ -1565,7 +1672,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             });
 
                             art.on('video:error', () => {
-                                console.warn('[ArtPlayer] Error de reproducción nativa del navegador en este archivo.');
+                                console.warn('[ArtPlayer] Error de reproducción nativa del navegador.');
                                 const errBox = document.createElement('div');
                                 errBox.className = 'd-flex flex-column align-items-center justify-content-center p-4 text-center text-light pop-in-card';
                                 errBox.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.92); z-index: 99;';
@@ -1573,27 +1680,35 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2.8rem;"></i>
                                     <h5 class="fw-bold text-white mb-2">Formato o Codec no compatible con este navegador</h5>
                                     <p class="text-secondary small mb-3" style="max-width: 500px;">
-                                        Este archivo torrent viene codificado en un formato avanzado (ej. <strong>4K x265 / MKV</strong> o audio multicanal <strong>Dolby 5.1 / DTS</strong>) que tu navegador no puede decodificar de forma nativa.<br><br>
-                                        💡 <em>Te sugerimos elegir una opción <strong>1080p MP4</strong> o abrir este magnet directamente en <strong>VLC / qBittorrent</strong>.</em>
+                                        Este archivo torrent viene codificado en un formato avanzado (ej. <strong>4K x265 / MKV</strong> o audio multicanal <strong>Dolby 5.1 / DTS</strong>) que tu navegador no decodifica nativamente.<br><br>
+                                        💡 <em>Puedes reproducirlo mediante <strong>Webtor (Nube)</strong> que transcodifica automáticamente, o abrirlo en <strong>VLC / qBittorrent</strong>.</em>
                                     </p>
-                                    <div class="d-flex gap-2">
+                                    <div class="d-flex flex-wrap gap-2 justify-content-center">
+                                        <button type="button" class="btn btn-primary fw-bold btn-sm shadow-sm" id="btnArtPlayerFallbackWebtor">
+                                            <i class="fas fa-cloud me-1"></i> Probar con Webtor Cloud
+                                        </button>
                                         <a href="${magnetUrl}" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm">
                                             <i class="fas fa-external-link-alt me-1"></i> Abrir en VLC / qBittorrent
                                         </a>
                                     </div>
                                 `;
                                 artContainer.appendChild(errBox);
+                                const btnFall = document.getElementById('btnArtPlayerFallbackWebtor');
+                                if (btnFall) {
+                                    btnFall.addEventListener('click', () => {
+                                        playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+                                    });
+                                }
                             });
 
                             window._currentArtplayer = art;
                         });
                     }
 
-                    // Si pasaron 35 segundos y tiene 0 seeds
                     if (!playerStarted && pollAttempts > 40 && (!sData.peers || sData.peers === 0)) {
                         if (msgEl) {
                             msgEl.className = 'text-warning small mb-3';
-                            msgEl.innerHTML = 'El enjambre tiene pocas semillas activas en este momento. La descarga puede demorar un poco más o puedes abrirlo con tu cliente torrent externo.';
+                            msgEl.innerHTML = 'El enjambre tiene pocas semillas activas en este momento. Puedes esperar o reproducir mediante Webtor en la nube.';
                         }
                     }
                 } catch (e) {
@@ -1602,14 +1717,104 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 800);
 
         } catch (err) {
-            console.error('[TorrentStream] Error:', err);
-            const msgEl = document.getElementById('torrentStatusMsg');
-            if (msgEl) {
-                msgEl.className = 'text-danger small mb-3';
-                msgEl.innerHTML = `Error: ${err.message || 'No se pudo conectar al enjambre de BitTorrent'}.<br><a href="${magnetUrl}" class="btn btn-sm btn-outline-warning mt-2"><i class="fas fa-external-link-alt me-1"></i>Abrir en qBittorrent</a>`;
+            console.error('[TorrentStream] Error local:', err);
+            artContainer.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center p-4 text-center text-light" style="min-height: 500px; background: rgba(10, 10, 15, 0.95);">
+                    <i class="fas fa-server text-warning mb-2" style="font-size: 2.8rem;"></i>
+                    <h5 class="fw-bold text-white mb-2">Servidor Local Node.js No Disponible</h5>
+                    <p class="text-secondary small mb-3" style="max-width: 500px;">
+                        El servicio local de streaming no está activo (típico en InfinityFree o cuando el daemon está apagado).<br><br>
+                        💡 <strong>¡No te preocupes!</strong> Puedes reproducir este torrent directamente en la nube usando <strong>Webtor</strong> sin necesidad de ningún servidor propio.
+                    </p>
+                    <div class="d-flex flex-wrap gap-2 justify-content-center">
+                        <button type="button" class="btn btn-primary fw-bold btn-sm shadow-sm px-3" id="btnLocalFailFallbackWebtor">
+                            <i class="fas fa-cloud me-1"></i> Reproducir con Webtor (Nube)
+                        </button>
+                        <a href="${magnetUrl}" class="btn btn-outline-warning btn-sm shadow-sm">
+                            <i class="fas fa-external-link-alt me-1"></i> Abrir en VLC / qBittorrent
+                        </a>
+                    </div>
+                </div>
+            `;
+            const btnFailW = document.getElementById('btnLocalFailFallbackWebtor');
+            if (btnFailW) {
+                btnFailW.addEventListener('click', () => {
+                    localStorage.setItem('torrent_player_mode', 'webtor');
+                    playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+                });
             }
         }
     };
+
+    const openTorrentStreamModal = async (magnetUrl, title, server, provider, thumbnail, episodeMeta) => {
+        const modalEl = document.getElementById('videoPlayerModal');
+        const iframe = document.getElementById('playerIframe');
+        const artContainer = document.getElementById('artplayerContainer');
+        const titleTextEl = document.getElementById('playerModalContentTitle');
+        const extLinkBtn = document.getElementById('btnExternalLink');
+        const provLabel = provider || 'Torrent';
+
+        if (window._torrentStatusPollInterval) {
+            clearInterval(window._torrentStatusPollInterval);
+            window._torrentStatusPollInterval = null;
+        }
+
+        if (window._currentArtplayer) {
+            try {
+                if (window._currentArtplayer.hls) window._currentArtplayer.hls.destroy();
+                window._currentArtplayer.destroy(false);
+            } catch (e) {}
+            window._currentArtplayer = null;
+        }
+
+        if (iframe) {
+            iframe.src = 'about:blank';
+            iframe.style.display = 'none';
+        }
+
+        if (titleTextEl) {
+            titleTextEl.textContent = title;
+            titleTextEl.title = title;
+        }
+
+        if (extLinkBtn) {
+            extLinkBtn.href = magnetUrl;
+            extLinkBtn.title = 'Abrir magnet en cliente externo (qBittorrent / VLC)';
+        }
+
+        const isCurrentlyMinimized = modalEl && modalEl.classList.contains('player-minimized');
+        if (!isCurrentlyMinimized) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: 'static', focus: false });
+            modal.show();
+        }
+
+        const mode = localStorage.getItem('torrent_player_mode') || window.TORRENT_PLAYER_MODE || 'webtor';
+
+        if (mode === 'streamer') {
+            await playWithLocalStreamer(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+        } else if (mode === 'auto') {
+            let daemonOnline = false;
+            try {
+                const ctrl = new AbortController();
+                const toId = setTimeout(() => ctrl.abort(), 1200);
+                const hRes = await fetch('api/torrent_stream.php?action=health', { signal: ctrl.signal });
+                clearTimeout(toId);
+                if (hRes.ok) {
+                    const hData = await hRes.json();
+                    if (hData && hData.status === 'ok') daemonOnline = true;
+                }
+            } catch (e) {}
+
+            if (daemonOnline) {
+                await playWithLocalStreamer(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+            } else {
+                playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+            }
+        } else {
+            playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+        }
+    };
+
 
     let blockUidCounter = 0;
 
@@ -1810,15 +2015,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     const lang = src.language ? `<span class="badge bg-warning text-dark ms-1">${src.language}</span>` : '';
                     const size = src.size ? `<span class="badge bg-secondary ms-1">${src.size}</span>` : '';
 
-                    torrentsHtml += `
-                        <a href="${url}" class="btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center py-1 px-2" title="Abrir en cliente torrent (qBittorrent, VLC)">
-                            <i class="fas fa-magnet me-1"></i>
-                            <strong class="me-1">${srv}</strong>
-                            <span class="badge bg-dark border border-warning text-warning ms-1">${qlt}</span>
-                            ${size}
-                            ${lang}
-                        </a>
-                    `;
+                    if (url && url.startsWith('magnet:?')) {
+                        torrentsHtml += `
+                            <div class="d-inline-flex align-items-center gap-1 bg-dark bg-opacity-75 border border-secondary border-opacity-50 rounded p-1 mb-1">
+                                <button type="button" class="btn btn-sm btn-warning text-dark fw-bold stream-torrent-btn py-1 px-2 shadow-sm" data-magnet="${url}" data-title="${safeTitle}" data-server="${srv}" data-provider="${group.name}" data-thumbnail="${safeThumb}" title="Reproducir directamente en el navegador online">
+                                    <i class="fas fa-play-circle me-1"></i>
+                                    <span>Ver en Reproductor</span>
+                                    <span class="badge bg-black text-warning ms-1">${qlt}</span>
+                                    ${size}
+                                    ${lang}
+                                </button>
+                                <a href="${url}" class="btn btn-sm btn-outline-secondary text-warning py-1 px-2" title="Abrir en cliente torrent externo (qBittorrent / VLC)">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </a>
+                            </div>
+                        `;
+                    } else {
+                        torrentsHtml += `
+                            <a href="${url}" class="btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center py-1 px-2" title="Descargar torrent">
+                                <i class="fas fa-download me-1"></i>
+                                <strong class="me-1">${srv}</strong>
+                                <span class="badge bg-dark border border-warning text-warning ms-1">${qlt}</span>
+                                ${size}
+                                ${lang}
+                            </a>
+                        `;
+                    }
                 });
 
                 html += `
@@ -2143,7 +2365,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const btnPlay = document.createElement('button');
                     btnPlay.type = 'button';
                     btnPlay.className = 'btn btn-sm btn-warning text-dark fw-bold d-inline-flex align-items-center py-1 px-2 shadow-sm';
-                    btnPlay.title = 'Reproducir directamente en el navegador con ArtPlayer';
+                    btnPlay.title = 'Reproducir directamente en el navegador online';
                     btnPlay.innerHTML = `
                         <i class="fas fa-play-circle me-1"></i>
                         <span>Ver en Reproductor</span>
@@ -2861,4 +3083,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 linksContainer.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i> Ocurrió un error al cargar la información.</div>';
             }
         });
+
+    // Delegación de clic para botones de torrents (compatibilidad con renderSourcesBlock)
+    document.addEventListener('click', (e) => {
+        const torrentBtn = e.target.closest('.stream-torrent-btn');
+        if (torrentBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const mag = torrentBtn.dataset.magnet;
+            const t = torrentBtn.dataset.title;
+            const s = torrentBtn.dataset.server;
+            const p = torrentBtn.dataset.provider;
+            const th = torrentBtn.dataset.thumbnail;
+            openTorrentStreamModal(mag, t, s, p, th);
+        }
+    });
 });

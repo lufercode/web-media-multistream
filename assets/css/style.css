@@ -323,7 +323,10 @@ h2 {
 
 #videoPlayerModal.modal-force-landscape #playerIframe,
 #videoPlayerModal.modal-force-landscape #playerVideo,
-#videoPlayerModal.modal-force-landscape #artplayerContainer {
+#videoPlayerModal.modal-force-landscape #artplayerContainer,
+#videoPlayerModal.modal-force-landscape #artplayerContainer iframe,
+#videoPlayerModal.modal-force-landscape #webtorEmbedTarget,
+#videoPlayerModal.modal-force-landscape #webtorEmbedTarget iframe {
     width: 100% !important;
     height: 100% !important;
     border: 0 !important;
@@ -334,6 +337,16 @@ h2 {
     height: 520px;
     max-height: 75vh;
     background: #000;
+}
+
+#artplayerContainer iframe,
+#webtorEmbedTarget,
+#webtorEmbedTarget iframe {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 480px;
+    border: 0 !important;
+    display: block;
 }
 
 /* ==========================================================================
@@ -436,9 +449,13 @@ body.has-minimized-player .modal-backdrop {
 }
 
 #videoPlayerModal.player-minimized #playerIframe,
-#videoPlayerModal.player-minimized #artplayerContainer {
+#videoPlayerModal.player-minimized #artplayerContainer,
+#videoPlayerModal.player-minimized #artplayerContainer iframe,
+#videoPlayerModal.player-minimized #webtorEmbedTarget,
+#videoPlayerModal.player-minimized #webtorEmbedTarget iframe {
     width: 100% !important;
     height: 100% !important;
+    min-height: unset !important;
     aspect-ratio: 16 / 9;
     max-height: 220px !important;
 }

@@ -56,11 +56,12 @@ function ensureDaemonRunning(string $daemon_base, int $timeout_sec = 4): bool
         $win_tools = str_replace('/', '\\', $tools_dir);
         $node_bin = findNodeBinary();
         $cmd = 'cmd.exe /c "cd /d ' . $win_tools . ' && start "" /B "' . $node_bin . '" server.js > nul 2>&1"';
-        pclose(popen($cmd, 'r'));
+        $p = @popen($cmd, 'r');
+        if ($p) @pclose($p);
     } else {
         // En Linux / macOS
         $cmd = 'cd "' . $tools_dir . '" && node server.js > /dev/null 2>&1 &';
-        exec($cmd);
+        @exec($cmd);
     }
 
     // Esperar hasta que responda
@@ -89,6 +90,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (!$action) {
     $action = $json_input['action'] ?? 'health';
+}
+
+if ($action === 'config') {
+    $mode = defined('TORRENT_PLAYER_MODE') ? TORRENT_PLAYER_MODE : 'webtor';
+    echo json_encode([
+        'status' => 'success',
+        'mode' => $mode
+    ]);
+    exit;
 }
 
 if ($action === 'health') {
