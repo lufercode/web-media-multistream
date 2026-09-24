@@ -131,6 +131,12 @@ if ($action === 'load') {
     curl_close($ch);
 
     if ($response && ($http_code === 200 || $http_code === 201)) {
+        $data = json_decode($response, true);
+        if (is_array($data) && !empty($data['infoHash'])) {
+            $data['streamUrl'] = 'api/torrent_stream.php?action=stream&infoHash=' . strtolower($data['infoHash']);
+            echo json_encode($data, JSON_UNESCAPED_SLASHES);
+            exit;
+        }
         echo $response;
     } else {
         http_response_code($http_code ?: 500);
@@ -153,11 +159,76 @@ if ($action === 'status') {
     $status_json = @http_get("{$DAEMON_BASE}/status/{$cleanHash}", ['timeout' => 2]);
 
     if ($status_json) {
+        $data = json_decode($status_json, true);
+        if (is_array($data)) {
+            $data['streamUrl'] = 'api/torrent_stream.php?action=stream&infoHash=' . $cleanHash;
+            echo json_encode($data, JSON_UNESCAPED_SLASHES);
+            exit;
+        }
         echo $status_json;
     } else {
         http_response_code(503);
         echo json_encode(['status' => 'error', 'error' => 'Daemon no disponible']);
     }
+    exit;
+}
+
+if ($action === 'stream') {
+    $infoHash = $_GET['infoHash'] ?? null;
+    if (!$infoHash) {
+        http_response_code(400);
+        exit('Falta infoHash');
+    }
+
+    ensureDaemonRunning($DAEMON_BASE, 3);
+
+    $cleanHash = strtolower(trim($infoHash));
+    $daemon_stream_url = "{$DAEMON_BASE}/stream/{$cleanHash}";
+
+    @set_time_limit(0);
+
+    // Reenviar cabecera Range del navegador si existe
+    $headers = [];
+    if (isset($_SERVER['HTTP_RANGE'])) {
+        $headers[] = 'Range: ' . $_SERVER['HTTP_RANGE'];
+    }
+
+    $ch = curl_init($daemon_stream_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 0);
+    if (!empty($headers)) {
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    }
+
+    // Pasar cabeceras clave (Content-Type, Content-Range, Content-Length, Accept-Ranges, Status)
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) {
+        $len = strlen($header);
+        $header_line = trim($header);
+        if (stripos($header_line, 'HTTP/') === 0) {
+            header($header_line);
+        } elseif (
+            stripos($header_line, 'Content-Range:') === 0 ||
+            stripos($header_line, 'Content-Type:') === 0 ||
+            stripos($header_line, 'Content-Length:') === 0 ||
+            stripos($header_line, 'Accept-Ranges:') === 0
+        ) {
+            header($header_line);
+        }
+        return $len;
+    });
+
+    if (function_exists('apache_setenv')) {
+        @apache_setenv('no-gzip', '1');
+    }
+    @ini_set('zlib.output_compression', 'Off');
+    while (ob_get_level()) {
+        ob_end_flush();
+    }
+    flush();
+
+    curl_exec($ch);
+    curl_close($ch);
     exit;
 }
 
