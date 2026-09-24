@@ -275,6 +275,14 @@ const server = http.createServer(async (req, res) => {
             });
 
             const stream = file.createReadStream({ start, end });
+            stream.on('error', (err) => {
+                if (err.code !== 'PREMATURE_CLOSE' && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+                    console.warn('[Streamer] Stream chunk error:', err.message);
+                }
+            });
+            res.on('error', () => {
+                stream.destroy();
+            });
             stream.pipe(res);
 
             req.on('close', () => {
@@ -288,6 +296,14 @@ const server = http.createServer(async (req, res) => {
             });
 
             const stream = file.createReadStream();
+            stream.on('error', (err) => {
+                if (err.code !== 'PREMATURE_CLOSE' && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+                    console.warn('[Streamer] Stream error:', err.message);
+                }
+            });
+            res.on('error', () => {
+                stream.destroy();
+            });
             stream.pipe(res);
 
             req.on('close', () => {
@@ -337,9 +353,21 @@ setInterval(() => {
     }
 }, 15 * 60 * 1000);
 
+process.on('uncaughtException', (err) => {
+    if (err.code === 'PREMATURE_CLOSE' || err.code === 'ERR_STREAM_PREMATURE_CLOSE' || err.code === 'ECONNRESET' || (err.message && err.message.includes('Writable stream closed'))) {
+        return;
+    }
+    console.error('[Streamer] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('[Streamer] Unhandled Rejection:', reason);
+});
+
 process.on('SIGINT', () => {
     console.log('[Streamer] Apagando daemon...');
     client.destroy(() => {
         process.exit(0);
     });
 });
+
