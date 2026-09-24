@@ -132,6 +132,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                         </div>
                         <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                            <button type="button" id="btnNextEpisodeModal" class="btn btn-sm btn-outline-success py-1 px-2 d-none align-items-center" title="Reproducir siguiente episodio">
+                                <i class="fas fa-step-forward me-1"></i> <span id="btnNextEpisodeText" class="d-none d-sm-inline">Siguiente</span>
+                            </button>
                             <a id="btnExternalLink" href="#" target="_blank" class="btn btn-sm btn-outline-secondary text-light py-1 px-2 d-inline-flex align-items-center" title="Abrir en pestaña externa">
                                 <i class="fas fa-external-link-alt"></i>
                             </a>
@@ -240,6 +243,14 @@ document.addEventListener('DOMContentLoaded', () => {
             btnMax.addEventListener('click', (e) => {
                 e.stopPropagation();
                 maximizePlayer();
+            });
+        }
+
+        const btnNextModal = document.getElementById('btnNextEpisodeModal');
+        if (btnNextModal) {
+            btnNextModal.addEventListener('click', (e) => {
+                e.stopPropagation();
+                playNextEpisode();
             });
         }
 
@@ -352,6 +363,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 window._autoProgressTimer = null;
             }
             currentModalAutoProgressTriggered = false;
+
+            if (nextEpCountdownTimer) {
+                clearInterval(nextEpCountdownTimer);
+                nextEpCountdownTimer = null;
+            }
+            autoNextTriggered = false;
+            hasDismissedManualIntro = false;
+            activeSkipTimes = null;
+
+            const btnNextModal = document.getElementById('btnNextEpisodeModal');
+            if (btnNextModal) {
+                btnNextModal.classList.add('d-none');
+                btnNextModal.classList.remove('d-inline-flex');
+            }
 
             if (window._currentArtplayer) {
                 try {
@@ -530,6 +555,112 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    let currentPlayingEpisode = null;
+    let activeSkipTimes = null;
+    let nextEpCountdownTimer = null;
+    let autoNextTriggered = false;
+    let hasDismissedManualIntro = false;
+
+    const getNextEpisodeInfo = (seasonNum, episodeNum) => {
+        if (!seasonNum || !episodeNum) return null;
+        const allCards = Array.from(document.querySelectorAll('.episode-card'));
+        const curIdx = allCards.findIndex(c => 
+            c.dataset.season === String(seasonNum) && c.dataset.episode === String(episodeNum)
+        );
+        if (curIdx === -1 || curIdx + 1 >= allCards.length) {
+            return null;
+        }
+        const nextCard = allCards[curIdx + 1];
+        const s = parseInt(nextCard.dataset.season, 10);
+        const ep = parseInt(nextCard.dataset.episode, 10);
+        const abs = nextCard.dataset.absolute || ep;
+        const thumbBox = nextCard.querySelector('.episode-thumb-box');
+        const epName = thumbBox?.dataset?.epname || `Episodio ${ep}`;
+        const thumb = thumbBox?.dataset?.thumb || '';
+        const heroTitle = document.querySelector('.details-hero-card h2')?.textContent?.trim() || 'Serie';
+        const fullTitle = `${heroTitle} - T${s}:E${ep}${epName ? ' · ' + epName : ''}`;
+
+        return {
+            card: nextCard,
+            season: s,
+            episode: ep,
+            absolute: abs,
+            epName: epName,
+            thumb: thumb,
+            fullTitle: fullTitle
+        };
+    };
+
+    const playNextEpisode = () => {
+        if (!currentPlayingEpisode) return false;
+        const nextInfo = getNextEpisodeInfo(currentPlayingEpisode.season, currentPlayingEpisode.episode);
+        if (!nextInfo) {
+            if (window._currentArtplayer && window._currentArtplayer.notice) {
+                window._currentArtplayer.notice.show = 'Has llegado al final de los capítulos disponibles';
+            }
+            return false;
+        }
+
+        if (nextEpCountdownTimer) {
+            clearInterval(nextEpCountdownTimer);
+            nextEpCountdownTimer = null;
+        }
+        autoNextTriggered = false;
+
+        const nextCard = nextInfo.card;
+        const nextSeason = nextInfo.season;
+        const nextEp = nextInfo.episode;
+        const nextAbs = nextInfo.absolute;
+        const nextTitle = nextInfo.fullTitle;
+        const nextThumb = nextInfo.thumb;
+
+        console.log(`%c⏭️ [Siguiente Episodio] Avanzando a: T${nextSeason}:E${nextEp} (${nextTitle})`, 'color: #2ecc71; font-weight: bold;');
+
+        // Scroll al card del siguiente capítulo
+        nextCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        // Actualizar título y estado en el modal
+        const titleEl = document.getElementById('playerModalContentTitle');
+        if (titleEl) {
+            titleEl.textContent = nextTitle;
+            titleEl.title = nextTitle;
+        }
+        const badgesEl = document.getElementById('playerModalBadges');
+        if (badgesEl) {
+            badgesEl.innerHTML = `<span class="badge bg-warning text-dark"><i class="fas fa-spinner fa-spin me-1"></i>Cargando siguiente episodio (T${nextSeason}:E${nextEp})...</span>`;
+        }
+
+        // Si ya hay un servidor en streaming cargado en el DOM, hacer clic directo
+        const existingPlayBtn = nextCard.querySelector('.stream-play-btn');
+        if (existingPlayBtn) {
+            existingPlayBtn.click();
+            return true;
+        }
+
+        // Si aún no se han cargado fuentes, solicitarlas y auto-reproducir el primer stream disponible
+        const container = document.getElementById(`sources_s${nextSeason}_e${nextEp}`);
+        if (container) {
+            loadEpisodeSources(nextSeason, nextEp, container, nextTitle, nextThumb, nextAbs, false);
+
+            let checkCount = 0;
+            const autoPlayTimer = setInterval(() => {
+                checkCount++;
+                const streamBtn = nextCard.querySelector('.stream-play-btn');
+                if (streamBtn) {
+                    clearInterval(autoPlayTimer);
+                    streamBtn.click();
+                } else if (checkCount >= 50 || (container.dataset.loading === 'false' && container.dataset.loaded === 'true')) {
+                    clearInterval(autoPlayTimer);
+                    if (!nextCard.querySelector('.stream-play-btn') && badgesEl) {
+                        badgesEl.innerHTML = `<span class="badge bg-danger"><i class="fas fa-exclamation-circle me-1"></i>No se encontraron enlaces de streaming para T${nextSeason}:E${nextEp}</span>`;
+                    }
+                }
+            }, 300);
+        }
+
+        return true;
+    };
+
     const openStreamModal = async (url, title, server, provider, thumbnail, episodeMeta) => {
         const modalEl = document.getElementById('videoPlayerModal');
         const iframe = document.getElementById('playerIframe');
@@ -550,16 +681,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Si es episodio de serie, registrar también como último visto de inmediato
         if (contentType === 'tv' && episodeMeta && episodeMeta.season && episodeMeta.episode) {
-            if (!window._watchedProgressCache) window._watchedProgressCache = {};
-            window._watchedProgressCache._last_watched = {
+            currentPlayingEpisode = {
                 season: parseInt(episodeMeta.season, 10),
                 episode: parseInt(episodeMeta.episode, 10),
+                absolute: episodeMeta.absolute || null,
+                cardElement: episodeMeta.cardElement || null
+            };
+
+            if (!window._watchedProgressCache) window._watchedProgressCache = {};
+            window._watchedProgressCache._last_watched = {
+                season: currentPlayingEpisode.season,
+                episode: currentPlayingEpisode.episode,
                 status: 'partially_watched',
                 updated_at: Date.now()
             };
             try {
                 localStorage.setItem(`last_watched_${contentType}_${contentId}`, JSON.stringify(window._watchedProgressCache._last_watched));
             } catch (e) {}
+        } else {
+            currentPlayingEpisode = null;
+        }
+
+        // Reiniciar variables de omitir y siguiente episodio
+        if (nextEpCountdownTimer) {
+            clearInterval(nextEpCountdownTimer);
+            nextEpCountdownTimer = null;
+        }
+        autoNextTriggered = false;
+        hasDismissedManualIntro = false;
+        activeSkipTimes = null;
+
+        // Actualizar botón "Siguiente Episodio" en cabecera del modal
+        const nextInfo = currentPlayingEpisode ? getNextEpisodeInfo(currentPlayingEpisode.season, currentPlayingEpisode.episode) : null;
+        const btnNextModal = document.getElementById('btnNextEpisodeModal');
+        if (btnNextModal) {
+            if (nextInfo) {
+                btnNextModal.classList.remove('d-none');
+                btnNextModal.classList.add('d-inline-flex');
+                btnNextModal.title = `Siguiente: T${nextInfo.season}:E${nextInfo.episode} · ${nextInfo.epName}`;
+            } else {
+                btnNextModal.classList.add('d-none');
+                btnNextModal.classList.remove('d-inline-flex');
+            }
+        }
+
+        // Consultar skip times para series / anime en segundo plano
+        if (currentPlayingEpisode) {
+            const isAnime = linksContainer?.dataset?.isAnime === '1';
+            const heroTitle = document.querySelector('.details-hero-card h2')?.textContent?.trim() || '';
+            const origTitle = linksContainer?.dataset?.originalTitle || '';
+            const s = currentPlayingEpisode.season;
+            const ep = currentPlayingEpisode.episode;
+            const abs = currentPlayingEpisode.absolute || ep;
+            const tmdbId = contentId || '';
+
+            fetch(`api/get_skip_times.php?title=${encodeURIComponent(heroTitle)}&season=${s}&episode=${ep}&absolute=${abs}&is_anime=${isAnime ? '1' : '0'}&tmdb_id=${tmdbId}&original_title=${encodeURIComponent(origTitle)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.status === 'success' && data.found) {
+                        activeSkipTimes = data;
+                        console.log('%c⏩ [SkipTimes] Tiempos OP/ED detectados:', 'color: #9b59b6; font-weight: bold;', activeSkipTimes);
+                    }
+                })
+                .catch(e => console.warn('Skip times fetch error:', e));
         }
 
         // Reiniciar estado de rotación al abrir nuevo modal solo si no está minimizado
@@ -687,6 +871,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const tipBar = document.getElementById('playerAdTipBar');
                         if (tipBar) tipBar.style.display = 'none';
 
+                        const hasNextEpInfo = currentPlayingEpisode ? getNextEpisodeInfo(currentPlayingEpisode.season, currentPlayingEpisode.episode) : null;
+
                         const art = new Artplayer({
                             container: '#artplayerContainer',
                             url: streamUrl,
@@ -792,7 +978,95 @@ document.addEventListener('DOMContentLoaded', () => {
                             autoPlayback: true,
                             airplay: true,
                             hotkey: true,
+                            controls: [
+                                ...(hasNextEpInfo ? [{
+                                    name: 'next-ep-control',
+                                    position: 'left',
+                                    index: 10,
+                                    html: '<button type="button" class="art-icon" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border: none; background: transparent; color: #fff; cursor: pointer;" title="Siguiente Episodio"><i class="fas fa-step-forward" style="font-size: 15px;"></i></button>',
+                                    tooltip: `Siguiente: T${hasNextEpInfo.season}:E${hasNextEpInfo.episode}`,
+                                    click: function () {
+                                        playNextEpisode();
+                                    }
+                                }] : [])
+                            ],
+                            layers: [
+                                {
+                                    name: 'skip-intro-layer',
+                                    html: `
+                                        <button type="button" class="art-skip-btn" id="artSkipIntroBtn" style="display: none;">
+                                            <i class="fas fa-forward"></i>
+                                            <span class="art-skip-text">Omitir Intro</span>
+                                        </button>
+                                    `,
+                                    style: {
+                                        position: 'absolute',
+                                        bottom: '75px',
+                                        right: '25px',
+                                        zIndex: 50,
+                                        pointerEvents: 'auto'
+                                    }
+                                },
+                                {
+                                    name: 'skip-outro-layer',
+                                    html: `
+                                        <button type="button" class="art-skip-btn" id="artSkipOutroBtn" style="display: none;">
+                                            <i class="fas fa-step-forward"></i>
+                                            <span class="art-skip-text">Omitir Outro</span>
+                                        </button>
+                                    `,
+                                    style: {
+                                        position: 'absolute',
+                                        bottom: '75px',
+                                        right: '25px',
+                                        zIndex: 50,
+                                        pointerEvents: 'auto'
+                                    }
+                                },
+                                {
+                                    name: 'auto-next-overlay',
+                                    html: `
+                                        <div class="art-auto-next-card" id="artAutoNextCard" style="display: none;">
+                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                <span class="badge bg-primary text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.5px;">
+                                                    <i class="fas fa-play me-1"></i>Siguiente Episodio
+                                                </span>
+                                                <button type="button" class="btn-close btn-close-white cancel-next-btn" style="font-size: 0.65rem;" title="Cancelar"></button>
+                                            </div>
+                                            <div class="fw-bold text-white small mb-1 next-ep-title-display text-truncate" style="max-width: 250px;"></div>
+                                            <div class="text-secondary small mb-3">Reproduciendo en <span class="fw-bold text-warning countdown-num">5</span>s...</div>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <button type="button" class="btn btn-sm btn-primary flex-grow-1 fw-bold play-next-now-btn">
+                                                    <i class="fas fa-play me-1"></i>Reproducir ya
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary text-light cancel-next-btn">
+                                                    Cancelar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `,
+                                    style: {
+                                        position: 'absolute',
+                                        bottom: '75px',
+                                        right: '25px',
+                                        zIndex: 60,
+                                        pointerEvents: 'auto'
+                                    }
+                                }
+                            ],
                             settings: [
+                                {
+                                    html: '<i class="fas fa-forward text-warning me-2"></i>Auto-Omitir Intro',
+                                    width: 230,
+                                    tooltip: localStorage.getItem('auto_skip_intro') === 'true' ? 'Activado' : 'Desactivado',
+                                    switch: localStorage.getItem('auto_skip_intro') === 'true',
+                                    onSwitch: function (item) {
+                                        item.switch = !item.switch;
+                                        localStorage.setItem('auto_skip_intro', item.switch ? 'true' : 'false');
+                                        if (art.notice) art.notice.show = `Auto-Omitir Intro: ${item.switch ? 'Activado' : 'Desactivado'}`;
+                                        return item.switch;
+                                    }
+                                },
                                 {
                                     html: '<i class="fas fa-volume-up text-info me-2"></i>Booster de Audio',
                                     width: 230,
@@ -830,6 +1104,93 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
 
                         window._currentArtplayer = art;
+
+                        // Configurar botones de Omitir Intro/Outro y Auto Siguiente
+                        const skipIntroBtn = art.template.$container.querySelector('#artSkipIntroBtn');
+                        const skipOutroBtn = art.template.$container.querySelector('#artSkipOutroBtn');
+                        const autoNextCard = art.template.$container.querySelector('#artAutoNextCard');
+
+                        if (skipIntroBtn) {
+                            skipIntroBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                if (activeSkipTimes && activeSkipTimes.op) {
+                                    art.currentTime = activeSkipTimes.op.end;
+                                    if (art.notice) art.notice.show = 'Intro omitida';
+                                } else {
+                                    art.currentTime = Math.min((art.duration || 9999) - 10, art.currentTime + 85);
+                                    if (art.notice) art.notice.show = '+85s (Intro omitida)';
+                                }
+                                hasDismissedManualIntro = true;
+                                skipIntroBtn.style.display = 'none';
+                            });
+                        }
+
+                        if (skipOutroBtn) {
+                            skipOutroBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                if (activeSkipTimes && activeSkipTimes.ed) {
+                                    art.currentTime = activeSkipTimes.ed.end;
+                                    if (art.notice) art.notice.show = 'Outro omitido';
+                                }
+                                skipOutroBtn.style.display = 'none';
+                                const hasNext = currentPlayingEpisode ? getNextEpisodeInfo(currentPlayingEpisode.season, currentPlayingEpisode.episode) : null;
+                                if (hasNext) {
+                                    triggerAutoNextCountdown(hasNext);
+                                }
+                            });
+                        }
+
+                        const triggerAutoNextCountdown = (nextEpInfo) => {
+                            if (autoNextTriggered || !nextEpInfo || !autoNextCard) return;
+                            autoNextTriggered = true;
+
+                            const titleEl = autoNextCard.querySelector('.next-ep-title-display');
+                            const countEl = autoNextCard.querySelector('.countdown-num');
+                            if (titleEl) titleEl.textContent = `T${nextEpInfo.season}:E${nextEpInfo.episode} · ${nextEpInfo.epName}`;
+
+                            autoNextCard.style.display = 'block';
+
+                            let secondsLeft = 5;
+                            if (countEl) countEl.textContent = secondsLeft;
+
+                            if (nextEpCountdownTimer) clearInterval(nextEpCountdownTimer);
+                            nextEpCountdownTimer = setInterval(() => {
+                                secondsLeft--;
+                                if (countEl) countEl.textContent = secondsLeft;
+                                if (secondsLeft <= 0) {
+                                    clearInterval(nextEpCountdownTimer);
+                                    nextEpCountdownTimer = null;
+                                    autoNextCard.style.display = 'none';
+                                    playNextEpisode();
+                                }
+                            }, 1000);
+                        };
+
+                        if (autoNextCard) {
+                            autoNextCard.querySelectorAll('.cancel-next-btn').forEach(btn => {
+                                btn.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    if (nextEpCountdownTimer) {
+                                        clearInterval(nextEpCountdownTimer);
+                                        nextEpCountdownTimer = null;
+                                    }
+                                    autoNextCard.style.display = 'none';
+                                });
+                            });
+
+                            const playNowBtn = autoNextCard.querySelector('.play-next-now-btn');
+                            if (playNowBtn) {
+                                playNowBtn.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    if (nextEpCountdownTimer) {
+                                        clearInterval(nextEpCountdownTimer);
+                                        nextEpCountdownTimer = null;
+                                    }
+                                    autoNextCard.style.display = 'none';
+                                    playNextEpisode();
+                                });
+                            }
+                        }
 
                         // Auto-ocultamiento limpio de barra de carga, controles y cursor tras inactividad
                         let fsIdleTimer = null;
@@ -881,6 +1242,73 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             if (art.currentTime >= 10 && episodeMeta) {
                                 triggerAutoProgress(episodeMeta);
+                            }
+
+                            const curTime = art.currentTime;
+                            const dur = art.duration || 0;
+
+                            if (currentPlayingEpisode) {
+                                const isAutoSkip = localStorage.getItem('auto_skip_intro') === 'true';
+
+                                // 1. Omitir Intro
+                                if (activeSkipTimes && activeSkipTimes.op) {
+                                    const opStart = activeSkipTimes.op.start;
+                                    const opEnd = activeSkipTimes.op.end;
+
+                                    if (curTime >= opStart && curTime < opEnd) {
+                                        if (isAutoSkip) {
+                                            art.currentTime = opEnd;
+                                            if (art.notice) art.notice.show = 'Intro omitida automáticamente';
+                                            if (skipIntroBtn) skipIntroBtn.style.display = 'none';
+                                        } else if (!hasDismissedManualIntro && skipIntroBtn) {
+                                            const textSpan = skipIntroBtn.querySelector('.art-skip-text');
+                                            if (textSpan) textSpan.textContent = 'Omitir Intro';
+                                            skipIntroBtn.style.display = 'inline-flex';
+                                        }
+                                    } else if (skipIntroBtn && skipIntroBtn.style.display !== 'none') {
+                                        skipIntroBtn.style.display = 'none';
+                                    }
+                                } else if (!hasDismissedManualIntro && skipIntroBtn && contentType === 'tv') {
+                                    // Fallback para series (+85s entre el segundo 5 y 90)
+                                    if (curTime >= 5 && curTime <= 90) {
+                                        const textSpan = skipIntroBtn.querySelector('.art-skip-text');
+                                        if (textSpan) textSpan.textContent = 'Omitir Intro (+85s)';
+                                        skipIntroBtn.style.display = 'inline-flex';
+                                    } else if (skipIntroBtn && skipIntroBtn.style.display !== 'none') {
+                                        skipIntroBtn.style.display = 'none';
+                                    }
+                                }
+
+                                // 2. Omitir Outro
+                                if (activeSkipTimes && activeSkipTimes.ed) {
+                                    const edStart = activeSkipTimes.ed.start;
+                                    const edEnd = activeSkipTimes.ed.end;
+
+                                    if (curTime >= edStart && curTime <= edEnd) {
+                                        if (skipOutroBtn) skipOutroBtn.style.display = 'inline-flex';
+                                    } else if (skipOutroBtn && skipOutroBtn.style.display !== 'none') {
+                                        skipOutroBtn.style.display = 'none';
+                                    }
+                                }
+
+                                // 3. Auto Siguiente Episodio
+                                const nextInfo = getNextEpisodeInfo(currentPlayingEpisode.season, currentPlayingEpisode.episode);
+                                if (nextInfo && !autoNextTriggered) {
+                                    if (activeSkipTimes && activeSkipTimes.ed && curTime >= activeSkipTimes.ed.start) {
+                                        triggerAutoNextCountdown(nextInfo);
+                                    } else if (dur > 60 && (dur - curTime) <= 15) {
+                                        triggerAutoNextCountdown(nextInfo);
+                                    }
+                                }
+                            }
+                        });
+
+                        art.on('video:ended', () => {
+                            if (currentPlayingEpisode) {
+                                const nextInfo = getNextEpisodeInfo(currentPlayingEpisode.season, currentPlayingEpisode.episode);
+                                if (nextInfo) {
+                                    triggerAutoNextCountdown(nextInfo);
+                                }
                             }
                         });
 
@@ -971,6 +1399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (id.includes('dontorrent')) return 'fas fa-arrow-circle-down text-warning';
             if (id.includes('elitetorrent')) return 'fas fa-crown text-warning';
             if (id.includes('yts')) return 'fas fa-film text-info';
+            if (id.includes('nyaa')) return 'fas fa-paw text-danger';
             return 'fas fa-magnet text-warning';
         }
         if (id.includes('cuevana')) return 'fas fa-play-circle text-primary';
@@ -1214,10 +1643,11 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 'serieskao', name: 'SeriesKao', type: 'streaming' },
             { id: 'retrotve', name: 'RetroTVE', type: 'streaming' },
             { id: 'anime', name: 'JKAnime', type: 'streaming' },
-            { id: 'tioanime', name: 'TioAnime', type: 'streaming' }
+            { id: 'tioanime', name: 'TioAnime', type: 'streaming' },
+            { id: 'nyaa', name: 'Nyaa (Anime Torrents)', type: 'torrent' }
         ];
 
-        const providers = isAnimeContent ? rawProviders : rawProviders.filter(p => p.id !== 'anime' && p.id !== 'tioanime');
+        const providers = isAnimeContent ? rawProviders : rawProviders.filter(p => p.id !== 'anime' && p.id !== 'tioanime' && p.id !== 'nyaa');
 
         const totalProviders = providers.length;
         let completedProviders = 0;

@@ -417,6 +417,7 @@ body.has-minimized-player .modal-backdrop {
 #videoPlayerModal.player-minimized #btnRotateModal,
 #videoPlayerModal.player-minimized #btnExternalLink,
 #videoPlayerModal.player-minimized #btnMinimizeModal,
+#videoPlayerModal.player-minimized #btnNextEpisodeModal,
 #videoPlayerModal.player-minimized #playerAdTipBar,
 #videoPlayerModal.modal-force-landscape #playerAdTipBar {
     display: none !important;
@@ -1506,4 +1507,68 @@ body.has-minimized-player .modal-backdrop {
     background: rgba(255, 255, 255, 0.15);
     border-color: rgba(255, 255, 255, 0.35);
     color: #fff;
+}
+
+/* ==========================================================================
+   Omitir Intro / Outro y Siguiente Episodio (Estilo Netflix / Crunchyroll)
+   ========================================================================== */
+.art-skip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.88);
+    color: #ffffff !important;
+    border: 1.5px solid rgba(255, 255, 255, 0.7);
+    padding: 8px 18px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(8px);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+    pointer-events: auto;
+}
+
+.art-skip-btn:hover {
+    background: rgba(255, 255, 255, 0.95);
+    color: #0f172a !important;
+    border-color: #ffffff;
+    transform: scale(1.05);
+}
+
+.art-skip-btn:active {
+    transform: scale(0.97);
+}
+
+.art-auto-next-card {
+    background: rgba(15, 23, 42, 0.95);
+    color: #ffffff;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-width: 260px;
+    max-width: 320px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(12px);
+    pointer-events: auto;
+    animation: popInNext 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes popInNext {
+    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 576px) {
+    .art-skip-btn {
+        padding: 6px 12px;
+        font-size: 0.85rem;
+    }
+    .art-auto-next-card {
+        min-width: 220px;
+        max-width: 270px;
+        padding: 10px 12px;
+    }
 }
