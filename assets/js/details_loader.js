@@ -382,8 +382,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (window._activeTorrentStreamHash) {
                 const hToStop = window._activeTorrentStreamHash;
+                const rBase = window._activeTorrentRemoteBase || '';
                 window._activeTorrentStreamHash = null;
-                fetch(`api/torrent_stream.php?action=stop&infoHash=${hToStop}`, { method: 'POST' }).catch(() => {});
+                window._activeTorrentRemoteBase = null;
+                if (rBase) {
+                    fetch(`${rBase}/stop/${hToStop}`, { method: 'POST', mode: 'cors' }).catch(() => {});
+                } else {
+                    fetch(`api/torrent_stream.php?action=stop&infoHash=${hToStop}`, { method: 'POST' }).catch(() => {});
+                }
             }
 
             if (window._currentArtplayer) {
@@ -1558,17 +1564,42 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         try {
-            const loadRes = await fetch('api/torrent_stream.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'load', magnet: magnetUrl })
-            });
+            let remoteBase = (window.TORRENT_STREAMER_REMOTE_URL || '').trim().replace(/\/$/, '');
+            let loadData = null;
 
-            if (!loadRes.ok) {
-                throw new Error(`Servidor Node no respondió (HTTP ${loadRes.status})`);
+            if (remoteBase) {
+                const directLoadRes = await fetch(`${remoteBase}/load`, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ magnet: magnetUrl })
+                });
+                if (!directLoadRes.ok) {
+                    throw new Error(`Servidor en la nube no respondió (HTTP ${directLoadRes.status})`);
+                }
+                loadData = await directLoadRes.json();
+            } else {
+                const loadRes = await fetch('api/torrent_stream.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'load', magnet: magnetUrl })
+                });
+
+                if (!loadRes.ok) {
+                    throw new Error(`Servidor Node no respondió (HTTP ${loadRes.status})`);
+                }
+
+                loadData = await loadRes.json();
+                if (loadData && loadData.isRemote) {
+                    if (loadData.daemonBase) {
+                        remoteBase = loadData.daemonBase.replace(/\/$/, '');
+                    } else if (loadData.streamUrl && loadData.streamUrl.startsWith('http')) {
+                        try {
+                            remoteBase = new URL(loadData.streamUrl).origin;
+                        } catch (e) {}
+                    }
+                }
             }
-
-            const loadData = await loadRes.json();
 
             if (!loadData || loadData.status !== 'success' || !loadData.infoHash) {
                 throw new Error(loadData?.error || 'No se pudo inicializar el torrent.');
@@ -1576,6 +1607,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const infoHash = loadData.infoHash;
             window._activeTorrentStreamHash = infoHash;
+            window._activeTorrentRemoteBase = remoteBase;
+
+            const statusEndpoint = remoteBase
+                ? `${remoteBase}/status/${infoHash}`
+                : `api/torrent_stream.php?action=status&infoHash=${infoHash}`;
 
             const barEl = document.getElementById('torrentBufferBar');
             const peersEl = document.getElementById('torrentPeersCount');
@@ -1590,7 +1626,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window._torrentStatusPollInterval = setInterval(async () => {
                 pollAttempts++;
                 try {
-                    const sRes = await fetch(`api/torrent_stream.php?action=status&infoHash=${infoHash}`);
+                    const sRes = await fetch(statusEndpoint, remoteBase ? { mode: 'cors' } : {});
                     if (!sRes.ok) return;
                     const sData = await sRes.json();
                     if (!sData || sData.status !== 'success') return;
@@ -1621,8 +1657,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (sData.ready && !playerStarted) {
                         playerStarted = true;
-                        const streamUrl = sData.streamUrl;
-                        const torrentSubs = Array.isArray(sData.subtitles) ? sData.subtitles : [];
+                        let streamUrl = sData.streamUrl;
+                        if (remoteBase && (!streamUrl || streamUrl.includes('0.0.0.0') || streamUrl.startsWith('/'))) {
+                            streamUrl = `${remoteBase}/stream/${infoHash}`;
+                        }
+                        const torrentSubs = (Array.isArray(sData.subtitles) ? sData.subtitles : []).map(s => {
+                            let subUrl = s.url || '';
+                            if (remoteBase && (subUrl.startsWith('/') || subUrl.includes('0.0.0.0'))) {
+                                subUrl = `${remoteBase}/subtitles/${infoHash}/${s.index}`;
+                            }
+                            return { ...s, url: subUrl };
+                        });
                         const defaultSub = torrentSubs.length > 0 ? torrentSubs[0].url : '';
 
                         loadArtplayerScript(() => {

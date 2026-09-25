@@ -182,6 +182,7 @@ if ($action === 'load') {
                 ? "{$DAEMON_BASE}/stream/{$hash}" 
                 : "api/torrent_stream.php?action=stream&infoHash={$hash}";
             $data['isRemote'] = $IS_REMOTE;
+            $data['daemonBase'] = $DAEMON_BASE;
             echo json_encode($data, JSON_UNESCAPED_SLASHES);
             exit;
         }
@@ -201,10 +202,14 @@ if ($action === 'status') {
         exit;
     }
 
-    ensureDaemonRunning($DAEMON_BASE, $IS_REMOTE ? 3 : 2, $IS_REMOTE);
-
     $cleanHash = strtolower(trim($infoHash));
-    $status_json = @http_get("{$DAEMON_BASE}/status/{$cleanHash}", ['timeout' => 3]);
+    $status_json = @http_get("{$DAEMON_BASE}/status/{$cleanHash}", ['timeout' => 5]);
+
+    if (!$status_json && !$IS_REMOTE) {
+        if (ensureDaemonRunning($DAEMON_BASE, 2, false)) {
+            $status_json = @http_get("{$DAEMON_BASE}/status/{$cleanHash}", ['timeout' => 3]);
+        }
+    }
 
     if ($status_json) {
         $data = json_decode($status_json, true);
@@ -213,6 +218,7 @@ if ($action === 'status') {
                 ? "{$DAEMON_BASE}/stream/{$cleanHash}" 
                 : "api/torrent_stream.php?action=stream&infoHash={$cleanHash}";
             $data['isRemote'] = $IS_REMOTE;
+            $data['daemonBase'] = $DAEMON_BASE;
             if (!empty($data['subtitles']) && is_array($data['subtitles'])) {
                 foreach ($data['subtitles'] as &$sub) {
                     $sub['url'] = $IS_REMOTE 

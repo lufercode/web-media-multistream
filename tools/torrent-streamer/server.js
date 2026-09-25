@@ -30,12 +30,37 @@ if (!fs.existsSync(CACHE_DIR)) {
     }
 }
 
+const DEFAULT_TRACKERS = [
+    'http://nyaa.tracker.wf:7777/announce',
+    'http://tracker.opentrackr.org:1337/announce',
+    'https://tracker.tamersunion.org:443/announce',
+    'https://tracker.gbitt.info:443/announce',
+    'http://open.acgnxtracker.com:80/announce',
+    'https://tr.burnabyhighstar.com:443/announce',
+    'https://tracker.lilithraws.org:443/announce',
+    'wss://tracker.openwebtorrent.com',
+    'wss://tracker.btorrent.xyz',
+    'udp://tracker.opentrackr.org:1337/announce',
+    'udp://open.stealth.si:80/announce',
+    'udp://tracker.torrent.eu.org:451/announce'
+];
+
 const client = new WebTorrent({
     maxConns: 55,
     dht: true
 });
 
 const activeTorrents = new Map();
+
+function getPublicBaseUrl(req) {
+    if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/$/, '');
+    const proto = req.headers['x-forwarded-proto'] || 'http';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    if (host && !host.includes('0.0.0.0')) {
+        return `${proto}://${host}`;
+    }
+    return `http://${HOST}:${PORT}`;
+}
 
 function getMimeType(filename) {
     const ext = path.extname(filename).toLowerCase();
@@ -99,6 +124,7 @@ const server = http.createServer(async (req, res) => {
 
     const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
     const pathname = parsedUrl.pathname;
+    const baseUrl = getPublicBaseUrl(req);
 
     // GET /health o /ping
     if (pathname === '/health' || pathname === '/ping') {
@@ -141,14 +167,17 @@ const server = http.createServer(async (req, res) => {
                 name: entry.file ? entry.file.name : entry.torrent.name,
                 size: entry.file ? formatBytes(entry.file.length) : formatBytes(entry.torrent.length),
                 ready: !!entry.file,
-                streamUrl: `http://${HOST}:${PORT}/stream/${entry.torrent.infoHash}`
+                streamUrl: `${baseUrl}/stream/${entry.torrent.infoHash}`
             }));
             return;
         }
 
         try {
             console.log(`[Streamer] Cargando magnet: ${magnet.substring(0, 60)}...`);
-            const torrent = client.add(magnet, { path: CACHE_DIR });
+            const torrent = client.add(magnet, {
+                path: CACHE_DIR,
+                announce: DEFAULT_TRACKERS
+            });
             const resolvedHash = (torrent.infoHash || infoHash).toLowerCase();
 
             const entry = {
@@ -331,13 +360,13 @@ const server = http.createServer(async (req, res) => {
             uploadSpeed: formatBytes(t.uploadSpeed) + '/s',
             peers: t.numPeers,
             ready: isReadyToPlay,
-            streamUrl: `http://${HOST}:${PORT}/stream/${t.infoHash}`,
+            streamUrl: `${baseUrl}/stream/${t.infoHash}`,
             subtitles: (entry.subtitles || []).map(s => ({
                 name: s.name,
                 fileName: s.fileName,
                 index: s.index,
                 size: s.size,
-                url: `/subtitles/${t.infoHash}/${s.index}`
+                url: `${baseUrl}/subtitles/${t.infoHash}/${s.index}`
             }))
         }));
         return;
