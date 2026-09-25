@@ -110,7 +110,7 @@ class CinecalidadProvider implements ProviderInterface
 
                     $is_match = false;
                     foreach ($search_titles as $st) {
-                        if (is_strict_title_match($st, $clean_t, $year, $cand_year) || stripos($clean_t, $st) !== false) {
+                        if (is_strict_title_match($st, $clean_t, $year, $cand_year)) {
                             $is_match = true;
                             break;
                         }

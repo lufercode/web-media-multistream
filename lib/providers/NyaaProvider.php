@@ -77,6 +77,15 @@ class NyaaProvider implements ProviderInterface
                     continue;
                 }
 
+                // Parsear título y año del torrent y validar contra la película
+                $parsed = parse_torrent_release_name($cand_title);
+                $cand_name = $parsed['title'];
+                $cand_year = $parsed['year'];
+                if (!is_strict_title_match($clean_title, $cand_name, $year, $cand_year) &&
+                    !is_anime_title_match($clean_title, $cand_name)) {
+                    continue;
+                }
+
                 $raw_links_td = $tds[1][2];
                 if (!preg_match('/href="(magnet:\?[^"]+)"/i', $raw_links_td, $mM)) continue;
                 $magnet = html_entity_decode($mM[1], ENT_QUOTES, 'UTF-8');
@@ -262,7 +271,7 @@ class NyaaProvider implements ProviderInterface
 
     private function detectLanguage(string $title): string
     {
-        if (stripos($title, 'Latino') !== false || stripos($title, 'Español Latino') !== false) {
+        if (is_latino_audio($title)) {
             return (stripos($title, 'Dual') !== false || stripos($title, 'Multi') !== false) ? 'Español Latino (Dual)' : 'Español Latino';
         }
         if (stripos($title, 'Castellano') !== false || stripos($title, 'Spanish') !== false) {

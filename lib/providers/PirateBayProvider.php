@@ -44,14 +44,17 @@ class PirateBayProvider implements ProviderInterface
         $clean_title = trim($title);
         if (empty($clean_title)) return [];
 
-        // Generar variantes de búsqueda: Priorizar Latino y Dual
-        $queries = [
-            $clean_title . ' Latino',
-            $clean_title . ' Dual'
-        ];
+        // Generar variantes de búsqueda: Priorizar con año cuando está disponible para evitar contaminaciones
+        $queries = [];
         if ($year) {
+            $queries[] = "{$clean_title} {$year} Latino";
+            $queries[] = "{$clean_title} {$year} Dual";
+            $queries[] = "{$clean_title} {$year} Lat";
             $queries[] = "{$clean_title} {$year}";
         }
+        $queries[] = $clean_title . ' Latino';
+        $queries[] = $clean_title . ' Dual';
+        $queries[] = $clean_title . ' Lat';
         $queries[] = $clean_title;
 
         $results = [];
@@ -72,6 +75,17 @@ class PirateBayProvider implements ProviderInterface
 
                 // Descartar episodios de series en búsqueda de películas
                 if (preg_match('/(?:s\d{1,2}e\d{1,2}|\bseason\s*\d+|\btemporada\s*\d+|\bcapitulo\s*\d+)/i', $raw_name)) {
+                    continue;
+                }
+
+                // Parsear título y año del release crudo
+                $parsed = parse_torrent_release_name($raw_name);
+                $cand_name = $parsed['title'];
+                $cand_year = $parsed['year'];
+
+                // Validación estricta: asegurar que coincida con el título y año (descartando secuelas y años distintos)
+                if (!is_strict_title_match($clean_title, $cand_name, $year, $cand_year) &&
+                    !is_strict_title_match($clean_title, $raw_name, $year, $cand_year)) {
                     continue;
                 }
 
@@ -98,7 +112,7 @@ class PirateBayProvider implements ProviderInterface
                     'size' => $size,
                     'seeders' => $seeders,
                     'leechers' => $leechers,
-                    'is_latino' => (stripos($language, 'Latino') !== false)
+                    'is_latino' => is_latino_audio($raw_name)
                 ];
 
                 if (count($results) >= 12) break 2;
@@ -131,12 +145,14 @@ class PirateBayProvider implements ProviderInterface
         $queries = [
             "{$clean_title} {$s_padded} Latino",
             "{$clean_title} {$s_padded} Dual",
+            "{$clean_title} {$s_padded} Lat",
             "{$clean_title} {$s_padded}"
         ];
 
         if ($season === 1) {
             $ep_padded = sprintf('%02d', $episode);
             $queries[] = "{$clean_title} {$ep_padded} Latino";
+            $queries[] = "{$clean_title} {$ep_padded} Lat";
             $queries[] = "{$clean_title} {$ep_padded}";
         }
 
@@ -155,6 +171,13 @@ class PirateBayProvider implements ProviderInterface
 
                 $raw_name = html_entity_decode($item['name'] ?? '', ENT_QUOTES, 'UTF-8');
                 if (empty($raw_name)) continue;
+
+                // Validar que el título pertenezca a la serie buscada
+                $parsed = parse_torrent_release_name($raw_name);
+                $title_part = preg_replace('/s\d{1,2}e\d{1,2}.*/i', '', $raw_name);
+                if (!is_strict_title_match($clean_title, $parsed['title']) && !is_strict_title_match($clean_title, $title_part)) {
+                    continue;
+                }
 
                 // Validar que coincida con la temporada y episodio
                 $cand_lower = strtolower($raw_name);
@@ -201,7 +224,7 @@ class PirateBayProvider implements ProviderInterface
                     'size' => $size,
                     'seeders' => $seeders,
                     'leechers' => $leechers,
-                    'is_latino' => (stripos($language, 'Latino') !== false)
+                    'is_latino' => is_latino_audio($raw_name)
                 ];
 
                 if (count($results) >= 12) break 2;
@@ -266,19 +289,7 @@ class PirateBayProvider implements ProviderInterface
 
     private function detectLanguage(string $title): string
     {
-        if (stripos($title, 'Latino') !== false || stripos($title, 'Español Latino') !== false) {
-            if (stripos($title, 'Dual') !== false || stripos($title, 'ENG') !== false || stripos($title, 'English') !== false) {
-                return 'Español Latino (Dual)';
-            }
-            return 'Español Latino';
-        }
-        if (stripos($title, 'Castellano') !== false || stripos($title, 'Spanish') !== false) {
-            return 'Español Castellano';
-        }
-        if (stripos($title, 'Dual') !== false || stripos($title, 'Multi') !== false) {
-            return 'Dual Audio / Multi';
-        }
-        return 'Inglés / VO';
+        return detect_release_language($title);
     }
 
     private function formatBytes(float $bytes): string

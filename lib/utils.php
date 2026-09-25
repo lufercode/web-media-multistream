@@ -171,18 +171,24 @@ function urls_exist_multi(array $urls, int $timeout = 2): array {
 function clean_title_for_comparison(string $title): string {
     $title = mb_strtolower($title, 'UTF-8');
     
-    // Eliminar años entre paréntesis o corchetes: (1999), [2023]
-    $title = preg_replace('/[\(\[]\s*(?:19|20)\d{2}\s*[\)\]]/', ' ', $title);
+    // Eliminar sufijo de grupo de release al final (ej: "-btm", "-flux", "-yg⭐")
+    $title = preg_replace('/-[a-z0-9_\x{1F300}-\x{1F9FF}⭐]+$/iu', '', $title);
+    
+    // Eliminar años de 4 dígitos (1900-2035) delimitados por puntos, espacios, paréntesis o guiones
+    $title = preg_replace('/[\(\[\s._\-]\b(19\d{2}|20[0-2]\d|203[0-5])\b[\)\]\s._\-]/', ' ', ' ' . $title . ' ');
     
     // Eliminar todo el contenido entre corchetes [ ... ]
     $title = preg_replace('/\[.*?\]/', ' ', $title);
     
-    // Eliminar palabras de ruido técnico (calidades, idiomas, formatos)
+    // Eliminar palabras de ruido técnico (calidades, fuentes, plataformas, codecs, audios)
     $noise_words = [
         '1080p', '720p', '480p', '2160p', '4k', 'uhd', 'hd', 'fullhd', 'full hd',
-        'bluray', 'bdrip', 'dvdrip', 'web-dl', 'webrip', 'hdtv', 'microhd', 'cam', 'screener',
-        'latino', 'castellano', 'espanol', 'español', 'subtitulado', 'sub', 'subs', 'vose', 'vost',
-        'dual', 'ingles', 'audio', 'multi', 'temporada', 'temp'
+        'bluray', 'bdrip', 'brrip', 'dvdrip', 'web-dl', 'webdl', 'web-rip', 'webrip', 'hdtv', 'microhd', 'cam', 'screener', 'ts', 'telesync', 'hdcam',
+        'amzn', 'dsnp', 'atvp', 'nflx', 'hmax', 'max', 'paramount', 'disney',
+        'h264', 'h.264', 'x264', 'h265', 'h.265', 'x265', 'hevc', 'avc', '10bit', '10-bit', '8bit', 'hdr', 'hdr10', 'hdr10plus', 'hdr10+', 'dv', 'dovi', 'sdr',
+        'ddp5.1', 'ddp51', 'ddp5', 'dd5.1', 'dd51', 'ddp', 'dd+', 'atmos', 'dts-hd', 'dts', 'truehd', 'aac2.0', 'aac', 'ac3', 'eac3', 'mp3', 'flac',
+        'latino', 'lat', 'castellano', 'espanol', 'español', 'spanish', 'subtitulado', 'sub', 'subs', 'subbed', 'vose', 'vost', 'spa-lat', 'esp-mx', 'es-la', 'es-mx',
+        'dual', 'ingles', 'english', 'eng', 'audio', 'multi', 'multiaudio', 'temporada', 'temp', 'mkv', 'mp4', 'avi'
     ];
     foreach ($noise_words as $w) {
         $title = preg_replace('/\b' . preg_quote($w, '/') . '\b/iu', ' ', $title);
@@ -205,6 +211,13 @@ function clean_title_for_comparison(string $title): string {
  */
 function is_strict_title_match(string $query_title, string $candidate_title, ?string $query_year = null, ?string $candidate_year = null): bool
 {
+    // Auto-extraer año del candidato si no fue provisto explícitamente
+    if (!$candidate_year) {
+        if (preg_match('/[\(\[\s._\-]\b(19\d{2}|20[0-2]\d|203[0-5])\b[\)\]\s._\-]/', ' ' . $candidate_title . ' ', $my)) {
+            $candidate_year = $my[1];
+        }
+    }
+
     // 1. Comprobar años si ambos están presentes y son válidos
     if ($query_year && $candidate_year) {
         $y_q = (int)preg_replace('/\D/', '', $query_year);
@@ -217,7 +230,7 @@ function is_strict_title_match(string $query_title, string $candidate_title, ?st
     // 2. Detección estricta de secuelas (números, romanos, palabras numéricas, capítulos/partes)
     $get_sequel_tokens = function(string $str): array {
         $str = mb_strtolower($str, 'UTF-8');
-        $str = preg_replace('/[\(\[]\s*(?:19|20)\d{2}\s*[\)\]]/', ' ', $str);
+        $str = preg_replace('/[\(\[\s._\-]\b(19\d{2}|20[0-2]\d|203[0-5])\b[\)\]\s._\-]/', ' ', ' ' . $str . ' ');
         $tokens = [];
         if (preg_match_all('/\b([2-9]|10)\b/i', $str, $m)) {
             $tokens = array_merge($tokens, $m[1]);
@@ -267,23 +280,22 @@ function is_strict_title_match(string $query_title, string $candidate_title, ?st
         'subs', 'sub', 'integrados', 'integrado', 'vose', 'vost',
         'extended', 'extendida', 'unrated', 'directors', 'director', 'cut',
         'remastered', 'remasterizada', 'imax', 'version', 'edicion', 'edition',
-        'pelicula', 'movie'
+        'pelicula', 'movie', 'amzn', 'dsnp', 'nflx', 'webdl', 'webrip', 'bluray',
+        'h264', 'x264', 'h265', 'x265', 'hevc', 'ddp51', 'ddp', 'atmos', 'dts',
+        'aac', 'ac3', 'latino', 'lat', 'castellano', 'dual', 'multi', 'mp4', 'mkv'
     ];
 
-    // 4. Si el candidato empieza por la búsqueda (ej: "Insidious 1080p BluRay" o "Insidious: The Red Door")
+    // 4. Si el candidato empieza por la búsqueda
     if (strpos($clean_cand, $clean_query) === 0) {
         $extra = substr($clean_cand, strlen($clean_query));
-        // Permitir años de 4 dígitos en el sobrante
         $extra = preg_replace('/(19\d{2}|20\d{2})/', '', $extra);
         foreach ($allowed_noise as $n) {
             $extra = str_replace($n, '', $extra);
         }
         $extra = trim(preg_replace('/[^a-z0-9]/', '', $extra));
-        // Si no queda nada, era sólo ruido técnico permitido
         if (empty($extra)) {
             return true;
         }
-        // Si quedan letras (como "lapuertaroja", "thereddoor"), es una secuela o película distinta
         return false;
     }
 
@@ -304,6 +316,92 @@ function is_strict_title_match(string $query_title, string $candidate_title, ?st
     // 6. Similitud textual razonable para pequeñas erratas tipográficas (mínimo 90%)
     similar_text($clean_query, $clean_cand, $percent);
     return ($percent >= 90.0);
+}
+
+/**
+ * Analiza el nombre crudo de un release de torrent (ej: "Moana.2026.1080p.AMZN.WEB-DL.MULTi.LATINO.DDP5.1.H264.MP4-BTM")
+ * y extrae con precisión:
+ * - 'title': El título limpio antes del año o etiquetas de calidad.
+ * - 'year': El año de 4 dígitos si está presente.
+ */
+function parse_torrent_release_name(string $raw): array {
+    $raw = html_entity_decode($raw, ENT_QUOTES, 'UTF-8');
+    
+    // Quitar sufijo del grupo de release al final si existe (ej. "-BTM", "-FLUX", "-YG⭐")
+    $clean = preg_replace('/-[a-zA-Z0-9_\x{1F300}-\x{1F9FF}⭐]+$/u', '', $raw);
+    
+    $cand_year = null;
+    $title_part = $clean;
+    
+    // 1. Año de 4 dígitos (1900-2035)
+    if (preg_match('/^(.*?)(?:[\s._\-\(\[]+)(19\d{2}|20[0-2]\d|203[0-5])(?:[\s._\-\)\]]+|$)/i', $clean, $m)) {
+        $title_part = $m[1];
+        $cand_year = $m[2];
+    }
+    // 2. Si no tiene año pero tiene etiquetas típicas de calidad (1080p, 720p, etc.)
+    elseif (preg_match('/^(.*?)(?:[\s._\-\(\[]+)(?:1080p|720p|2160p|4k|bluray|web-?dl|webrip|bdrip|dvdrip|hdtv)(?:[\s._\-\)\]]+|$)/i', $clean, $m)) {
+        $title_part = $m[1];
+    }
+    
+    $cand_title = trim(str_replace(['.', '_', '-'], ' ', $title_part));
+    return [
+        'title' => $cand_title,
+        'year' => $cand_year
+    ];
+}
+
+/**
+ * Detecta si un título o release de torrent contiene pistas de audio Latino
+ * en sus diversas variantes: Latino, Audio Latino, Dual Lat, Lat, Esp-MX, ES-LA, Spa-Lat, Multi Audio Lat, etc.
+ */
+function is_latino_audio(string $title): bool {
+    $patterns = [
+        '/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino)\b/i',
+        '/\bdual[\s\.\-_]*lat(?:ino)?\b/i',
+        '/\b(esp?[\s\.\-_]*(?:mx|la)|spa[\s\.\-_]*lat(?:ino)?)\b/i',
+        '/\bspanish[\s\.\-_]*latino\b/i',
+        '/(?:[\.\[_\-\s]|^)lat(?:[\.\]_\-\s]|$)/i',
+        '/\bmulti(?:[\s\.\-_]*(?:audio|subs?))?[\s\.\-_].*?\b(lat|latino|mx)\b/i',
+        '/\b(lat|latino|mx)\b.*?[\s\.\-_]multi\b/i',
+    ];
+    foreach ($patterns as $p) {
+        if (preg_match($p, $title)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Detecta el idioma formal de un release para mostrar en la interfaz.
+ */
+function detect_release_language(string $title): string {
+    $is_latino = is_latino_audio($title);
+    $is_dual = (bool)preg_match('/\b(dual|multi|eng|english|ingles|audio[\s\.\-_]*dual)\b/i', $title);
+    
+    if ($is_latino) {
+        if ($is_dual) {
+            return 'Español Latino (Dual)';
+        }
+        return 'Español Latino';
+    }
+    
+    if (preg_match('/\b(castellano|spanish|español|espanol|spa)\b/i', $title) && !preg_match('/\b(mx|la|latino|lat)\b/i', $title)) {
+        if ($is_dual) {
+            return 'Español Castellano (Dual)';
+        }
+        return 'Español Castellano';
+    }
+    
+    if (preg_match('/\b(dual|multi)\b/i', $title)) {
+        return 'Dual Audio / Multi';
+    }
+    
+    if (preg_match('/\b(subtitulado|sub|subs|subbed|vose|vost)\b/i', $title)) {
+        return 'Subtitulado';
+    }
+    
+    return 'Inglés / VO';
 }
 
 function format_query($query) {

@@ -135,8 +135,13 @@ class HackTorrentProvider implements ProviderInterface
 
             $lang = $dl['language'] ?? 'Latino';
             $langCode = 'lat';
-            if (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false) $langCode = 'cast';
-            elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) $langCode = 'sub';
+            if (is_latino_audio($lang)) {
+                $langCode = 'lat';
+            } elseif (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false || stripos($lang, 'spa') !== false) {
+                $langCode = 'cast';
+            } elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) {
+                $langCode = 'sub';
+            }
 
             $sources[] = [
                 'provider' => $this->getId(),
@@ -230,8 +235,13 @@ class HackTorrentProvider implements ProviderInterface
                 $quality = $this->formatQuality($emb['quality'] ?? 'Full HD');
                 $lang = $emb['lang'] ?? 'Latino';
                 $langCode = 'lat';
-                if (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false) $langCode = 'cast';
-                elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) $langCode = 'sub';
+                if (is_latino_audio($lang)) {
+                    $langCode = 'lat';
+                } elseif (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false || stripos($lang, 'spa') !== false) {
+                    $langCode = 'cast';
+                } elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) {
+                    $langCode = 'sub';
+                }
 
                 $sources[] = [
                     'provider' => $this->getId(),
@@ -261,8 +271,13 @@ class HackTorrentProvider implements ProviderInterface
                 $quality = $this->formatQuality($dl['quality'] ?? '1080p Full HD');
                 $lang = $dl['language'] ?? 'Latino';
                 $langCode = 'lat';
-                if (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false) $langCode = 'cast';
-                elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) $langCode = 'sub';
+                if (is_latino_audio($lang)) {
+                    $langCode = 'lat';
+                } elseif (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false || stripos($lang, 'spa') !== false) {
+                    $langCode = 'cast';
+                } elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) {
+                    $langCode = 'sub';
+                }
 
                 $sources[] = [
                     'provider' => $this->getId(),
