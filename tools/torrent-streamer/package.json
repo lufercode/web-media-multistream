@@ -1,15 +1,23 @@
 {
-  "name": "torrent-streamer",
+  "name": "streammedia-torrent-streamer",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "torrent",
+    "streaming",
+    "webtorrent",
+    "video"
+  ],
+  "author": "lufercode",
   "license": "ISC",
-  "description": "",
+  "description": "Microservicio de streaming de video secuencial de torrents para ArtPlayer",
   "dependencies": {
     "webtorrent": "^3.0.21"
   }

@@ -1526,24 +1526,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const playWithLocalStreamer = async (magnetUrl, title, server, provLabel, thumbnail, episodeMeta) => {
         const artContainer = document.getElementById('artplayerContainer');
         const badgesEl = document.getElementById('playerModalBadges');
+        const isRemote = Boolean(window.TORRENT_STREAMER_REMOTE_URL && window.TORRENT_STREAMER_REMOTE_URL.trim());
 
         if (badgesEl) {
+            const hostBadge = isRemote 
+                ? '<span class="badge bg-success text-white"><i class="fas fa-cloud me-1"></i>Render Cloud</span>' 
+                : '<span class="badge bg-secondary"><i class="fas fa-server me-1"></i>Local Node</span>';
             badgesEl.innerHTML = `
                 <span class="badge bg-warning text-dark"><i class="fas fa-magnet me-1"></i>${provLabel}</span>
-                <span class="badge bg-secondary"><i class="fas fa-server me-1"></i>Local Node</span>
+                ${hostBadge}
                 <span class="badge bg-info text-dark" id="torrentSeedsBadge"><i class="fas fa-spinner fa-spin me-1"></i>Conectando a BitTorrent...</span>
-                <button type="button" class="btn btn-xs btn-outline-info text-info py-0 px-2 ms-1 border-info" id="btnSwitchToWebtor" style="font-size: 0.72rem;" title="Cambiar a reproductor en la nube Webtor">
-                    <i class="fas fa-cloud me-1"></i>Modo Webtor
-                </button>
             `;
-            const btnSwitchW = document.getElementById('btnSwitchToWebtor');
-            if (btnSwitchW) {
-                btnSwitchW.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    localStorage.setItem('torrent_player_mode', 'webtor');
-                    openTorrentStreamModal(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
-                });
-            }
         }
 
         artContainer.style.display = 'block';
@@ -1551,7 +1544,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div id="torrentBufferHUD" class="d-flex flex-column align-items-center justify-content-center text-center p-4" style="min-height: 480px; height: 100%; background: radial-gradient(circle, #181926 0%, #0c0d14 100%);">
                 <div class="spinner-grow text-warning mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
                 <h4 class="text-white fw-bold mb-1"><i class="fas fa-magnet text-warning me-2"></i>Conectando al enjambre BitTorrent</h4>
-                <p class="text-secondary small mb-3" id="torrentStatusMsg">Iniciando descarga secuencial y contactando semillas de alta velocidad...</p>
+                <p class="text-secondary small mb-3" id="torrentStatusMsg">${isRemote ? 'Conectando con el servidor en la nube (Render) y buscando semillas...' : 'Iniciando descarga secuencial y contactando semillas de alta velocidad...'}</p>
                 <div class="progress w-75 bg-dark border border-secondary mb-2" style="height: 16px;">
                     <div id="torrentBufferBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning text-dark fw-bold" style="width: 0%; font-size: 0.75rem;">0%</div>
                 </div>
@@ -1720,18 +1713,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 800);
 
         } catch (err) {
-            console.error('[TorrentStream] Error local:', err);
+            console.error('[TorrentStream] Error:', err);
+            const isSleepingCloud = isRemote && err.message && (err.message.includes('503') || err.message.includes('despertando') || err.message.includes('iniciando'));
             artContainer.innerHTML = `
                 <div class="d-flex flex-column align-items-center justify-content-center p-4 text-center text-light" style="min-height: 500px; background: rgba(10, 10, 15, 0.95);">
-                    <i class="fas fa-server text-warning mb-2" style="font-size: 2.8rem;"></i>
-                    <h5 class="fw-bold text-white mb-2">Servidor Local Node.js No Disponible</h5>
+                    <i class="fas ${isSleepingCloud ? 'fa-cloud-sun text-warning' : 'fa-server text-danger'} mb-2" style="font-size: 2.8rem;"></i>
+                    <h5 class="fw-bold text-white mb-2">${isSleepingCloud ? 'Servidor Cloud en Suspensión (Render)' : 'Servidor de Streaming No Disponible'}</h5>
                     <p class="text-secondary small mb-3" style="max-width: 500px;">
-                        El servicio local de streaming no está activo (típico en InfinityFree o cuando el daemon está apagado).<br><br>
-                        💡 <strong>¡No te preocupes!</strong> Puedes reproducir este torrent directamente en la nube usando <strong>Webtor</strong> sin necesidad de ningún servidor propio.
+                        ${isSleepingCloud 
+                            ? 'Los servidores gratuitos de Render se suspenden tras unos minutos sin uso y tardan aproximadamente <strong>30 segundos</strong> en arrancar en frío.<br><br>Por favor, espera unos instantes y pulsa <strong>Reintentar Conexión</strong>.' 
+                            : (err.message || 'El servicio de streaming no está respondiendo en este momento.')}
                     </p>
                     <div class="d-flex flex-wrap gap-2 justify-content-center">
-                        <button type="button" class="btn btn-primary fw-bold btn-sm shadow-sm px-3" id="btnLocalFailFallbackWebtor">
-                            <i class="fas fa-cloud me-1"></i> Reproducir con Webtor (Nube)
+                        <button type="button" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm px-3" id="btnRetryTorrentStream">
+                            <i class="fas fa-redo me-1"></i> Reintentar Conexión
                         </button>
                         <a href="${magnetUrl}" class="btn btn-outline-warning btn-sm shadow-sm">
                             <i class="fas fa-external-link-alt me-1"></i> Abrir en VLC / qBittorrent
@@ -1739,11 +1734,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
             `;
-            const btnFailW = document.getElementById('btnLocalFailFallbackWebtor');
-            if (btnFailW) {
-                btnFailW.addEventListener('click', () => {
-                    localStorage.setItem('torrent_player_mode', 'webtor');
-                    playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+            const btnRetry = document.getElementById('btnRetryTorrentStream');
+            if (btnRetry) {
+                btnRetry.addEventListener('click', () => {
+                    openTorrentStreamModal(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
                 });
             }
         }
@@ -1791,31 +1785,7 @@ document.addEventListener('DOMContentLoaded', () => {
             modal.show();
         }
 
-        const mode = localStorage.getItem('torrent_player_mode') || window.TORRENT_PLAYER_MODE || 'webtor';
-
-        if (mode === 'streamer') {
-            await playWithLocalStreamer(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
-        } else if (mode === 'auto') {
-            let daemonOnline = false;
-            try {
-                const ctrl = new AbortController();
-                const toId = setTimeout(() => ctrl.abort(), 1200);
-                const hRes = await fetch('api/torrent_stream.php?action=health', { signal: ctrl.signal });
-                clearTimeout(toId);
-                if (hRes.ok) {
-                    const hData = await hRes.json();
-                    if (hData && hData.status === 'ok') daemonOnline = true;
-                }
-            } catch (e) {}
-
-            if (daemonOnline) {
-                await playWithLocalStreamer(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
-            } else {
-                playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
-            }
-        } else {
-            playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
-        }
+        await playWithLocalStreamer(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
     };
 
 

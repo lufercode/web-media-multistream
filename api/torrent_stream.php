@@ -14,9 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../includes/bootstrap.php';
 require_once __DIR__ . '/../lib/utils.php';
 
+$REMOTE_URL = defined('TORRENT_STREAMER_REMOTE_URL') ? trim(TORRENT_STREAMER_REMOTE_URL) : '';
+$IS_REMOTE = !empty($REMOTE_URL);
+
 $DAEMON_HOST = '127.0.0.1';
 $DAEMON_PORT = 8889;
-$DAEMON_BASE = "http://{$DAEMON_HOST}:{$DAEMON_PORT}";
+$DAEMON_BASE = $IS_REMOTE ? rtrim($REMOTE_URL, '/') : "http://{$DAEMON_HOST}:{$DAEMON_PORT}";
 
 function findNodeBinary(): string
 {
@@ -37,15 +40,30 @@ function findNodeBinary(): string
 }
 
 /**
- * Comprueba si el daemon Node.js está respondiendo; si no, lo inicia en segundo plano.
+ * Comprueba si el daemon Node.js está respondiendo; si no, lo inicia en segundo plano (en local).
+ * Si es un servicio remoto (Render.com), sondea para comprobar si está despierto.
  */
-function ensureDaemonRunning(string $daemon_base, int $timeout_sec = 4): bool
+function ensureDaemonRunning(string $daemon_base, int $timeout_sec = 4, bool $is_remote = false): bool
 {
-    $health = @http_get("{$daemon_base}/health", ['timeout' => 1]);
+    $health = @http_get("{$daemon_base}/health", ['timeout' => 2]);
     if ($health && stripos($health, '"status":"ok"') !== false) {
         return true;
     }
 
+    // Si es un host remoto en Render/Koyeb, esperar unos segundos en caso de 'cold start' (despertando del sleep)
+    if ($is_remote) {
+        $start_time = microtime(true);
+        while (microtime(true) - $start_time < $timeout_sec) {
+            usleep(500000); // 500ms
+            $check = @http_get("{$daemon_base}/health", ['timeout' => 2]);
+            if ($check && stripos($check, '"status":"ok"') !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Si es local, arrancar el script Node.js si existe
     $tools_dir = ROOT_DIR . '/tools/torrent-streamer';
     $server_script = $tools_dir . '/server.js';
     if (!file_exists($server_script)) {
@@ -93,21 +111,29 @@ if (!$action) {
 }
 
 if ($action === 'config') {
-    $mode = defined('TORRENT_PLAYER_MODE') ? TORRENT_PLAYER_MODE : 'webtor';
+    $mode = defined('TORRENT_PLAYER_MODE') ? TORRENT_PLAYER_MODE : 'streamer';
     echo json_encode([
         'status' => 'success',
-        'mode' => $mode
+        'mode' => $mode,
+        'isRemote' => $IS_REMOTE,
+        'daemonBase' => $DAEMON_BASE
     ]);
     exit;
 }
 
 if ($action === 'health') {
-    $is_running = ensureDaemonRunning($DAEMON_BASE, 2);
+    $is_running = ensureDaemonRunning($DAEMON_BASE, $IS_REMOTE ? 3 : 2, $IS_REMOTE);
     if ($is_running) {
         $info = @http_get("{$DAEMON_BASE}/health", ['timeout' => 2]);
-        echo $info ?: json_encode(['status' => 'ok', 'daemon' => 'running']);
+        echo $info ?: json_encode(['status' => 'ok', 'daemon' => 'running', 'isRemote' => $IS_REMOTE]);
     } else {
-        echo json_encode(['status' => 'offline', 'error' => 'No se pudo iniciar el daemon de torrents']);
+        echo json_encode([
+            'status' => 'offline', 
+            'isRemote' => $IS_REMOTE,
+            'error' => $IS_REMOTE 
+                ? 'El servidor de streaming en la nube está suspendido o iniciando.' 
+                : 'No se pudo iniciar el daemon local de torrents'
+        ]);
     }
     exit;
 }
@@ -121,9 +147,14 @@ if ($action === 'load') {
         exit;
     }
 
-    if (!ensureDaemonRunning($DAEMON_BASE, 3)) {
+    if (!ensureDaemonRunning($DAEMON_BASE, $IS_REMOTE ? 8 : 3, $IS_REMOTE)) {
         http_response_code(503);
-        echo json_encode(['status' => 'error', 'error' => 'El servicio de streaming no está disponible']);
+        echo json_encode([
+            'status' => 'error', 
+            'error' => $IS_REMOTE 
+                ? 'El servidor de streaming en la nube está despertando. Por favor espera unos segundos e intenta nuevamente.' 
+                : 'El servicio local de streaming no está disponible.'
+        ]);
         exit;
     }
 
@@ -134,7 +165,9 @@ if ($action === 'load') {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 12);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -143,7 +176,12 @@ if ($action === 'load') {
     if ($response && ($http_code === 200 || $http_code === 201)) {
         $data = json_decode($response, true);
         if (is_array($data) && !empty($data['infoHash'])) {
-            $data['streamUrl'] = 'api/torrent_stream.php?action=stream&infoHash=' . strtolower($data['infoHash']);
+            $hash = strtolower($data['infoHash']);
+            // Si es remoto, la URL de stream va directa al host remoto para no pasar gigabytes por InfinityFree
+            $data['streamUrl'] = $IS_REMOTE 
+                ? "{$DAEMON_BASE}/stream/{$hash}" 
+                : "api/torrent_stream.php?action=stream&infoHash={$hash}";
+            $data['isRemote'] = $IS_REMOTE;
             echo json_encode($data, JSON_UNESCAPED_SLASHES);
             exit;
         }
@@ -163,15 +201,18 @@ if ($action === 'status') {
         exit;
     }
 
-    ensureDaemonRunning($DAEMON_BASE, 2);
+    ensureDaemonRunning($DAEMON_BASE, $IS_REMOTE ? 3 : 2, $IS_REMOTE);
 
     $cleanHash = strtolower(trim($infoHash));
-    $status_json = @http_get("{$DAEMON_BASE}/status/{$cleanHash}", ['timeout' => 2]);
+    $status_json = @http_get("{$DAEMON_BASE}/status/{$cleanHash}", ['timeout' => 3]);
 
     if ($status_json) {
         $data = json_decode($status_json, true);
         if (is_array($data)) {
-            $data['streamUrl'] = 'api/torrent_stream.php?action=stream&infoHash=' . $cleanHash;
+            $data['streamUrl'] = $IS_REMOTE 
+                ? "{$DAEMON_BASE}/stream/{$cleanHash}" 
+                : "api/torrent_stream.php?action=stream&infoHash={$cleanHash}";
+            $data['isRemote'] = $IS_REMOTE;
             echo json_encode($data, JSON_UNESCAPED_SLASHES);
             exit;
         }
@@ -190,9 +231,16 @@ if ($action === 'stream') {
         exit('Falta infoHash');
     }
 
-    ensureDaemonRunning($DAEMON_BASE, 3);
-
     $cleanHash = strtolower(trim($infoHash));
+
+    // Si es remoto, redirigir HTTP 307 al servidor remoto directamente
+    if ($IS_REMOTE) {
+        header("Location: {$DAEMON_BASE}/stream/{$cleanHash}", true, 307);
+        exit;
+    }
+
+    ensureDaemonRunning($DAEMON_BASE, 3, false);
+
     $daemon_stream_url = "{$DAEMON_BASE}/stream/{$cleanHash}";
 
     @set_time_limit(0);
@@ -254,6 +302,7 @@ if ($action === 'stop') {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     $res = curl_exec($ch);
     curl_close($ch);
 

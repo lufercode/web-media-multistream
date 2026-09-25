@@ -22,10 +22,14 @@ define('WATCHLIST_DIR', ROOT_DIR . '/data/watchlist');
 define('GOOGLE_CLIENT_ID', '474518961918-0r1n29n2gegd6clc3etvidmp21t4c4kh.apps.googleusercontent.com');
 
 // Modo de reproducción para enlaces BitTorrent / Magnet
-// 'webtor': Reproductor en la nube Webtor.io (100% compatible con InfinityFree, móviles y sin dependencias Node en el host)
-// 'streamer': Servidor Node.js WebTorrent propio con ArtPlayer (para localhost o Render.com)
-// 'auto': Detección inteligente (usa streamer si está disponible, o Webtor como fallback)
-define('TORRENT_PLAYER_MODE', 'webtor');
+// 'streamer': Servidor Node.js WebTorrent propio con ArtPlayer nativo (en localhost o en la nube gratuita ej: Render.com)
+// 'webtor': Reproductor en la nube Webtor.io (Legacy / Fallback)
+define('TORRENT_PLAYER_MODE', 'streamer');
+
+// URL remota del microservicio de streaming de torrents (Opción 2 - Render.com / Koyeb)
+// Si está vacío (''), el sistema arranca y usa el servidor Node.js local (Laragon en http://127.0.0.1:8889).
+// Al desplegar en Render.com, coloca aquí la URL generada: ej. 'https://mi-streamer.onrender.com'
+define('TORRENT_STREAMER_REMOTE_URL', '');
 
 // Interruptores de Proveedores (Habilitar / Deshabilitar fuentes individuales)
 $PROVIDERS_CONFIG = [

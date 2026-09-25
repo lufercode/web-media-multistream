@@ -135,9 +135,9 @@ foreach ($details['genres'] ?? [] as $g) {
 </div>
 
 <script>
-    window.TORRENT_PLAYER_MODE = '<?= defined("TORRENT_PLAYER_MODE") ? TORRENT_PLAYER_MODE : "webtor" ?>';
+    window.TORRENT_PLAYER_MODE = '<?= defined("TORRENT_PLAYER_MODE") ? TORRENT_PLAYER_MODE : "streamer" ?>';
+    window.TORRENT_STREAMER_REMOTE_URL = '<?= defined("TORRENT_STREAMER_REMOTE_URL") ? TORRENT_STREAMER_REMOTE_URL : "" ?>';
 </script>
-<script src="https://cdn.jsdelivr.net/npm/@webtor/embed-sdk-js/dist/index.min.js" charset="utf-8" async></script>
 <script src="assets/js/hls.min.js?v=<?= file_exists(__DIR__ . '/assets/js/hls.min.js') ? filemtime(__DIR__ . '/assets/js/hls.min.js') : '1.5.8' ?>"></script>
 <script src="assets/js/artplayer.js?v=<?= file_exists(__DIR__ . '/assets/js/artplayer.js') ? filemtime(__DIR__ . '/assets/js/artplayer.js') : '5.4.0' ?>"></script>
 <script src="assets/js/details_loader.js?v=<?= file_exists(__DIR__ . '/assets/js/details_loader.js') ? filemtime(__DIR__ . '/assets/js/details_loader.js') : time() ?>" defer></script>

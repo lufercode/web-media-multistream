@@ -8,10 +8,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = parseInt(process.env.PORT || '8889', 10);
-const HOST = '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 
-// Carpeta de almacenamiento temporal
-const CACHE_DIR = path.resolve(__dirname, '../../data/torrent_cache');
+// Carpeta de almacenamiento temporal (compatible con entornos locales y cloud / Render / Docker)
+function getCacheDir() {
+    if (process.env.CACHE_DIR) return process.env.CACHE_DIR;
+    const localData = path.resolve(__dirname, '../../data');
+    if (fs.existsSync(localData)) {
+        return path.resolve(localData, 'torrent_cache');
+    }
+    const tmpBase = process.env.TMPDIR || process.env.TEMP || '/tmp';
+    return path.resolve(tmpBase, 'torrent_cache');
+}
+
+const CACHE_DIR = getCacheDir();
 if (!fs.existsSync(CACHE_DIR)) {
     try {
         fs.mkdirSync(CACHE_DIR, { recursive: true });
