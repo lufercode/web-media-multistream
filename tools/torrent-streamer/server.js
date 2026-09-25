@@ -71,7 +71,7 @@ function getMimeType(filename) {
         case '.webm':
             return 'video/webm';
         case '.mkv':
-            return 'video/webm';
+            return 'video/x-matroska';
         case '.avi':
             return 'video/x-msvideo';
         case '.mov':
@@ -209,11 +209,13 @@ const server = http.createServer(async (req, res) => {
                 if (mainVideo) {
                     entry.file = mainVideo;
                     mainVideo.select();
-                    // Priorizar secuencialmente las primeras 25 piezas del video para un arranque rápido y sin lag
+                    // Priorizar secuencialmente las primeras 25 piezas (cabecera) y las últimas 4 piezas (índice/Cues/moov)
                     if (typeof mainVideo._startPiece === 'number' && typeof mainVideo._endPiece === 'number') {
                         const headEnd = Math.min(mainVideo._endPiece, mainVideo._startPiece + 25);
+                        const tailStart = Math.max(mainVideo._startPiece, mainVideo._endPiece - 4);
                         try {
                             torrent.critical(mainVideo._startPiece, headEnd);
+                            torrent.critical(tailStart, mainVideo._endPiece);
                         } catch (e) {}
                     }
                     console.log(`[Streamer] Video principal seleccionado: ${mainVideo.name} (${formatBytes(mainVideo.length)})`);
@@ -259,7 +261,7 @@ const server = http.createServer(async (req, res) => {
                 status: 'success',
                 infoHash: resolvedHash,
                 ready: !!entry.file,
-                streamUrl: `http://${HOST}:${PORT}/stream/${resolvedHash}`
+                streamUrl: `${baseUrl}/stream/${resolvedHash}`
             }));
         } catch (err) {
             console.error('[Streamer] Error al añadir torrent:', err);
@@ -373,9 +375,10 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // GET /stream/:infoHash
+    // GET /stream/:infoHash (o /stream/:infoHash/:filename)
     if (pathname.startsWith('/stream/')) {
-        const infoHash = pathname.replace('/stream/', '').trim().toLowerCase();
+        const rawStreamPath = pathname.replace('/stream/', '').trim();
+        const infoHash = (rawStreamPath.split('/')[0] || '').toLowerCase();
         const entry = activeTorrents.get(infoHash);
 
         if (!entry || !entry.torrent) {
@@ -402,9 +405,18 @@ const server = http.createServer(async (req, res) => {
             const partialStart = parts[0];
             const partialEnd = parts[1];
 
-            const start = parseInt(partialStart, 10);
-            const end = partialEnd ? parseInt(partialEnd, 10) : total - 1;
+            const start = Math.max(0, parseInt(partialStart, 10) || 0);
+            const end = partialEnd ? Math.min(total - 1, parseInt(partialEnd, 10)) : total - 1;
             const chunkSize = (end - start) + 1;
+
+            // Priorizar inmediatamente las piezas solicitadas por el navegador o VLC (saltos / índice final)
+            if (entry.torrent.pieceLength && typeof file._startPiece === 'number' && typeof file._endPiece === 'number') {
+                const reqPieceStart = Math.min(file._endPiece, file._startPiece + Math.floor(start / entry.torrent.pieceLength));
+                const reqPieceEnd = Math.min(file._endPiece, reqPieceStart + 4);
+                try {
+                    entry.torrent.critical(reqPieceStart, reqPieceEnd);
+                } catch (e) {}
+            }
 
             res.writeHead(206, {
                 'Content-Range': `bytes ${start}-${end}/${total}`,

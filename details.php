@@ -51,41 +51,43 @@ foreach ($details['genres'] ?? [] as $g) {
 }
 ?>
 
-<div class="container my-4 text-white">
+<div class="container my-2 my-md-4 px-2 px-sm-3 text-white">
     <!-- Breadcrumb / Volver -->
-    <div class="mb-3">
-        <a href="index.php" class="btn btn-outline-secondary btn-sm">
+    <div class="mb-2 mb-md-3">
+        <a href="index.php" class="btn btn-outline-secondary btn-sm py-1 px-2.5">
             <i class="fas fa-arrow-left me-1"></i> Volver al Catálogo
         </a>
     </div>
 
     <!-- Ficha de Detalles con Fondo Cinematográfico -->
-    <div class="card bg-dark border-secondary shadow-lg overflow-hidden mb-4 details-hero-card" <?= $backdrop ? 'style="background: linear-gradient(to right, rgba(16, 18, 27, 0.96) 25%, rgba(16, 18, 27, 0.88) 60%, rgba(16, 18, 27, 0.94) 100%), url(\'' . htmlspecialchars($backdrop) . '\') center/cover no-repeat;"' : '' ?>>
+    <div class="card bg-dark border-secondary shadow-lg overflow-hidden mb-3 mb-md-4 details-hero-card" <?= $backdrop ? 'style="background: linear-gradient(to right, rgba(16, 18, 27, 0.96) 25%, rgba(16, 18, 27, 0.88) 60%, rgba(16, 18, 27, 0.94) 100%), url(\'' . htmlspecialchars($backdrop) . '\') center/cover no-repeat;"' : '' ?>>
         <div class="row g-0 align-items-center align-items-md-stretch">
-            <div class="col-12 col-md-4 col-lg-3 text-center details-poster-col p-3">
-                <img src="<?= htmlspecialchars($poster) ?>" alt="<?= htmlspecialchars($title) ?>" class="img-fluid rounded shadow details-poster-img" style="max-height: 450px; object-fit: cover;">
+            <div class="col-12 col-md-4 col-lg-3 text-center details-poster-col p-2 p-sm-3 d-flex justify-content-center align-items-center">
+                <img src="<?= htmlspecialchars($poster) ?>" alt="<?= htmlspecialchars($title) ?>" class="img-fluid rounded shadow details-poster-img">
             </div>
-            <div class="col-12 col-md-8 col-lg-9 p-3 p-md-4 d-flex flex-column justify-content-between details-info-col">
+            <div class="col-12 col-md-8 col-lg-9 p-2.5 p-sm-3 p-md-4 d-flex flex-column justify-content-between details-info-col">
                 <div>
-                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                        <h2 class="mb-0 fw-bold text-white"><?= htmlspecialchars($title) ?></h2>
-                        <?php if ($release_year): ?>
-                            <span class="badge bg-secondary fs-6"><?= htmlspecialchars($release_year) ?></span>
-                        <?php endif; ?>
-                        <?php if ($is_anime): ?>
-                            <span class="badge bg-danger text-uppercase"><i class="fas fa-dragon me-1"></i> Anime <?= $type === 'movie' ? '(Película)' : '(Serie)' ?></span>
-                        <?php else: ?>
-                            <span class="badge bg-primary text-uppercase"><?= $type === 'movie' ? 'Película' : 'Serie' ?></span>
-                        <?php endif; ?>
-                        <?php if ($rating): ?>
-                            <span class="badge bg-warning text-dark fs-6"><i class="fas fa-star text-dark me-1"></i> <?= $rating ?></span>
-                        <?php endif; ?>
+                    <div class="d-flex flex-wrap align-items-center gap-1.5 gap-sm-2 mb-2">
+                        <h2 class="mb-0 fw-bold text-white details-hero-title"><?= htmlspecialchars($title) ?></h2>
+                        <div class="d-inline-flex flex-wrap align-items-center gap-1">
+                            <?php if ($release_year): ?>
+                                <span class="badge bg-secondary details-hero-badge"><?= htmlspecialchars($release_year) ?></span>
+                            <?php endif; ?>
+                            <?php if ($is_anime): ?>
+                                <span class="badge bg-danger text-uppercase details-hero-badge"><i class="fas fa-dragon me-1"></i> Anime <?= $type === 'movie' ? '(Película)' : '(Serie)' ?></span>
+                            <?php else: ?>
+                                <span class="badge bg-primary text-uppercase details-hero-badge"><?= $type === 'movie' ? 'Película' : 'Serie' ?></span>
+                            <?php endif; ?>
+                            <?php if ($rating): ?>
+                                <span class="badge bg-warning text-dark details-hero-badge"><i class="fas fa-star text-dark me-1"></i> <?= $rating ?></span>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
                     <!-- Botón de Mi Lista (Guardar en Favoritos) -->
-                    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+                    <div class="d-flex align-items-center gap-2 mb-2 mb-md-3 flex-wrap">
                         <button type="button" 
-                                class="btn btn-outline-light btn-sm btn-fav-toggle rounded-pill px-3 py-1.5 shadow-sm d-inline-flex align-items-center gap-2 details-fav-btn"
+                                class="btn btn-outline-light btn-sm btn-fav-toggle rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1.5 details-fav-btn"
                                 data-fav-id="<?= htmlspecialchars($id) ?>" 
                                 data-fav-type="<?= htmlspecialchars($type) ?>" 
                                 data-fav-title="<?= htmlspecialchars($title) ?>" 
@@ -97,9 +99,9 @@ foreach ($details['genres'] ?? [] as $g) {
                     </div>
 
                     <?php if (!empty($genres) || $runtime): ?>
-                        <div class="text-secondary small mb-3" style="color: #cbd5e1 !important;">
+                        <div class="text-secondary small mb-2 mb-md-3 details-meta-text" style="color: #cbd5e1 !important;">
                             <?php if ($runtime): ?>
-                                <span class="me-3"><i class="far fa-clock me-1 text-info"></i> <?= htmlspecialchars($runtime) ?></span>
+                                <span class="me-2 me-sm-3"><i class="far fa-clock me-1 text-info"></i> <?= htmlspecialchars($runtime) ?></span>
                             <?php endif; ?>
                             <?php if (!empty($genres)): ?>
                                 <span><i class="fas fa-tags me-1 text-warning"></i> <?= htmlspecialchars(implode(', ', $genres)) ?></span>
@@ -107,11 +109,11 @@ foreach ($details['genres'] ?? [] as $g) {
                         </div>
                     <?php endif; ?>
 
-                    <h6 class="text-info fw-bold mb-2">Sinopsis:</h6>
-                    <p class="text-light lead fs-6 lh-base mb-3"><?= nl2br(htmlspecialchars($overview)) ?></p>
+                    <h6 class="text-info fw-bold mb-1 mb-md-2 details-synopsis-label">Sinopsis:</h6>
+                    <p class="text-light details-synopsis-text lh-base mb-2 mb-md-3"><?= nl2br(htmlspecialchars($overview)) ?></p>
                 </div>
 
-                <div class="mt-2 pt-3 border-top border-secondary text-secondary small">
+                <div class="mt-2 pt-2 pt-md-3 border-top border-secondary text-secondary small details-multi-source-note">
                     <span><i class="fas fa-satellite-dish text-success me-1"></i> Búsqueda multi-fuente activa (CDN, Streaming y Torrents).</span>
                 </div>
             </div>
@@ -119,16 +121,16 @@ foreach ($details['genres'] ?? [] as $g) {
     </div>
 
     <!-- Sección de Enlaces y Fuentes -->
-    <div class="card bg-dark border-secondary shadow-lg p-3 p-md-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="mb-0 text-warning"><i class="fas fa-link me-2"></i> Servidores y Enlaces Disponibles</h4>
-            <span class="badge bg-secondary">Multi-Servidor</span>
+    <div class="card bg-dark border-secondary shadow-lg p-2.5 p-sm-3 p-md-4">
+        <div class="d-flex justify-content-between align-items-center mb-2.5 mb-md-3 flex-wrap gap-2">
+            <h4 class="mb-0 text-warning details-section-title"><i class="fas fa-link me-2"></i> Servidores y Enlaces Disponibles</h4>
+            <span class="badge bg-secondary details-section-badge">Multi-Servidor</span>
         </div>
         
         <div id="enlaces-container" data-id="<?= htmlspecialchars($id) ?>" data-type="<?= htmlspecialchars($type) ?>" data-backdrop="<?= htmlspecialchars($backdrop ?? '') ?>" data-poster="<?= htmlspecialchars($poster) ?>" data-is-anime="<?= $is_anime ? '1' : '0' ?>">
-            <div class="p-4 text-center my-3 bg-dark border border-secondary rounded">
-                <div class="spinner-border text-info mb-2" role="status"></div>
-                <p class="mb-0 text-light">Consultando fuentes en servidores...</p>
+            <div class="p-3 p-md-4 text-center my-2 my-md-3 bg-dark border border-secondary rounded">
+                <div class="spinner-border spinner-border-sm text-info mb-2" role="status"></div>
+                <p class="mb-0 text-light small">Consultando fuentes en servidores...</p>
             </div>
         </div>
     </div>

@@ -1529,29 +1529,103 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const showVlcLaunchToast = (directUrl, itemTitle) => {
+        let toast = document.getElementById('vlcLaunchModalToast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'vlcLaunchModalToast';
+            toast.className = 'pop-in-card position-absolute bottom-0 start-50 translate-middle-x mb-2 mb-sm-3 p-2.5 p-sm-3 rounded shadow-lg text-white';
+            toast.style.cssText = 'z-index: 9999; background: rgba(15, 23, 42, 0.96); border: 1px solid #38bdf8; max-width: 95%; width: 450px; backdrop-filter: blur(12px);';
+            const modalBody = document.querySelector('#videoPlayerModal .modal-body');
+            if (modalBody) modalBody.appendChild(toast);
+            else document.body.appendChild(toast);
+        }
+
+        toast.innerHTML = `
+            <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fas fa-play-circle text-warning fs-4 flex-shrink-0"></i>
+                    <div>
+                        <strong class="d-block text-white" style="font-size: 0.92rem;">Abriendo en VLC Media Player</strong>
+                        <span class="badge bg-success bg-opacity-75 text-white" style="font-size: 0.7rem;"><i class="fas fa-check me-1"></i>Enlace de video copiado al portapapeles</span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white flex-shrink-0" onclick="this.closest('#vlcLaunchModalToast').style.display='none'"></button>
+            </div>
+            <p class="text-secondary small mb-2" style="font-size: 0.8rem; line-height: 1.35; color: #cbd5e1 !important;">
+                Si VLC no abre automáticamente:<br>
+                • En PC: Abre <strong>VLC</strong> y presiona <kbd class="bg-dark text-info">Ctrl + N</kbd> -> <kbd class="bg-dark text-info">Ctrl + V</kbd> -> <strong>Enter</strong>.<br>
+                • En móvil: Toca abrir con la app de VLC.
+            </p>
+            <div class="d-flex align-items-center justify-content-between gap-2 pt-2 border-top border-secondary border-opacity-50">
+                <a href="${directUrl}" target="_blank" class="btn btn-xs btn-outline-info text-info py-0 px-2" style="font-size: 0.72rem;">
+                    <i class="fas fa-external-link-alt me-1"></i>Abrir URL de video
+                </a>
+                <button type="button" class="btn btn-xs btn-outline-secondary text-light py-0 px-2 download-m3u-fallback" style="font-size: 0.72rem;">
+                    <i class="fas fa-file-download me-1"></i>Descargar .m3u
+                </button>
+            </div>
+        `;
+        toast.style.display = 'block';
+
+        const fallbackBtn = toast.querySelector('.download-m3u-fallback');
+        if (fallbackBtn) {
+            fallbackBtn.onclick = () => {
+                const cleanTitle = (itemTitle || 'Stream').replace(/[\r\n]/g, ' ').trim();
+                const m3u = `#EXTM3U\n#EXTINF:-1,${cleanTitle}\n${directUrl}\n`;
+                const blob = new Blob([m3u], { type: 'application/x-mpegurl' });
+                const u = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = u;
+                a.download = `${cleanTitle.replace(/[^a-zA-Z0-9_\-]/g, '_')}.m3u`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(u), 10000);
+            };
+        }
+
+        setTimeout(() => {
+            if (toast && toast.style.display !== 'none') {
+                toast.style.display = 'none';
+            }
+        }, 12000);
+    };
+
     const launchVlcPlaylist = (directUrl, itemTitle) => {
         const cleanTitle = (itemTitle || 'Stream').replace(/[\r\n]/g, ' ').trim();
-        const m3u = `#EXTM3U\n#EXTINF:-1,${cleanTitle}\n${directUrl}\n`;
-        const blob = new Blob([m3u], { type: 'application/x-mpegurl' });
-        const u = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = u;
-        a.download = `${cleanTitle.replace(/[^a-zA-Z0-9_\-]/g, '_')}.m3u`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(u), 10000);
+
+        // 1. Intentar lanzar VLC directamente con el protocolo URL registrado (vlc://)
+        try {
+            const vlcUri = `vlc://${directUrl}`;
+            const tempLink = document.createElement('a');
+            tempLink.href = vlcUri;
+            tempLink.style.display = 'none';
+            document.body.appendChild(tempLink);
+            tempLink.click();
+            setTimeout(() => {
+                try { document.body.removeChild(tempLink); } catch (e) {}
+            }, 1000);
+        } catch (e) {}
+
+        // 2. Copiar automáticamente el enlace de video directo al portapapeles
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(directUrl).catch(() => {});
+        }
+
+        // 3. Mostrar banner interactivo informativo sin descargas involuntarias
+        showVlcLaunchToast(directUrl, cleanTitle);
     };
 
     const copyVideoUrlToClipboard = (directUrl) => {
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(directUrl).then(() => {
-                alert(`✅ Enlace directo de video copiado al portapapeles.\n\nPara abrir en VLC:\n1. Abre VLC Media Player\n2. Presiona Ctrl + N (o Menú Medio -> Abrir emisión de red)\n3. Pega el enlace y haz clic en Reproducir.`);
+                showVlcLaunchToast(directUrl, 'Video Stream');
             }).catch(() => {
-                prompt('Copia este enlace directo de video y pégalo en VLC (Medio -> Abrir emisión de red):', directUrl);
+                prompt('Copia este enlace directo de video para VLC (Medio -> Abrir emisión de red):', directUrl);
             });
         } else {
-            prompt('Copia este enlace directo de video y pégalo en VLC (Medio -> Abrir emisión de red):', directUrl);
+            prompt('Copia este enlace directo de video para VLC (Medio -> Abrir emisión de red):', directUrl);
         }
     };
 
@@ -1737,6 +1811,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (remoteBase && (!streamUrl || streamUrl.includes('0.0.0.0') || streamUrl.startsWith('/'))) {
                             streamUrl = `${remoteBase}/stream/${infoHash}`;
                         }
+                        if (sData.name && !streamUrl.includes('?file=')) {
+                            streamUrl += `${streamUrl.includes('?') ? '&' : '?'}file=${encodeURIComponent(sData.name)}`;
+                        }
+                        const isMkvFile = (sData.name || '').toLowerCase().endsWith('.mkv');
                         const torrentSubs = (Array.isArray(sData.subtitles) ? sData.subtitles : []).map(s => {
                             let subUrl = s.url || '';
                             if (remoteBase && (subUrl.startsWith('/') || subUrl.includes('0.0.0.0'))) {
@@ -1751,7 +1829,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             const art = new Artplayer({
                                 container: '#artplayerContainer',
                                 url: streamUrl,
-                                type: 'auto',
+                                type: isMkvFile ? 'mkv' : 'auto',
+                                customType: {
+                                    mkv: function (video, url) {
+                                        video.src = url;
+                                    }
+                                },
                                 title: sData.name || title,
                                 poster: thumbnail || '',
                                 autoplay: true,
@@ -1865,6 +1948,33 @@ document.addEventListener('DOMContentLoaded', () => {
                                 console.warn('[ArtPlayer] Error agregando selector de subtítulos:', e);
                             }
 
+                            // Watchdog para avisar si el navegador tarda en decodificar el contenedor MKV
+                            let stallNoticeShown = false;
+                            const stallChecker = setInterval(() => {
+                                if (!art || !art.video) {
+                                    clearInterval(stallChecker);
+                                    return;
+                                }
+                                if (art.currentTime > 0.5) {
+                                    clearInterval(stallChecker);
+                                    return;
+                                }
+                                if (!stallNoticeShown && art.currentTime === 0) {
+                                    stallNoticeShown = true;
+                                    const fileName = (sData.name || '').toLowerCase();
+                                    const isMkv = fileName.endsWith('.mkv');
+                                    if (art.notice) {
+                                        art.notice.show = isMkv
+                                            ? '💡 Tip: Si tu navegador tarda en decodificar este archivo MKV, pulsa "VLC" arriba a la derecha para abrirlo directamente.'
+                                            : 'Descargando datos iniciales del enjambre P2P...';
+                                    }
+                                }
+                            }, 10000);
+
+                            art.on('video:playing', () => {
+                                clearInterval(stallChecker);
+                            });
+
                             art.on('video:timeupdate', () => {
                                 if (art.currentTime >= 10 && episodeMeta) {
                                     triggerAutoProgress(episodeMeta);
@@ -1874,25 +1984,34 @@ document.addEventListener('DOMContentLoaded', () => {
                             art.on('video:error', () => {
                                 console.warn('[ArtPlayer] Error de reproducción nativa del navegador.');
                                 const errBox = document.createElement('div');
-                                errBox.className = 'd-flex flex-column align-items-center justify-content-center p-4 text-center text-light pop-in-card';
-                                errBox.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.92); z-index: 99;';
+                                errBox.className = 'd-flex flex-column align-items-center justify-content-center p-3 p-sm-4 text-center text-light pop-in-card';
+                                errBox.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.94); z-index: 99;';
                                 errBox.innerHTML = `
-                                    <i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2.8rem;"></i>
-                                    <h5 class="fw-bold text-white mb-2">Formato o Codec no compatible con este navegador</h5>
-                                    <p class="text-secondary small mb-3" style="max-width: 500px;">
-                                        Este archivo torrent viene codificado en un formato avanzado (ej. <strong>4K x265 / MKV</strong> o audio multicanal <strong>Dolby 5.1 / DTS</strong>) que tu navegador no decodifica nativamente.<br><br>
-                                        💡 <em>Puedes reproducirlo mediante <strong>Webtor (Nube)</strong> que transcodifica automáticamente, o abrirlo en <strong>VLC / qBittorrent</strong>.</em>
+                                    <i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2.5rem;"></i>
+                                    <h5 class="fw-bold text-white mb-2" style="font-size: 1.05rem;">Codec o formato no decodificado nativamente</h5>
+                                    <p class="text-secondary small mb-3" style="max-width: 500px; font-size: 0.82rem; line-height: 1.4;">
+                                        Este video torrent utiliza un contenedor o audio avanzado (ej. <strong>MKV / x265 / EAC3 Dolby</strong>) que este navegador no reproduce nativamente.<br><br>
+                                        💡 <em>Puedes abrirlo en <strong>VLC Media Player</strong> con todas las pistas de audio y subtítulos, o reproducirlo mediante <strong>Webtor Cloud</strong>.</em>
                                     </p>
                                     <div class="d-flex flex-wrap gap-2 justify-content-center">
-                                        <button type="button" class="btn btn-primary fw-bold btn-sm shadow-sm" id="btnArtPlayerFallbackWebtor">
-                                            <i class="fas fa-cloud me-1"></i> Probar con Webtor Cloud
+                                        <button type="button" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm px-3" id="btnArtPlayerFallbackVlc">
+                                            <i class="fas fa-play-circle me-1"></i> Abrir con VLC (Video Directo)
                                         </button>
-                                        <a href="${magnetUrl}" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm">
-                                            <i class="fas fa-external-link-alt me-1"></i> Abrir en VLC / qBittorrent
+                                        <button type="button" class="btn btn-primary fw-bold btn-sm shadow-sm px-3" id="btnArtPlayerFallbackWebtor">
+                                            <i class="fas fa-cloud me-1"></i> Probar Webtor Cloud
+                                        </button>
+                                        <a href="${magnetUrl}" class="btn btn-outline-secondary text-light btn-sm shadow-sm">
+                                            <i class="fas fa-external-link-alt me-1"></i> Enlace Magnet
                                         </a>
                                     </div>
                                 `;
                                 artContainer.appendChild(errBox);
+                                const btnVlc = document.getElementById('btnArtPlayerFallbackVlc');
+                                if (btnVlc) {
+                                    btnVlc.addEventListener('click', () => {
+                                        launchVlcPlaylist(streamUrl, sData.name || title);
+                                    });
+                                }
                                 const btnFall = document.getElementById('btnArtPlayerFallbackWebtor');
                                 if (btnFall) {
                                     btnFall.addEventListener('click', () => {
@@ -2469,8 +2588,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const btn = document.createElement('button');
                 btn.type = 'button';
-                btn.className = 'btn btn-sm btn-outline-success stream-play-btn shadow-sm d-inline-flex align-items-center py-1 px-2';
-                btn.innerHTML = `<i class="fas fa-play text-success me-1"></i><strong>${srv}</strong> ${lang} ${qlt}`;
+                btn.className = 'btn btn-sm btn-outline-success stream-play-btn shadow-sm d-inline-flex align-items-center flex-wrap gap-1 py-1 px-2';
+                btn.innerHTML = `<i class="fas fa-play text-success me-1 flex-shrink-0"></i><strong>${srv}</strong> ${lang} ${qlt}`;
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -2504,23 +2623,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         data-bs-target="#${collapseId}" 
                         aria-expanded="false" 
                         aria-controls="${collapseId}">
-                    <div class="d-flex align-items-center flex-wrap gap-2">
-                        <i class="${icon} fs-5"></i>
-                        <span class="fw-bold text-white">${group.name}</span>
-                        <span class="badge bg-warning text-dark fw-bold">${count}</span>
-                        <div class="d-none d-sm-flex align-items-center gap-1">
+                    <div class="d-flex align-items-center flex-wrap gap-1.5 gap-sm-2" style="min-width: 0;">
+                        <i class="${icon} fs-5 flex-shrink-0"></i>
+                        <span class="fw-bold text-white text-truncate provider-title-text">${group.name}</span>
+                        <span class="badge bg-warning text-dark fw-bold flex-shrink-0">${count}</span>
+                        <div class="d-none d-sm-flex align-items-center gap-1 flex-wrap">
                             ${qltBadges}
                             ${langBadges}
                         </div>
                     </div>
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-1">
                         <span class="text-secondary small d-none d-md-inline">Torrents</span>
                         <i class="fas fa-chevron-down toggle-chevron text-secondary"></i>
                     </div>
                 </button>
                 <div class="collapse" id="${collapseId}">
                     <div class="card card-body bg-black border border-secondary border-opacity-50 p-2 p-md-3 mt-1 rounded-3">
-                        <div class="d-flex flex-wrap gap-2 torrents-slot"></div>
+                        <div class="d-flex flex-column gap-1.5 torrents-slot"></div>
                     </div>
                 </div>
             `;
@@ -2535,18 +2654,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const seeds = (src.seeders !== undefined && src.seeders !== null && src.seeders > 0) ? `<span class="badge bg-dark border border-success text-success ms-1"><i class="fas fa-arrow-up me-1"></i>${src.seeders}</span>` : '';
 
                 const itemBox = document.createElement('div');
-                itemBox.className = 'd-inline-flex align-items-center gap-1 bg-dark bg-opacity-75 border border-secondary border-opacity-50 rounded p-1 pop-in-card mb-1';
+                itemBox.className = 'torrent-item-row d-flex align-items-center justify-content-between gap-1.5 bg-dark bg-opacity-75 border border-secondary border-opacity-50 rounded p-1.5 pop-in-card w-100 flex-wrap flex-sm-nowrap';
 
                 if (url && url.startsWith('magnet:?')) {
                     // Botón principal: Ver en ArtPlayer con streaming secuencial
                     const btnPlay = document.createElement('button');
                     btnPlay.type = 'button';
-                    btnPlay.className = 'btn btn-sm btn-warning text-dark fw-bold d-inline-flex align-items-center py-1 px-2 shadow-sm';
+                    btnPlay.className = 'btn btn-sm btn-warning text-dark fw-bold stream-torrent-play-btn d-inline-flex align-items-center flex-wrap gap-1 py-1 px-2 shadow-sm flex-grow-1 text-start';
                     btnPlay.title = 'Reproducir directamente en el navegador online';
                     btnPlay.innerHTML = `
-                        <i class="fas fa-play-circle me-1"></i>
-                        <span>Ver en Reproductor</span>
-                        <span class="badge bg-black text-warning ms-1">${qlt}</span>
+                        <i class="fas fa-play-circle me-1 flex-shrink-0"></i>
+                        <span class="stream-btn-text">Ver en Reproductor</span>
+                        <span class="badge bg-black text-warning">${qlt}</span>
                         ${size}
                         ${lang}
                         ${seeds}
@@ -2560,7 +2679,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Botón secundario: Enlace externo para qBittorrent o VLC
                     const aExt = document.createElement('a');
                     aExt.href = url;
-                    aExt.className = 'btn btn-sm btn-outline-secondary text-warning py-1 px-2';
+                    aExt.className = 'btn btn-sm btn-outline-secondary text-warning py-1 px-2 flex-shrink-0';
                     aExt.title = 'Abrir en cliente torrent externo (qBittorrent / VLC)';
                     aExt.innerHTML = '<i class="fas fa-external-link-alt"></i>';
                     aExt.addEventListener('click', (e) => {
@@ -2570,10 +2689,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     const a = document.createElement('a');
                     a.href = url;
-                    a.className = 'btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center py-1 px-2';
+                    a.className = 'btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center flex-wrap gap-1 py-1 px-2 flex-grow-1';
                     a.title = 'Descargar torrent';
                     a.innerHTML = `
-                        <i class="fas fa-download me-1"></i>
+                        <i class="fas fa-download me-1 flex-shrink-0"></i>
                         <strong class="me-1">${srv}</strong>
                         <span class="badge bg-dark border border-warning text-warning ms-1">${qlt}</span>
                         ${size}
@@ -3035,7 +3154,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <div class="card episode-card p-2 p-md-3 rounded shadow-sm" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}">
                                     <div class="row g-2 g-md-3 align-items-center">
                                         <!-- Miniatura 16:9 del Episodio -->
-                                        <div class="col-5 col-sm-4 col-md-3 col-lg-3">
+                                        <div class="col-4 col-sm-4 col-md-3 col-lg-3">
                                             <div class="episode-thumb-box shadow-sm" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}" title="Ver fuentes de este episodio">
                                                 ${epThumb ? `
                                                     <img src="${epThumb}" alt="${epName.replace(/"/g, '&quot;')}" class="episode-thumb-img" loading="lazy" onerror="this.onerror=null; this.src='${fallbackThumb}';">
@@ -3045,7 +3164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                                         <span class="small fw-bold text-light">E${epNum}</span>
                                                     </div>
                                                 `}
-                                                <span class="badge bg-warning text-dark fw-bold position-absolute top-0 start-0 m-1 shadow-sm" style="font-size: 0.72rem;">E${epNum}</span>
+                                                <span class="badge bg-warning text-dark fw-bold position-absolute top-0 start-0 m-1 shadow-sm ep-thumb-badge" style="font-size: 0.72rem;">E${epNum}</span>
                                                 ${epRuntime}
                                                 <div class="episode-thumb-overlay">
                                                     <div class="episode-thumb-play-icon"><i class="fas fa-play"></i></div>
@@ -3054,30 +3173,43 @@ document.addEventListener('DOMContentLoaded', () => {
                                         </div>
 
                                         <!-- Información y Acciones del Episodio -->
-                                        <div class="col-7 col-sm-8 col-md-9 col-lg-9">
-                                            <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
-                                                <div class="flex-grow-1" style="min-width: 0;">
-                                                    <div class="d-flex align-items-center flex-wrap gap-1 gap-md-2 mb-1">
-                                                        <strong class="text-white text-truncate d-inline-block" style="max-width: 100%; font-size: 0.95rem;">${epName}</strong>
-                                                        ${epAir}
-                                                        ${statusBadge}
+                                        <div class="col-8 col-sm-8 col-md-9 col-lg-9">
+                                            <div class="d-flex flex-column justify-content-between h-100">
+                                                <div>
+                                                    <!-- Título del episodio: permite hasta 2 líneas para no truncar prematuramente en móviles -->
+                                                    <div class="d-flex align-items-start justify-content-between gap-1 mb-1">
+                                                        <strong class="text-white ep-title-text text-truncate-2" style="font-size: 0.92rem; line-height: 1.25;" title="${epName.replace(/"/g, '&quot;')}">${epName}</strong>
+                                                        <div class="btn-group btn-group-sm flex-shrink-0 ms-1 d-none d-sm-inline-flex">
+                                                            <button type="button" class="btn btn-outline-info mark-partially-watched py-1 px-2" title="Marcar como viendo"><i class="fas fa-eye"></i></button>
+                                                            <button type="button" class="btn btn-outline-success mark-watched py-1 px-2" title="Marcar como visto"><i class="fas fa-check"></i></button>
+                                                            <button type="button" class="btn btn-primary load-sources-btn py-1 px-2 px-md-3 d-none d-md-inline-flex align-items-center" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}">
+                                                                <i class="fas fa-search me-1"></i> Fuentes
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    ${epOverview ? `<p class="text-secondary small mb-0 text-truncate-2 d-none d-sm-block" style="line-height: 1.35; color: #94a3b8 !important;" title="${epOverview.replace(/"/g, '&quot;')}">${epOverview}</p>` : ''}
+
+                                                    <!-- Fila de Estado e Información -->
+                                                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-1 mb-1">
+                                                        <div class="d-flex align-items-center flex-wrap gap-1">
+                                                            ${statusBadge}
+                                                            ${epAir}
+                                                        </div>
+                                                        <!-- Botones de marcado en móvil compacto -->
+                                                        <div class="btn-group btn-group-sm flex-shrink-0 d-inline-flex d-sm-none">
+                                                            <button type="button" class="btn btn-outline-info mark-partially-watched py-0.5 px-2" title="Marcar como viendo" style="font-size: 0.72rem;"><i class="fas fa-eye"></i></button>
+                                                            <button type="button" class="btn btn-outline-success mark-watched py-0.5 px-2" title="Marcar como visto" style="font-size: 0.72rem;"><i class="fas fa-check"></i></button>
+                                                        </div>
+                                                    </div>
+
+                                                    ${epOverview ? `<p class="text-secondary small mb-1 text-truncate-2 d-none d-md-block" style="line-height: 1.35; color: #94a3b8 !important;" title="${epOverview.replace(/"/g, '&quot;')}">${epOverview}</p>` : ''}
                                                 </div>
-                                                <div class="btn-group btn-group-sm flex-shrink-0 ms-1">
-                                                    <button type="button" class="btn btn-outline-info mark-partially-watched py-1 px-2" title="Marcar como viendo"><i class="fas fa-eye"></i></button>
-                                                    <button type="button" class="btn btn-outline-success mark-watched py-1 px-2" title="Marcar como visto"><i class="fas fa-check"></i></button>
-                                                    <button type="button" class="btn btn-primary load-sources-btn py-1 px-2 px-md-3 d-none d-md-inline-flex align-items-center" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}">
-                                                        <i class="fas fa-search me-1"></i> Fuentes
+                                                
+                                                <!-- Botón Fuentes visible en móviles -->
+                                                <div class="d-md-none mt-1">
+                                                    <button type="button" class="btn btn-primary btn-sm w-100 load-sources-btn py-1" style="font-size: 0.8rem;" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}">
+                                                        <i class="fas fa-search me-1"></i> Buscar Fuentes
                                                     </button>
                                                 </div>
-                                            </div>
-                                            
-                                            <!-- Botón Fuentes visible en móviles -->
-                                            <div class="d-md-none mt-1">
-                                                <button type="button" class="btn btn-primary btn-sm w-100 load-sources-btn py-1" data-season="${sNum}" data-episode="${epNum}" data-absolute="${absNum}" data-epname="${(epName || '').replace(/"/g, '&quot;')}" data-thumb="${(epThumb || '').replace(/"/g, '&quot;')}">
-                                                    <i class="fas fa-search me-1"></i> Buscar Fuentes
-                                                </button>
                                             </div>
                                         </div>
                                     </div>

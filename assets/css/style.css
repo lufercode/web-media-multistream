@@ -523,6 +523,37 @@ body.has-minimized-player .modal-backdrop {
     transition: none !important;
 }
 
+.details-poster-img {
+    max-height: 430px;
+    object-fit: cover;
+}
+
+.details-hero-title {
+    font-size: clamp(1.22rem, 3.8vw, 1.85rem);
+    line-height: 1.22;
+    word-break: break-word;
+}
+
+.details-hero-badge {
+    font-size: 0.76rem;
+    padding: 0.3em 0.58em;
+    font-weight: 600;
+}
+
+.details-synopsis-label {
+    font-size: 0.92rem;
+}
+
+.details-synopsis-text {
+    font-size: 0.94rem;
+    color: #e2e8f0;
+}
+
+.details-section-title {
+    font-size: clamp(1.02rem, 3vw, 1.32rem);
+    font-weight: 700;
+}
+
 /* Tarjeta contenedora de episodio */
 .episode-card {
     background-color: #12141a !important;
@@ -627,13 +658,124 @@ body.has-minimized-player .modal-backdrop {
     object-fit: contain;
 }
 
-/* Adaptación responsiva para móviles pequeños */
+/* Adaptación responsiva integral para tablets y móviles */
+@media (max-width: 768px) {
+    .details-poster-img {
+        max-height: 200px;
+        width: auto;
+    }
+    .details-hero-title {
+        font-size: 1.2rem;
+    }
+    .details-hero-badge {
+        font-size: 0.68rem;
+        padding: 0.22em 0.48em;
+    }
+    .details-synopsis-text {
+        font-size: 0.84rem;
+        line-height: 1.42 !important;
+    }
+    .details-meta-text,
+    .details-multi-source-note {
+        font-size: 0.78rem !important;
+    }
+    #videoPlayerModal:not(.modal-force-landscape):not(.player-minimized) .modal-body {
+        min-height: 250px !important;
+    }
+    #videoPlayerModal:not(.modal-force-landscape):not(.player-minimized) #playerIframe,
+    #videoPlayerModal:not(.modal-force-landscape):not(.player-minimized) #artplayerContainer {
+        height: min(65vw, 360px) !important;
+        min-height: 250px !important;
+    }
+    #torrentBufferHUD {
+        min-height: 270px !important;
+        padding: 0.85rem !important;
+    }
+    #torrentBufferHUD h4 {
+        font-size: 0.98rem !important;
+    }
+    #torrentBufferHUD .progress {
+        width: 94% !important;
+        height: 13px !important;
+    }
+    #torrentBufferHUD .spinner-grow {
+        width: 2.2rem !important;
+        height: 2.2rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+}
+
 @media (max-width: 576px) {
     .episode-card {
-        padding: 0.75rem !important;
+        padding: 0.55rem !important;
     }
     .episode-thumb-box {
-        margin-bottom: 0.5rem;
+        margin-bottom: 0 !important;
+    }
+    .episode-thumb-box .badge,
+    .episode-thumb-box .ep-thumb-badge {
+        font-size: 0.6rem !important;
+        padding: 0.14rem 0.3rem !important;
+        margin: 0.15rem !important;
+    }
+    .episode-thumb-play-icon {
+        width: 24px !important;
+        height: 24px !important;
+        font-size: 0.68rem !important;
+    }
+    .ep-title-text {
+        font-size: 0.83rem !important;
+        line-height: 1.22 !important;
+    }
+    .episode-card .badge-status {
+        font-size: 0.65rem !important;
+        padding: 0.2em 0.45em !important;
+    }
+    .episode-card small {
+        font-size: 0.7rem !important;
+    }
+    #seasonsAccordion .accordion-button {
+        padding: 0.65rem 0.75rem !important;
+        font-size: 0.86rem !important;
+    }
+    #seasonsAccordion .accordion-button .badge {
+        font-size: 0.68rem !important;
+    }
+    .provider-toggle-btn {
+        padding: 0.45rem 0.6rem !important;
+        font-size: 0.82rem !important;
+    }
+    .provider-title-text {
+        font-size: 0.82rem !important;
+        max-width: 175px;
+    }
+    .stream-play-btn,
+    .stream-torrent-play-btn {
+        font-size: 0.75rem !important;
+        padding: 0.3rem 0.5rem !important;
+        white-space: normal !important;
+        line-height: 1.25;
+    }
+    .stream-play-btn .badge,
+    .stream-torrent-play-btn .badge {
+        font-size: 0.65rem !important;
+        padding: 0.2em 0.42em !important;
+    }
+    .sources-progress-banner {
+        padding: 0.6rem 0.75rem !important;
+    }
+    .sources-progress-banner .progress-status-text {
+        font-size: 0.75rem !important;
+    }
+    .sources-progress-banner .badge {
+        font-size: 0.66rem !important;
+    }
+    .continue-watching-banner h6 {
+        font-size: 0.8rem !important;
+    }
+    .continue-watching-banner .resume-continue-btn {
+        font-size: 0.75rem !important;
+        padding: 0.25rem 0.65rem !important;
     }
 }
 
