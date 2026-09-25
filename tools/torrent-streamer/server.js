@@ -154,6 +154,7 @@ const server = http.createServer(async (req, res) => {
             const entry = {
                 torrent,
                 file: null,
+                subtitles: [],
                 addedAt: Date.now(),
                 lastAccess: Date.now()
             };
@@ -178,9 +179,43 @@ const server = http.createServer(async (req, res) => {
 
                 if (mainVideo) {
                     entry.file = mainVideo;
-                    // Priorizar el archivo de video seleccionado
                     mainVideo.select();
+                    // Priorizar secuencialmente las primeras 25 piezas del video para un arranque rápido y sin lag
+                    if (typeof mainVideo._startPiece === 'number' && typeof mainVideo._endPiece === 'number') {
+                        const headEnd = Math.min(mainVideo._endPiece, mainVideo._startPiece + 25);
+                        try {
+                            torrent.critical(mainVideo._startPiece, headEnd);
+                        } catch (e) {}
+                    }
                     console.log(`[Streamer] Video principal seleccionado: ${mainVideo.name} (${formatBytes(mainVideo.length)})`);
+                }
+
+                // Detectar archivos de subtítulos en el torrent (.srt, .vtt)
+                const subRegex = /\.(srt|vtt)$/i;
+                const subFiles = torrent.files.filter(f => subRegex.test(f.name));
+                entry.subtitles = subFiles.map(sub => {
+                    let label = 'Subtítulo';
+                    const lower = sub.name.toLowerCase();
+                    if (lower.includes('lat') || lower.includes('latino') || lower.includes('mx')) {
+                        label = 'Español Latino';
+                    } else if (lower.includes('spa') || lower.includes('esp') || lower.includes('cast')) {
+                        label = 'Español (Castellano)';
+                    } else if (lower.includes('eng') || lower.includes('en') || lower.includes('ing')) {
+                        label = 'Inglés';
+                    } else {
+                        label = path.basename(sub.name, path.extname(sub.name));
+                    }
+                    // Seleccionar para que descargue de inmediato (archivos diminutos de 50-100 KB)
+                    try { sub.select(); } catch (e) {}
+                    return {
+                        name: label,
+                        fileName: sub.name,
+                        index: torrent.files.indexOf(sub),
+                        size: formatBytes(sub.length)
+                    };
+                });
+                if (entry.subtitles.length > 0) {
+                    console.log(`[Streamer] Subtítulos detectados en torrent: ${entry.subtitles.length}`);
                 }
             };
 
@@ -205,6 +240,56 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // GET /subtitles/:infoHash/:fileIndex
+    if (pathname.startsWith('/subtitles/')) {
+        const parts = pathname.replace('/subtitles/', '').split('/');
+        const infoHash = (parts[0] || '').toLowerCase();
+        const fileIdx = parseInt(parts[1], 10);
+        const entry = activeTorrents.get(infoHash);
+
+        if (!entry || !entry.torrent || isNaN(fileIdx)) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Subtítulo no encontrado');
+            return;
+        }
+
+        const file = entry.torrent.files && entry.torrent.files[fileIdx];
+        if (!file) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Archivo de subtítulo no existe');
+            return;
+        }
+
+        entry.lastAccess = Date.now();
+        try { file.select(); } catch (e) {}
+
+        const stream = file.createReadStream();
+        const chunks = [];
+        stream.on('data', chunk => chunks.push(chunk));
+        stream.on('end', () => {
+            const rawContent = Buffer.concat(chunks).toString('utf-8');
+            let vttContent = rawContent;
+            if (file.name.toLowerCase().endsWith('.srt')) {
+                vttContent = 'WEBVTT - ' + file.name + '\n\n' + rawContent
+                    .replace(/\r\n|\r/g, '\n')
+                    .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+            }
+            res.writeHead(200, {
+                'Content-Type': 'text/vtt; charset=utf-8',
+                'Content-Length': Buffer.byteLength(vttContent, 'utf-8'),
+                'Access-Control-Allow-Origin': '*'
+            });
+            res.end(vttContent);
+        });
+        stream.on('error', (err) => {
+            if (!res.headersSent) {
+                res.writeHead(500, { 'Content-Type': 'text/plain' });
+                res.end('Error al leer subtítulo: ' + err.message);
+            }
+        });
+        return;
+    }
+
     // GET /status/:infoHash
     if (pathname.startsWith('/status/')) {
         const infoHash = pathname.replace('/status/', '').trim().toLowerCase();
@@ -220,11 +305,17 @@ const server = http.createServer(async (req, res) => {
         const t = entry.torrent;
         const f = entry.file;
 
-        // Calcular si el buffer inicial está listo (los primeros 5 MB o 1%)
+        // Calcular colchón de buffer inicial real (mínimo 10-12 MB o 2.5% del total para evitar lag)
         const downloadedBytes = t.downloaded || 0;
         const totalBytes = f ? f.length : (t.length || 1);
-        const initialBufferNeeded = Math.min(8 * 1024 * 1024, totalBytes * 0.05); // 8 MB o 5%
-        const isReadyToPlay = (entry.file !== null) && (downloadedBytes >= initialBufferNeeded || t.progress > 0.02 || t.numPeers > 0);
+        const initialBufferNeeded = Math.min(12 * 1024 * 1024, Math.max(3 * 1024 * 1024, totalBytes * 0.025));
+
+        // Condición anti-lag:
+        // Solo arrancar cuando se alcance el colchón inicial (ej. 12 MB) o con al menos 6 MB si la velocidad es muy rápida (>400 KB/s)
+        const isReadyToPlay = (entry.file !== null) && (
+            downloadedBytes >= initialBufferNeeded ||
+            (downloadedBytes >= 6 * 1024 * 1024 && t.downloadSpeed > 400 * 1024)
+        );
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -233,13 +324,21 @@ const server = http.createServer(async (req, res) => {
             name: f ? f.name : t.name,
             totalSize: formatBytes(totalBytes),
             downloadedSize: formatBytes(downloadedBytes),
+            bufferTargetSize: formatBytes(initialBufferNeeded),
             progressPct: Math.round(t.progress * 1000) / 10,
             initialBufferPct: Math.min(100, Math.round((downloadedBytes / initialBufferNeeded) * 100)),
             downloadSpeed: formatBytes(t.downloadSpeed) + '/s',
             uploadSpeed: formatBytes(t.uploadSpeed) + '/s',
             peers: t.numPeers,
             ready: isReadyToPlay,
-            streamUrl: `http://${HOST}:${PORT}/stream/${t.infoHash}`
+            streamUrl: `http://${HOST}:${PORT}/stream/${t.infoHash}`,
+            subtitles: (entry.subtitles || []).map(s => ({
+                name: s.name,
+                fileName: s.fileName,
+                index: s.index,
+                size: s.size,
+                url: `/subtitles/${t.infoHash}/${s.index}`
+            }))
         }));
         return;
     }

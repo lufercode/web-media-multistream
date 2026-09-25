@@ -213,6 +213,13 @@ if ($action === 'status') {
                 ? "{$DAEMON_BASE}/stream/{$cleanHash}" 
                 : "api/torrent_stream.php?action=stream&infoHash={$cleanHash}";
             $data['isRemote'] = $IS_REMOTE;
+            if (!empty($data['subtitles']) && is_array($data['subtitles'])) {
+                foreach ($data['subtitles'] as &$sub) {
+                    $sub['url'] = $IS_REMOTE 
+                        ? "{$DAEMON_BASE}/subtitles/{$cleanHash}/" . $sub['index']
+                        : "api/torrent_stream.php?action=subtitles&infoHash={$cleanHash}&index=" . $sub['index'];
+                }
+            }
             echo json_encode($data, JSON_UNESCAPED_SLASHES);
             exit;
         }
@@ -221,6 +228,26 @@ if ($action === 'status') {
         http_response_code(503);
         echo json_encode(['status' => 'error', 'error' => 'Daemon no disponible']);
     }
+    exit;
+}
+
+if ($action === 'subtitles') {
+    $infoHash = $_GET['infoHash'] ?? null;
+    $index = $_GET['index'] ?? null;
+    if (!$infoHash || $index === null) {
+        http_response_code(400);
+        exit('Falta infoHash o index');
+    }
+    $cleanHash = strtolower(trim($infoHash));
+    $cleanIdx = intval($index);
+    if ($IS_REMOTE) {
+        header("Location: {$DAEMON_BASE}/subtitles/{$cleanHash}/{$cleanIdx}", true, 307);
+        exit;
+    }
+    $vtt = @file_get_contents("{$DAEMON_BASE}/subtitles/{$cleanHash}/{$cleanIdx}");
+    header('Content-Type: text/vtt; charset=utf-8');
+    header('Access-Control-Allow-Origin: *');
+    echo $vtt ?: "WEBVTT\n\n";
     exit;
 }
 

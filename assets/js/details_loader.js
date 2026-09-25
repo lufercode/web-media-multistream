@@ -1602,7 +1602,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const pct = sData.initialBufferPct || 0;
                     if (barEl) {
                         barEl.style.width = `${pct}%`;
-                        barEl.textContent = `${pct}%`;
+                        const targetTxt = sData.bufferTargetSize ? ` (${sData.downloadedSize} / ${sData.bufferTargetSize})` : ` (${sData.downloadedSize})`;
+                        barEl.textContent = `${pct}%${targetTxt}`;
                     }
 
                     if (seedsBadge) {
@@ -1621,6 +1622,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (sData.ready && !playerStarted) {
                         playerStarted = true;
                         const streamUrl = sData.streamUrl;
+                        const torrentSubs = Array.isArray(sData.subtitles) ? sData.subtitles : [];
+                        const defaultSub = torrentSubs.length > 0 ? torrentSubs[0].url : '';
 
                         loadArtplayerScript(() => {
                             artContainer.innerHTML = '';
@@ -1651,6 +1654,16 @@ document.addEventListener('DOMContentLoaded', () => {
                                 fastForward: true,
                                 autoPlayback: true,
                                 theme: '#f39c12',
+                                subtitle: {
+                                    url: defaultSub,
+                                    type: 'vtt',
+                                    style: {
+                                        color: '#ffffff',
+                                        fontSize: '20px',
+                                        textShadow: '0 2px 4px rgba(0, 0, 0, 0.95)'
+                                    },
+                                    encoding: 'utf-8'
+                                },
                                 controls: [
                                     {
                                         name: 'torrent-stats',
@@ -1660,6 +1673,67 @@ document.addEventListener('DOMContentLoaded', () => {
                                     }
                                 ]
                             });
+
+                            // Configurar selector de subtítulos en el menú de ajustes de ArtPlayer
+                            const subSelectorList = [
+                                { default: torrentSubs.length === 0, html: '<i class="fas fa-ban me-1 text-danger"></i>Desactivado', url: '' },
+                                ...torrentSubs.map((s, idx) => ({
+                                    default: idx === 0,
+                                    html: `<i class="fas fa-closed-captioning me-1 text-warning"></i>${s.name}`,
+                                    url: s.url
+                                })),
+                                { html: '<i class="fas fa-folder-open me-1 text-info"></i>Cargar subtítulo local (.srt / .vtt)...', action: 'upload' }
+                            ];
+
+                            try {
+                                art.setting.add({
+                                    name: 'torrent-subtitles',
+                                    width: 250,
+                                    html: '<i class="fas fa-closed-captioning me-1"></i>Subtítulos',
+                                    tooltip: torrentSubs.length > 0 ? torrentSubs[0].name : 'Desactivado',
+                                    selector: subSelectorList,
+                                    onSelect: function (item) {
+                                        if (item.action === 'upload') {
+                                            const fileInput = document.createElement('input');
+                                            fileInput.type = 'file';
+                                            fileInput.accept = '.srt,.vtt';
+                                            fileInput.onchange = (e) => {
+                                                const file = e.target.files && e.target.files[0];
+                                                if (!file) return;
+                                                const reader = new FileReader();
+                                                reader.onload = (re) => {
+                                                    let content = re.target.result || '';
+                                                    if (file.name.toLowerCase().endsWith('.srt')) {
+                                                        content = 'WEBVTT - ' + file.name + '\n\n' + content
+                                                            .replace(/\r\n|\r/g, '\n')
+                                                            .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+                                                    }
+                                                    const blob = new Blob([content], { type: 'text/vtt' });
+                                                    const blobUrl = URL.createObjectURL(blob);
+                                                    art.subtitle.switch(blobUrl, { name: file.name });
+                                                    art.subtitle.show = true;
+                                                    if (art.notice) art.notice.show = `Subtítulo cargado: ${file.name}`;
+                                                };
+                                                reader.readAsText(file);
+                                            };
+                                            fileInput.click();
+                                            return item.html;
+                                        }
+
+                                        if (item.url) {
+                                            art.subtitle.switch(item.url, { name: item.html });
+                                            art.subtitle.show = true;
+                                            if (art.notice) art.notice.show = `Subtítulo: ${item.html.replace(/<[^>]+>/g, '')}`;
+                                        } else {
+                                            art.subtitle.show = false;
+                                            if (art.notice) art.notice.show = 'Subtítulos desactivados';
+                                        }
+                                        return item.html;
+                                    }
+                                });
+                            } catch (e) {
+                                console.warn('[ArtPlayer] Error agregando selector de subtítulos:', e);
+                            }
 
                             art.on('video:timeupdate', () => {
                                 if (art.currentTime >= 10 && episodeMeta) {
