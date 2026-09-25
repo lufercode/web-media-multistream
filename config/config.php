@@ -29,7 +29,7 @@ define('TORRENT_PLAYER_MODE', 'streamer');
 // URL remota del microservicio de streaming de torrents (Opción 2 - Render.com / Koyeb)
 // Si está vacío (''), el sistema arranca y usa el servidor Node.js local (Laragon en http://127.0.0.1:8889).
 // Al desplegar en Render.com, coloca aquí la URL generada: ej. 'https://mi-streamer.onrender.com'
-define('TORRENT_STREAMER_REMOTE_URL', '');
+define('TORRENT_STREAMER_REMOTE_URL', 'https://web-media-multistream.onrender.com');
 
 // Interruptores de Proveedores (Habilitar / Deshabilitar fuentes individuales)
 $PROVIDERS_CONFIG = [
