@@ -549,6 +549,10 @@ body.has-minimized-player .modal-backdrop {
         padding: 0 4px !important;
         white-space: nowrap !important;
     }
+    .art-video-player .art-faststream-boost-btn {
+        font-size: 0.64rem !important;
+        padding: 2px 5px !important;
+    }
     /* Ocultar controles secundarios de escritorio en móvil para que Ajustes, VLC y Pantalla Completa nunca se salgan de la pantalla */
     .art-video-player .art-control-screenshot,
     .art-video-player .art-control-fullscreenWeb,

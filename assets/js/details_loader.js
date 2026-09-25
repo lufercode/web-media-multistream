@@ -518,8 +518,27 @@ document.addEventListener('DOMContentLoaded', () => {
     let _audioCtx = null;
     const _sourceNodeMap = new WeakMap();
 
+    const updateBoostBadgeUI = (artInstance, gainValue) => {
+        const pct = Math.round((gainValue || 1) * 100);
+        const container = artInstance?.template?.$container || document;
+        const badge = container.querySelector('.art-faststream-boost-btn');
+        if (badge) {
+            badge.innerHTML = `<i class="fas fa-bolt me-1"></i>${pct}%`;
+            if (pct > 100) {
+                badge.style.background = 'rgba(25, 135, 84, 0.9)';
+                badge.style.borderColor = '#20c997';
+                badge.style.color = '#ffffff';
+            } else {
+                badge.style.background = 'rgba(255, 255, 255, 0.12)';
+                badge.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                badge.style.color = '#e2e8f0';
+            }
+        }
+    };
+
     const setAudioGain = (videoElement, gainValue, artInstance) => {
         if (!videoElement) return;
+        const clampedGain = Math.max(1.0, Math.min(4.0, Math.round(gainValue * 100) / 100));
         try {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!AudioContextClass) return;
@@ -541,10 +560,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 _sourceNodeMap.set(videoElement, nodes);
             }
 
-            nodes.gainNode.gain.value = gainValue;
-            console.log(`%c🔊 [Volume Booster] Ganancia de audio ajustada a: ${Math.round(gainValue * 100)}%`, 'color: #0dcaf0; font-weight: bold;');
+            if (clampedGain > 1.0 && artInstance && artInstance.volume < 1) {
+                artInstance.volume = 1;
+            }
+            if (clampedGain > 1.0 && artInstance && artInstance.muted) {
+                artInstance.muted = false;
+            }
+
+            nodes.gainNode.gain.value = clampedGain;
+            videoElement._currentGain = clampedGain;
+            updateBoostBadgeUI(artInstance, clampedGain);
+
+            console.log(`%c🔊 [FastStream Booster] Ganancia de audio ajustada a: ${Math.round(clampedGain * 100)}%`, 'color: #0dcaf0; font-weight: bold;');
             if (artInstance && artInstance.notice) {
-                artInstance.notice.show = `🔊 Booster de Audio: ${Math.round(gainValue * 100)}%`;
+                artInstance.notice.show = `🔊 Volumen / Booster: ${Math.round(clampedGain * 100)}%`;
             }
         } catch (err) {
             console.warn('Volume Booster restriction (cross-origin audio):', err);
@@ -552,6 +581,62 @@ document.addEventListener('DOMContentLoaded', () => {
                 artInstance.notice.show = '⚠️ El servidor de video bloquea amplificación externa por CORS';
             }
         }
+    };
+
+    const attachFastStreamBoostEvents = (artInstance) => {
+        if (!artInstance || !artInstance.template || !artInstance.template.$player) return;
+        const videoEl = artInstance.template.$video;
+        if (!videoEl) return;
+        videoEl._currentGain = 1.0;
+
+        // Permitir subir el volumen más allá de 100% (hasta 400%) con Flecha Arriba / Abajo y Rueda del Ratón como en FastStream
+        const playerEl = artInstance.template.$player;
+
+        playerEl.addEventListener('wheel', (e) => {
+            if (!artInstance.playing && !artInstance.controls.show) return;
+            const currentGain = videoEl._currentGain || 1.0;
+            if (e.deltaY < 0 && artInstance.volume >= 0.95) {
+                e.preventDefault();
+                e.stopPropagation();
+                artInstance.volume = 1;
+                const nextGain = Math.min(4.0, currentGain + 0.25);
+                setAudioGain(videoEl, nextGain, artInstance);
+            } else if (e.deltaY > 0 && currentGain > 1.0) {
+                e.preventDefault();
+                e.stopPropagation();
+                const nextGain = Math.max(1.0, currentGain - 0.25);
+                setAudioGain(videoEl, nextGain, artInstance);
+            }
+        }, { passive: false });
+
+        const onKeyDown = (e) => {
+            if (!document.body.contains(playerEl)) {
+                window.removeEventListener('keydown', onKeyDown, true);
+                return;
+            }
+            const modalEl = document.getElementById('videoPlayerModal');
+            if (!modalEl || !modalEl.classList.contains('show')) return;
+            if (document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+
+            const currentGain = videoEl._currentGain || 1.0;
+            if (e.key === 'ArrowUp' && artInstance.volume >= 0.95) {
+                e.preventDefault();
+                e.stopPropagation();
+                artInstance.volume = 1;
+                const nextGain = Math.min(4.0, currentGain + 0.25);
+                setAudioGain(videoEl, nextGain, artInstance);
+            } else if (e.key === 'ArrowDown' && currentGain > 1.0) {
+                e.preventDefault();
+                e.stopPropagation();
+                const nextGain = Math.max(1.0, currentGain - 0.25);
+                setAudioGain(videoEl, nextGain, artInstance);
+            }
+        };
+
+        window.addEventListener('keydown', onKeyDown, true);
+        artInstance.on('destroy', () => {
+            window.removeEventListener('keydown', onKeyDown, true);
+        });
     };
 
     let currentModalAutoProgressTriggered = false;
@@ -1080,7 +1165,20 @@ document.addEventListener('DOMContentLoaded', () => {
                                     click: function () {
                                         playNextEpisode();
                                     }
-                                }] : [])
+                                }] : []),
+                                {
+                                    name: 'faststream-boost',
+                                    position: 'left',
+                                    index: 25,
+                                    html: '<span class="badge art-faststream-boost-btn fw-bold px-2 py-1" style="font-size: 0.7rem; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.25); color: #e2e8f0; cursor: pointer; user-select: none;" title="Amplificador de Volumen FastStream (Clic o Flecha Arriba hasta 400%)"><i class="fas fa-bolt me-1"></i>100%</span>',
+                                    tooltip: 'Booster de Volumen (Clic para subir hasta 400%)',
+                                    click: function () {
+                                        const steps = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0];
+                                        const cur = art.template.$video._currentGain || 1.0;
+                                        const nextIdx = (steps.findIndex(v => Math.abs(v - cur) < 0.15) + 1) % steps.length;
+                                        setAudioGain(art.template.$video, steps[nextIdx], art);
+                                    }
+                                }
                             ],
                             layers: [
                                 {
@@ -1168,7 +1266,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                         { html: '150% (+50%)', value: 1.5 },
                                         { html: '200% (Doble)', value: 2.0 },
                                         { html: '250% (+150%)', value: 2.5 },
-                                        { html: '300% (Máximo 3x)', value: 3.0 }
+                                        { html: '300% (Triple 3x)', value: 3.0 },
+                                        { html: '400% (Máximo 4x)', value: 4.0 }
                                     ],
                                     onSelect: function (item) {
                                         setAudioGain(art.template.$video, item.value, art);
@@ -1196,6 +1295,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
 
                         window._currentArtplayer = art;
+                        attachFastStreamBoostEvents(art);
 
                         // Configurar botones de Omitir Intro/Outro y Auto Siguiente
                         const skipIntroBtn = art.template.$container.querySelector('#artSkipIntroBtn');
@@ -1902,8 +2002,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                 container: '#artplayerContainer',
                                 url: streamUrl,
                                 type: isMkvFile ? 'mkv' : 'auto',
+                                moreVideoAttr: {
+                                    crossOrigin: 'anonymous'
+                                },
                                 customType: {
                                     mkv: function (video, url) {
+                                        video.crossOrigin = 'anonymous';
                                         video.src = url;
                                     }
                                 },
@@ -1942,6 +2046,19 @@ document.addEventListener('DOMContentLoaded', () => {
                                 },
                                 controls: [
                                     {
+                                        name: 'faststream-boost',
+                                        position: 'left',
+                                        index: 25,
+                                        html: '<span class="badge art-faststream-boost-btn fw-bold px-2 py-1" style="font-size: 0.7rem; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.25); color: #e2e8f0; cursor: pointer; user-select: none;" title="Amplificador de Volumen FastStream (Clic o Flecha Arriba hasta 400%)"><i class="fas fa-bolt me-1"></i>100%</span>',
+                                        tooltip: 'Booster de Volumen (Clic para subir hasta 400%)',
+                                        click: function () {
+                                            const steps = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0];
+                                            const cur = art.template.$video._currentGain || 1.0;
+                                            const nextIdx = (steps.findIndex(v => Math.abs(v - cur) < 0.15) + 1) % steps.length;
+                                            setAudioGain(art.template.$video, steps[nextIdx], art);
+                                        }
+                                    },
+                                    {
                                         name: 'torrent-stats',
                                         position: 'right',
                                         html: `<span class="badge bg-warning text-dark fw-bold px-2 py-1" style="font-size: 0.75rem;"><i class="fas fa-magnet me-1"></i><span id="artTorrentStats">${sData.peers} seeds · ${sData.downloadSpeed}</span></span>`,
@@ -1956,8 +2073,47 @@ document.addEventListener('DOMContentLoaded', () => {
                                             launchVlcPlaylist(streamUrl, sData.name || title);
                                         }
                                     }
+                                ],
+                                settings: [
+                                    {
+                                        html: '<i class="fas fa-volume-up text-info me-2"></i>Booster de Audio',
+                                        width: 230,
+                                        tooltip: '100% (Normal)',
+                                        selector: [
+                                            { html: '100% (Normal)', value: 1.0, default: true },
+                                            { html: '150% (+50%)', value: 1.5 },
+                                            { html: '200% (Doble)', value: 2.0 },
+                                            { html: '250% (+150%)', value: 2.5 },
+                                            { html: '300% (Triple 3x)', value: 3.0 },
+                                            { html: '400% (Máximo 4x)', value: 4.0 }
+                                        ],
+                                        onSelect: function (item) {
+                                            setAudioGain(art.template.$video, item.value, art);
+                                            return item.html;
+                                        }
+                                    },
+                                    {
+                                        html: '<i class="fas fa-adjust text-warning me-2"></i>Filtro de Brillo',
+                                        width: 220,
+                                        tooltip: 'Normal',
+                                        selector: [
+                                            { html: 'Normal (100%)', value: 'none', default: true },
+                                            { html: 'Claro (+15%)', value: 'brightness(1.15)' },
+                                            { html: 'Oscuro/Noche (+30%)', value: 'brightness(1.30)' },
+                                            { html: 'Ultra Brillo (+50%)', value: 'brightness(1.50)' },
+                                            { html: 'Alto Contraste', value: 'brightness(1.1) contrast(1.25)' }
+                                        ],
+                                        onSelect: function (item) {
+                                            art.template.$video.style.filter = item.value;
+                                            if (art.notice) art.notice.show = `Filtro: ${item.html}`;
+                                            return item.html;
+                                        }
+                                    }
                                 ]
                             });
+
+                            window._currentArtplayer = art;
+                            attachFastStreamBoostEvents(art);
 
                             // Configurar selector de subtítulos en el menú de ajustes de ArtPlayer
                             const buildSubSelectorList = (nativeTracks = []) => [
