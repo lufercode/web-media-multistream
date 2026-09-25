@@ -478,23 +478,26 @@ document.addEventListener('DOMContentLoaded', () => {
             if (onSuccess) onSuccess();
             return;
         }
+        const existing = document.querySelector('script[src*="@webtor/embed-sdk-js"]');
+        if (existing) {
+            existing.addEventListener('load', () => {
+                if (onSuccess) onSuccess();
+            });
+            // Si ya terminó de cargar
+            if (window.webtor) {
+                if (onSuccess) onSuccess();
+                return;
+            }
+        }
         const s = document.createElement('script');
-        s.src = 'assets/js/webtor-embed.js';
+        s.src = 'https://cdn.jsdelivr.net/npm/@webtor/embed-sdk-js/dist/index.min.js';
         s.charset = 'utf-8';
         s.async = true;
         s.onload = () => {
             if (onSuccess) onSuccess();
         };
-        s.onerror = () => {
-            const s2 = document.createElement('script');
-            s2.src = 'https://cdn.jsdelivr.net/npm/@webtor/embed-sdk-js/dist/index.min.js';
-            s2.charset = 'utf-8';
-            s2.async = true;
-            s2.onload = () => {
-                if (onSuccess) onSuccess();
-            };
-            s2.onerror = onError;
-            document.head.appendChild(s2);
+        s.onerror = (err) => {
+            if (onError) onError(err);
         };
         document.head.appendChild(s);
     };
