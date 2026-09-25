@@ -492,17 +492,17 @@ body.has-minimized-player .modal-backdrop {
     }
 }
 
-/* Ocultamiento total de barra de carga, controles y cursor al reproducir en pantalla completa o normal */
-.art-video-player:not(.art-control-show):not(.art-hover) .art-bottom,
-.art-video-player.art-mini-progress-bar:not(.art-control-show):not(.art-hover) .art-bottom {
+/* Ocultamiento limpio de barra de carga, controles y cursor SOLO mientras está reproduciendo e inactivo */
+.art-video-player.art-playing:not(.art-control-show):not(.art-hover) .art-bottom,
+.art-video-player.art-playing.art-mini-progress-bar:not(.art-control-show):not(.art-hover) .art-bottom {
     opacity: 0 !important;
     pointer-events: none !important;
     visibility: hidden !important;
     transition: opacity 0.3s ease, visibility 0.3s ease !important;
 }
 
-.art-video-player:not(.art-control-show):not(.art-hover) .art-progress,
-.art-video-player.art-mini-progress-bar:not(.art-control-show):not(.art-hover) .art-progress {
+.art-video-player.art-playing:not(.art-control-show):not(.art-hover) .art-progress,
+.art-video-player.art-playing.art-mini-progress-bar:not(.art-control-show):not(.art-hover) .art-progress {
     opacity: 0 !important;
     visibility: hidden !important;
 }
@@ -510,6 +510,70 @@ body.has-minimized-player .modal-backdrop {
 .art-video-player.art-hide-cursor,
 .art-video-player.art-hide-cursor * {
     cursor: none !important;
+}
+
+/* Responsividad de controles, menú de ajustes y subtítulos de ArtPlayer en móviles */
+@media (max-width: 576px) {
+    .art-video-player .art-bottom {
+        padding: 0 6px 4px !important;
+    }
+    .art-video-player .art-controls {
+        height: 34px !important;
+        min-height: 34px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+    }
+    .art-video-player .art-controls-left,
+    .art-video-player .art-controls-right {
+        display: flex !important;
+        align-items: center !important;
+        flex-shrink: 1 !important;
+    }
+    .art-video-player .art-control {
+        padding: 0 4px !important;
+        margin: 0 !important;
+        min-width: 28px !important;
+        height: 32px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    .art-video-player .art-control .art-icon,
+    .art-video-player .art-control .art-icon svg {
+        width: 19px !important;
+        height: 19px !important;
+    }
+    .art-video-player .art-control-time {
+        font-size: 0.68rem !important;
+        padding: 0 4px !important;
+        white-space: nowrap !important;
+    }
+    /* Ocultar controles secundarios de escritorio en móvil para que Ajustes, VLC y Pantalla Completa nunca se salgan de la pantalla */
+    .art-video-player .art-control-screenshot,
+    .art-video-player .art-control-fullscreenWeb,
+    .art-video-player .art-control-pip,
+    .art-video-player .art-control-torrent-stats {
+        display: none !important;
+    }
+    .art-video-player .art-settings {
+        max-height: 185px !important;
+        max-width: min(235px, 84vw) !important;
+        bottom: 42px !important;
+        right: 6px !important;
+        font-size: 0.78rem !important;
+    }
+    .art-video-player .art-subtitle {
+        font-size: clamp(13px, 3.8vw, 19px) !important;
+        bottom: 38px !important;
+        padding: 0 10px !important;
+    }
+    .art-skip-btn {
+        bottom: 48px !important;
+        right: 10px !important;
+        padding: 6px 12px !important;
+        font-size: 0.78rem !important;
+    }
 }
 
 /* ==========================================================================

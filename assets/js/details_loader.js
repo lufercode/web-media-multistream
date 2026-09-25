@@ -980,6 +980,46 @@ document.addEventListener('DOMContentLoaded', () => {
                                             }
                                         });
 
+                                        const updateHlsSubtitlesMenu = (tracks) => {
+                                            if (!Array.isArray(tracks) || tracks.length === 0) return;
+                                            const subList = [
+                                                {
+                                                    html: '<i class="fas fa-ban me-1 text-danger"></i>Desactivado',
+                                                    trackId: -1,
+                                                    default: hls.subtitleTrack === -1
+                                                },
+                                                ...tracks.map((t, idx) => ({
+                                                    html: `<i class="fas fa-closed-captioning me-1 text-warning"></i>${t.name || t.lang || ('Pista ' + (idx + 1))}`,
+                                                    trackId: idx,
+                                                    default: idx === hls.subtitleTrack
+                                                }))
+                                            ];
+                                            try {
+                                                artInstance.setting.update({
+                                                    name: 'hls-subtitles',
+                                                    html: '<i class="fas fa-closed-captioning text-warning me-2"></i>Subtítulos',
+                                                    width: 220,
+                                                    tooltip: hls.subtitleTrack >= 0 && tracks[hls.subtitleTrack]
+                                                        ? (tracks[hls.subtitleTrack].name || tracks[hls.subtitleTrack].lang || 'Activo')
+                                                        : 'Desactivado',
+                                                    selector: subList,
+                                                    onSelect: function (item) {
+                                                        hls.subtitleTrack = item.trackId;
+                                                        hls.subtitleDisplay = item.trackId >= 0;
+                                                        return item.html;
+                                                    }
+                                                });
+                                            } catch (e) {
+                                                console.warn('[HLS] No se pudo actualizar menú de subtítulos:', e);
+                                            }
+                                        };
+
+                                        hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (event, data) => {
+                                            if (data && data.subtitleTracks) {
+                                                updateHlsSubtitlesMenu(data.subtitleTracks);
+                                            }
+                                        });
+
                                         hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
                                             const lvl = hls.levels ? hls.levels[data.level] : null;
                                             if (lvl && lvl.width && lvl.height) {
@@ -1025,6 +1065,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             mutex: true,
                             backdrop: true,
                             playsInline: true,
+                            lock: true,
+                            fastForward: true,
                             autoPlayback: true,
                             airplay: true,
                             hotkey: true,
@@ -1262,6 +1304,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             art.controls.show = true;
                             triggerControlsAutoHide();
                         });
+
+                        if (art.template && art.template.$player) {
+                            art.template.$player.addEventListener('touchstart', () => {
+                                art.controls.show = true;
+                                triggerControlsAutoHide();
+                            }, { passive: true });
+                        }
 
                         art.on('control', (show) => {
                             if (show) {
@@ -1911,64 +1960,129 @@ document.addEventListener('DOMContentLoaded', () => {
                             });
 
                             // Configurar selector de subtítulos en el menú de ajustes de ArtPlayer
-                            const subSelectorList = [
-                                { default: torrentSubs.length === 0, html: '<i class="fas fa-ban me-1 text-danger"></i>Desactivado', url: '' },
+                            const buildSubSelectorList = (nativeTracks = []) => [
+                                { default: torrentSubs.length === 0 && nativeTracks.length === 0, html: '<i class="fas fa-ban me-1 text-danger"></i>Desactivado', url: '', nativeIndex: -1 },
                                 ...torrentSubs.map((s, idx) => ({
                                     default: idx === 0,
                                     html: `<i class="fas fa-closed-captioning me-1 text-warning"></i>${s.name}`,
-                                    url: s.url
+                                    url: s.url,
+                                    nativeIndex: -1
+                                })),
+                                ...nativeTracks.map((nt, idx) => ({
+                                    default: torrentSubs.length === 0 && idx === 0,
+                                    html: `<i class="fas fa-film me-1 text-success"></i>${nt.label || nt.language || ('Integrado #' + (idx + 1))}`,
+                                    url: '',
+                                    nativeIndex: idx
                                 })),
                                 { html: '<i class="fas fa-folder-open me-1 text-info"></i>Cargar subtítulo local (.srt / .vtt)...', action: 'upload' }
                             ];
 
+                            const handleSubSelect = function (item) {
+                                if (item.action === 'upload') {
+                                    const fileInput = document.createElement('input');
+                                    fileInput.type = 'file';
+                                    fileInput.accept = '.srt,.vtt';
+                                    fileInput.onchange = (e) => {
+                                        const file = e.target.files && e.target.files[0];
+                                        if (!file) return;
+                                        const reader = new FileReader();
+                                        reader.onload = (re) => {
+                                            let content = re.target.result || '';
+                                            if (file.name.toLowerCase().endsWith('.srt')) {
+                                                content = 'WEBVTT - ' + file.name + '\n\n' + content
+                                                    .replace(/\r\n|\r/g, '\n')
+                                                    .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+                                            }
+                                            const blob = new Blob([content], { type: 'text/vtt' });
+                                            const blobUrl = URL.createObjectURL(blob);
+                                            art.subtitle.switch(blobUrl, { name: file.name });
+                                            art.subtitle.show = true;
+                                            if (art.notice) art.notice.show = `Subtítulo cargado: ${file.name}`;
+                                        };
+                                        reader.readAsText(file);
+                                    };
+                                    fileInput.click();
+                                    return item.html;
+                                }
+
+                                // Si el navegador expuso pistas nativas en <video>.textTracks
+                                const vTracks = art.video && art.video.textTracks ? Array.from(art.video.textTracks) : [];
+                                vTracks.forEach((vt, i) => {
+                                    vt.mode = (item.nativeIndex === i) ? 'showing' : 'disabled';
+                                });
+
+                                if (item.nativeIndex >= 0) {
+                                    art.subtitle.show = false;
+                                    if (art.notice) art.notice.show = `Subtítulo integrado: ${item.html.replace(/<[^>]+>/g, '')}`;
+                                    return item.html;
+                                }
+
+                                if (item.url) {
+                                    art.subtitle.switch(item.url, { name: item.html });
+                                    art.subtitle.show = true;
+                                    if (art.notice) art.notice.show = `Subtítulo: ${item.html.replace(/<[^>]+>/g, '')}`;
+                                } else {
+                                    art.subtitle.show = false;
+                                    if (art.notice) art.notice.show = 'Subtítulos desactivados';
+                                }
+                                return item.html;
+                            };
+
                             try {
                                 art.setting.add({
                                     name: 'torrent-subtitles',
-                                    width: 250,
+                                    width: 240,
                                     html: '<i class="fas fa-closed-captioning me-1"></i>Subtítulos',
                                     tooltip: torrentSubs.length > 0 ? torrentSubs[0].name : 'Desactivado',
-                                    selector: subSelectorList,
-                                    onSelect: function (item) {
-                                        if (item.action === 'upload') {
-                                            const fileInput = document.createElement('input');
-                                            fileInput.type = 'file';
-                                            fileInput.accept = '.srt,.vtt';
-                                            fileInput.onchange = (e) => {
-                                                const file = e.target.files && e.target.files[0];
-                                                if (!file) return;
-                                                const reader = new FileReader();
-                                                reader.onload = (re) => {
-                                                    let content = re.target.result || '';
-                                                    if (file.name.toLowerCase().endsWith('.srt')) {
-                                                        content = 'WEBVTT - ' + file.name + '\n\n' + content
-                                                            .replace(/\r\n|\r/g, '\n')
-                                                            .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
-                                                    }
-                                                    const blob = new Blob([content], { type: 'text/vtt' });
-                                                    const blobUrl = URL.createObjectURL(blob);
-                                                    art.subtitle.switch(blobUrl, { name: file.name });
-                                                    art.subtitle.show = true;
-                                                    if (art.notice) art.notice.show = `Subtítulo cargado: ${file.name}`;
-                                                };
-                                                reader.readAsText(file);
-                                            };
-                                            fileInput.click();
-                                            return item.html;
-                                        }
-
-                                        if (item.url) {
-                                            art.subtitle.switch(item.url, { name: item.html });
-                                            art.subtitle.show = true;
-                                            if (art.notice) art.notice.show = `Subtítulo: ${item.html.replace(/<[^>]+>/g, '')}`;
-                                        } else {
-                                            art.subtitle.show = false;
-                                            if (art.notice) art.notice.show = 'Subtítulos desactivados';
-                                        }
-                                        return item.html;
-                                    }
+                                    selector: buildSubSelectorList([]),
+                                    onSelect: handleSubSelect
                                 });
                             } catch (e) {
                                 console.warn('[ArtPlayer] Error agregando selector de subtítulos:', e);
+                            }
+
+                            art.on('video:loadedmetadata', () => {
+                                const vTracks = art.video && art.video.textTracks ? Array.from(art.video.textTracks) : [];
+                                if (vTracks.length > 0) {
+                                    try {
+                                        art.setting.update({
+                                            name: 'torrent-subtitles',
+                                            width: 240,
+                                            html: '<i class="fas fa-closed-captioning me-1"></i>Subtítulos',
+                                            tooltip: torrentSubs.length > 0
+                                                ? torrentSubs[0].name
+                                                : (vTracks[0].label || vTracks[0].language || 'Integrado #1'),
+                                            selector: buildSubSelectorList(vTracks),
+                                            onSelect: handleSubSelect
+                                        });
+                                    } catch (err) {
+                                        console.warn('[ArtPlayer] No se pudieron añadir subtítulos nativos:', err);
+                                    }
+                                }
+                            });
+
+                            // Mostrar/ocultar controles limpiamente en pantallas táctiles móviles y escritorio
+                            let torrentIdleTimer = null;
+                            const triggerTorrentControlsAutoHide = () => {
+                                if (torrentIdleTimer) clearTimeout(torrentIdleTimer);
+                                if (!art || !art.playing) return;
+                                torrentIdleTimer = setTimeout(() => {
+                                    if (art && art.playing && !art.setting.show && !art.isInput) {
+                                        art.controls.show = false;
+                                    }
+                                }, 2800);
+                            };
+
+                            art.on('mousemove', () => {
+                                art.controls.show = true;
+                                triggerTorrentControlsAutoHide();
+                            });
+
+                            if (art.template && art.template.$player) {
+                                art.template.$player.addEventListener('touchstart', () => {
+                                    art.controls.show = true;
+                                    triggerTorrentControlsAutoHide();
+                                }, { passive: true });
                             }
 
                             // Watchdog para avisar si el navegador tarda en decodificar el contenedor MKV
@@ -1996,6 +2110,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                             art.on('video:playing', () => {
                                 clearInterval(stallChecker);
+                                triggerTorrentControlsAutoHide();
                             });
 
                             art.on('video:timeupdate', () => {
