@@ -173,6 +173,29 @@ const server = http.createServer(async (req, res) => {
         }
 
         try {
+            // Limitar estrictamente a máximo 2 torrents simultáneos para no saturar RAM ni ancho de banda en Render
+            const MAX_CONCURRENT_TORRENTS = 2;
+            if (activeTorrents.size >= MAX_CONCURRENT_TORRENTS) {
+                let oldestHash = null;
+                let oldestAccess = Infinity;
+                for (const [hash, item] of activeTorrents.entries()) {
+                    if (item.lastAccess < oldestAccess) {
+                        oldestAccess = item.lastAccess;
+                        oldestHash = hash;
+                    }
+                }
+                if (oldestHash) {
+                    console.log(`[Streamer] Límite de ${MAX_CONCURRENT_TORRENTS} torrents alcanzado. Deteniendo el más inactivo: ${oldestHash}`);
+                    const oldEntry = activeTorrents.get(oldestHash);
+                    try {
+                        oldEntry.torrent.destroy({ destroyStore: true });
+                    } catch (e) {
+                        try { oldEntry.torrent.destroy(); } catch (e2) {}
+                    }
+                    activeTorrents.delete(oldestHash);
+                }
+            }
+
             console.log(`[Streamer] Cargando magnet: ${magnet.substring(0, 60)}...`);
             const torrent = client.add(magnet, {
                 path: CACHE_DIR,
@@ -472,8 +495,10 @@ const server = http.createServer(async (req, res) => {
         if (entry) {
             console.log(`[Streamer] Deteniendo torrent: ${infoHash}`);
             try {
-                entry.torrent.destroy();
-            } catch (e) {}
+                entry.torrent.destroy({ destroyStore: true });
+            } catch (e) {
+                try { entry.torrent.destroy(); } catch (e2) {}
+            }
             activeTorrents.delete(infoHash);
         }
 
@@ -490,19 +515,21 @@ server.listen(PORT, HOST, () => {
     console.log(`🚀 [Torrent Streamer Daemon] Escuchando en http://${HOST}:${PORT}`);
 });
 
-// Limpieza automática cada 15 minutos de torrents inactivos sin uso por más de 30 minutos
+// Limpieza automática cada 5 minutos de torrents inactivos sin solicitudes por más de 15 minutos
 setInterval(() => {
     const now = Date.now();
     for (const [hash, entry] of activeTorrents.entries()) {
-        if (now - entry.lastAccess > 30 * 60 * 1000) {
+        if (now - entry.lastAccess > 15 * 60 * 1000) {
             console.log(`[Streamer] Limpiando torrent inactivo por timeout: ${hash}`);
             try {
-                entry.torrent.destroy();
-            } catch (e) {}
+                entry.torrent.destroy({ destroyStore: true });
+            } catch (e) {
+                try { entry.torrent.destroy(); } catch (e2) {}
+            }
             activeTorrents.delete(hash);
         }
     }
-}, 15 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 process.on('uncaughtException', (err) => {
     if (err.code === 'PREMATURE_CLOSE' || err.code === 'ERR_STREAM_PREMATURE_CLOSE' || err.code === 'ECONNRESET' || (err.message && err.message.includes('Writable stream closed'))) {

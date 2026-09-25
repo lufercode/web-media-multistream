@@ -383,12 +383,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window._activeTorrentStreamHash) {
                 const hToStop = window._activeTorrentStreamHash;
                 const rBase = window._activeTorrentRemoteBase || '';
+                const wasOpenedInVlc = (window._vlcOpenedForHash === hToStop);
                 window._activeTorrentStreamHash = null;
                 window._activeTorrentRemoteBase = null;
-                if (rBase) {
-                    fetch(`${rBase}/stop/${hToStop}`, { method: 'POST', mode: 'cors' }).catch(() => {});
-                } else {
-                    fetch(`api/torrent_stream.php?action=stop&infoHash=${hToStop}`, { method: 'POST' }).catch(() => {});
+
+                // Si el usuario abrió el video en VLC, NO matar el torrent al cerrar el modal web
+                // para que VLC pueda seguir reproduciendo sin cortes.
+                // El servidor Render gestiona el límite de máx 2 torrents y limpieza por inactividad.
+                if (!wasOpenedInVlc) {
+                    if (rBase) {
+                        fetch(`${rBase}/stop/${hToStop}`, { method: 'POST', mode: 'cors' }).catch(() => {});
+                    } else {
+                        fetch(`api/torrent_stream.php?action=stop&infoHash=${hToStop}`, { method: 'POST' }).catch(() => {});
+                    }
                 }
             }
 
@@ -1589,35 +1596,51 @@ document.addEventListener('DOMContentLoaded', () => {
             if (toast && toast.style.display !== 'none') {
                 toast.style.display = 'none';
             }
-        }, 12000);
+        }, 14000);
+    };
+
+    const pauseWebPlayerForVlc = () => {
+        if (window._activeTorrentStreamHash) {
+            window._vlcOpenedForHash = window._activeTorrentStreamHash;
+        }
+        if (window._currentArtplayer) {
+            try {
+                window._currentArtplayer.pause();
+            } catch (e) {}
+        }
+        const webVideo = document.querySelector('#artplayerContainer video') || document.getElementById('playerVideo');
+        if (webVideo) {
+            try {
+                webVideo.pause();
+            } catch (e) {}
+        }
     };
 
     const launchVlcPlaylist = (directUrl, itemTitle) => {
         const cleanTitle = (itemTitle || 'Stream').replace(/[\r\n]/g, ' ').trim();
 
-        // 1. Intentar lanzar VLC directamente con el protocolo URL registrado (vlc://)
-        try {
-            const vlcUri = `vlc://${directUrl}`;
-            const tempLink = document.createElement('a');
-            tempLink.href = vlcUri;
-            tempLink.style.display = 'none';
-            document.body.appendChild(tempLink);
-            tempLink.click();
-            setTimeout(() => {
-                try { document.body.removeChild(tempLink); } catch (e) {}
-            }, 1000);
-        } catch (e) {}
+        // 1. Pausar automáticamente el reproductor web para no duplicar reproducción ni consumo de CPU/audio
+        pauseWebPlayerForVlc();
 
         // 2. Copiar automáticamente el enlace de video directo al portapapeles
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(directUrl).catch(() => {});
         }
 
-        // 3. Mostrar banner interactivo informativo sin descargas involuntarias
+        // 3. En dispositivos móviles (Android / iOS), VLC registra nativamente el esquema vlc://
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+        if (isMobile) {
+            try {
+                window.location.href = `vlc://${directUrl}`;
+            } catch (e) {}
+        }
+
+        // 4. Mostrar aviso interactivo con instrucciones rápidas (Ctrl+N -> Ctrl+V) y botón opcional .m3u
         showVlcLaunchToast(directUrl, cleanTitle);
     };
 
     const copyVideoUrlToClipboard = (directUrl) => {
+        pauseWebPlayerForVlc();
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(directUrl).then(() => {
                 showVlcLaunchToast(directUrl, 'Video Stream');
