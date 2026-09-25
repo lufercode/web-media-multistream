@@ -1529,9 +1529,36 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const launchVlcPlaylist = (directUrl, itemTitle) => {
+        const cleanTitle = (itemTitle || 'Stream').replace(/[\r\n]/g, ' ').trim();
+        const m3u = `#EXTM3U\n#EXTINF:-1,${cleanTitle}\n${directUrl}\n`;
+        const blob = new Blob([m3u], { type: 'application/x-mpegurl' });
+        const u = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = u;
+        a.download = `${cleanTitle.replace(/[^a-zA-Z0-9_\-]/g, '_')}.m3u`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(u), 10000);
+    };
+
+    const copyVideoUrlToClipboard = (directUrl) => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(directUrl).then(() => {
+                alert(`✅ Enlace directo de video copiado al portapapeles.\n\nPara abrir en VLC:\n1. Abre VLC Media Player\n2. Presiona Ctrl + N (o Menú Medio -> Abrir emisión de red)\n3. Pega el enlace y haz clic en Reproducir.`);
+            }).catch(() => {
+                prompt('Copia este enlace directo de video y pégalo en VLC (Medio -> Abrir emisión de red):', directUrl);
+            });
+        } else {
+            prompt('Copia este enlace directo de video y pégalo en VLC (Medio -> Abrir emisión de red):', directUrl);
+        }
+    };
+
     const playWithLocalStreamer = async (magnetUrl, title, server, provLabel, thumbnail, episodeMeta) => {
         const artContainer = document.getElementById('artplayerContainer');
         const badgesEl = document.getElementById('playerModalBadges');
+        const extLinkBtn = document.getElementById('btnExternalLink');
         const isRemote = Boolean(window.TORRENT_STREAMER_REMOTE_URL && window.TORRENT_STREAMER_REMOTE_URL.trim());
 
         if (badgesEl) {
@@ -1559,7 +1586,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="badge bg-dark border border-secondary py-2 px-3"><i class="fas fa-tachometer-alt text-success me-1"></i>Velocidad: <strong class="text-white" id="torrentSpeedVal">0 KB/s</strong></span>
                     <span class="badge bg-dark border border-secondary py-2 px-3"><i class="fas fa-hdd text-warning me-1"></i>Descargado: <strong class="text-white" id="torrentDownloadedVal">0 MB</strong></span>
                 </div>
-                <small class="text-muted mt-3"><i class="fas fa-info-circle me-1"></i>La reproducción comenzará automáticamente en cuanto el primer fragmento esté listo.</small>
+                <div class="d-flex flex-wrap justify-content-center gap-2 mt-3" id="torrentVlcHudActions">
+                    <button type="button" class="btn btn-warning btn-sm fw-bold px-3 shadow-sm" id="btnHudVlc" title="Abrir video directo en VLC Media Player">
+                        <i class="fas fa-play-circle me-1"></i> Abrir con VLC (Video Directo)
+                    </button>
+                    <button type="button" class="btn btn-outline-light btn-sm px-3 shadow-sm" id="btnHudCopyVlc" title="Copiar URL directa del video para VLC">
+                        <i class="fas fa-copy me-1"></i> Copiar link de video
+                    </button>
+                    <button type="button" class="btn btn-outline-info btn-sm px-3 shadow-sm" id="btnHudSkipBuffer" title="Saltar la espera del buffer e iniciar inmediatamente">
+                        <i class="fas fa-forward me-1"></i> Reproducir ya en Web
+                    </button>
+                </div>
+                <small class="text-muted mt-3"><i class="fas fa-info-circle me-1"></i>Buffer ligero de arranque rápido (1.5 - 3 MB). Se reproduce automáticamente en cuanto esté listo.</small>
             </div>
         `;
 
@@ -1609,6 +1647,44 @@ document.addEventListener('DOMContentLoaded', () => {
             window._activeTorrentStreamHash = infoHash;
             window._activeTorrentRemoteBase = remoteBase;
 
+            const directStreamUrl = remoteBase 
+                ? `${remoteBase}/stream/${infoHash}` 
+                : (loadData.streamUrl || `api/torrent_stream.php?action=stream&infoHash=${infoHash}`);
+
+            // Configurar botón externo de cabecera con el enlace de video para VLC
+            if (extLinkBtn) {
+                extLinkBtn.href = directStreamUrl;
+                extLinkBtn.title = 'Abrir video en VLC Media Player';
+                extLinkBtn.onclick = (e) => {
+                    e.preventDefault();
+                    launchVlcPlaylist(directStreamUrl, loadData.name || title);
+                };
+            }
+
+            const btnHudVlc = document.getElementById('btnHudVlc');
+            if (btnHudVlc) {
+                btnHudVlc.onclick = () => {
+                    launchVlcPlaylist(directStreamUrl, loadData.name || title);
+                };
+            }
+
+            const btnHudCopy = document.getElementById('btnHudCopyVlc');
+            if (btnHudCopy) {
+                btnHudCopy.onclick = () => {
+                    copyVideoUrlToClipboard(directStreamUrl);
+                };
+            }
+
+            let forceWebPlay = false;
+            const btnHudSkip = document.getElementById('btnHudSkipBuffer');
+            if (btnHudSkip) {
+                btnHudSkip.onclick = () => {
+                    forceWebPlay = true;
+                    const msg = document.getElementById('torrentStatusMsg');
+                    if (msg) msg.textContent = 'Iniciando reproductor de inmediato...';
+                };
+            }
+
             const statusEndpoint = remoteBase
                 ? `${remoteBase}/status/${infoHash}`
                 : `api/torrent_stream.php?action=status&infoHash=${infoHash}`;
@@ -1655,9 +1731,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         artStats.textContent = `${sData.peers} seeds · ${sData.downloadSpeed}`;
                     }
 
-                    if (sData.ready && !playerStarted) {
+                    if ((sData.ready || forceWebPlay) && !playerStarted) {
                         playerStarted = true;
-                        let streamUrl = sData.streamUrl;
+                        let streamUrl = sData.streamUrl || directStreamUrl;
                         if (remoteBase && (!streamUrl || streamUrl.includes('0.0.0.0') || streamUrl.startsWith('/'))) {
                             streamUrl = `${remoteBase}/stream/${infoHash}`;
                         }
@@ -1715,6 +1791,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                         position: 'right',
                                         html: `<span class="badge bg-warning text-dark fw-bold px-2 py-1" style="font-size: 0.75rem;"><i class="fas fa-magnet me-1"></i><span id="artTorrentStats">${sData.peers} seeds · ${sData.downloadSpeed}</span></span>`,
                                         tooltip: `Semillas: ${sData.peers} · Velocidad: ${sData.downloadSpeed}`
+                                    },
+                                    {
+                                        name: 'vlc-btn',
+                                        position: 'right',
+                                        html: `<span class="badge bg-dark border border-warning text-warning fw-bold px-2 py-1" style="font-size: 0.72rem; cursor: pointer;" title="Abrir video directo en VLC para elegir pista de audio"><i class="fas fa-play me-1"></i>VLC</span>`,
+                                        tooltip: 'Abrir video directo en VLC (para elegir pistas de audio)',
+                                        click: function () {
+                                            launchVlcPlaylist(streamUrl, sData.name || title);
+                                        }
                                     }
                                 ]
                             });

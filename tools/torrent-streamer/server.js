@@ -334,16 +334,17 @@ const server = http.createServer(async (req, res) => {
         const t = entry.torrent;
         const f = entry.file;
 
-        // Calcular colchón de buffer inicial real (mínimo 10-12 MB o 2.5% del total para evitar lag)
+        // Colchón inicial óptimo y ligero (2.0 a 3.5 MB, ~0.2% - 0.5% del archivo):
+        // Permite arranque casi instantáneo en 3-5 segundos sin esperar minutos
         const downloadedBytes = t.downloaded || 0;
         const totalBytes = f ? f.length : (t.length || 1);
-        const initialBufferNeeded = Math.min(12 * 1024 * 1024, Math.max(3 * 1024 * 1024, totalBytes * 0.025));
+        const initialBufferNeeded = Math.min(3.5 * 1024 * 1024, Math.max(1.5 * 1024 * 1024, totalBytes * 0.003));
 
-        // Condición anti-lag:
-        // Solo arrancar cuando se alcance el colchón inicial (ej. 12 MB) o con al menos 6 MB si la velocidad es muy rápida (>400 KB/s)
+        // Condición de arranque rápido:
+        // Arranca con 2.5 MB, o con solo 1.2 MB si la velocidad de descarga supera los 200 KB/s
         const isReadyToPlay = (entry.file !== null) && (
             downloadedBytes >= initialBufferNeeded ||
-            (downloadedBytes >= 6 * 1024 * 1024 && t.downloadSpeed > 400 * 1024)
+            (downloadedBytes >= 1.2 * 1024 * 1024 && t.downloadSpeed > 200 * 1024)
         );
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
