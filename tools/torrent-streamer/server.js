@@ -58,8 +58,8 @@ const DEFAULT_TRACKERS = [
 // - utp: false (usa TCP nativo del kernel Linux en lugar de uTP por UDP en JS, ahorrando ~40% de CPU)
 // - downloadLimit: 2.8 MB/s (~22.4 Mbps, más del doble de lo que requiere 1080p, evitando que el cálculo SHA-1 de piezas sature el 0.1 CPU)
 // - uploadLimit: 64 KB/s (mínimo gasto en subida)
-const MAX_DOWNLOAD_RATE = 2.8 * 1024 * 1024;
-const MAX_UPLOAD_RATE = 64 * 1024;
+const MAX_DOWNLOAD_RATE = Math.floor(2.8 * 1024 * 1024); // 2936012 bytes/s (entero exacto requerido por speed-limiter)
+const MAX_UPLOAD_RATE = 64 * 1024; // 65536 bytes/s
 
 const client = new WebTorrent({
     maxConns: 18,
