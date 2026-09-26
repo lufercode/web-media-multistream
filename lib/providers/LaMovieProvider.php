@@ -5,8 +5,9 @@ require_once __DIR__ . '/../utils.php';
 class LaMovieProvider implements ProviderInterface
 {
     private string $id = 'lamovie';
-    private string $name = 'LaMovie (Películas, Series y Torrents)';
-    private array $hosts = ['https://lamovie.org'];
+    private string $name = 'LaMovie (Películas, Series y Anime HD)';
+    private string $apiBase = 'https://tmdb.allcalidad.re/v1';
+    private string $referer = 'https://lamovie.org/';
 
     public function getId(): string
     {
@@ -29,6 +30,22 @@ class LaMovieProvider implements ProviderInterface
         return $PROVIDERS_CONFIG[$this->id]['enabled'] ?? true;
     }
 
+    private function apiGet(string $path): ?array
+    {
+        $url = $this->apiBase . $path;
+        $res = http_get($url, [
+            'timeout' => 4,
+            'headers' => [
+                'Referer' => $this->referer,
+                'Origin' => rtrim($this->referer, '/'),
+                'Accept' => 'application/json'
+            ]
+        ]);
+        if (!$res) return null;
+        $decoded = json_decode($res, true);
+        return is_array($decoded) ? $decoded : null;
+    }
+
     public function searchMovie(string $title, ?string $year = null, ?int $tmdb_id = null): array
     {
         if (!$this->isEnabled()) {
@@ -36,145 +53,189 @@ class LaMovieProvider implements ProviderInterface
         }
 
         $results = [];
-        $clean_query = preg_replace('/[^\w\s]/u', ' ', $title);
-        $clean_query = trim(preg_replace('/\s+/', ' ', $clean_query));
-        if (empty($clean_query)) return [];
 
-        foreach ($this->hosts as $host) {
+        // 1. Búsqueda directa e instantánea por TMDB ID en el nuevo backend v2 de LaMovie
+        if ($tmdb_id !== null && $tmdb_id > 0) {
             if (connection_aborted()) exit;
-
-            $search_url = rtrim($host, '/') . '/wp-api/v1/search?filter=%7B%7D&postType=any&q=' . urlencode($clean_query) . '&postsPerPage=25&page=1';
-            $headers = [
-                'Referer' => rtrim($host, '/') . '/'
-            ];
-
-            $res = http_get($search_url, ['headers' => $headers, 'timeout' => 4]);
-            if (!$res) continue;
-
-            $data = json_decode($res, true);
-            $posts = $data['data']['posts'] ?? [];
-            if (empty($posts)) continue;
-
-            $matched_post = null;
-            $matched_title = null;
-
-            foreach ($posts as $post) {
-                if (connection_aborted()) exit;
-                if (($post['type'] ?? '') !== 'movies') continue;
-
-                $post_title = $post['title'] ?? '';
-                $cand_year = !empty($post['release_date']) ? substr($post['release_date'], 0, 4) : null;
-
-                $clean_cand = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $post_title);
-                $clean_cand = trim(preg_replace('/\[.*?\]/', '', $clean_cand));
-
-                if (is_strict_title_match($title, $clean_cand, $year, $cand_year)) {
-                    $matched_post = $post;
-                    $matched_title = $post_title ?: $title;
-                    break;
+            $data = $this->apiGet("/items/movie/{$tmdb_id}");
+            if (!empty($data['item']) && is_array($data['item'])) {
+                $item = $data['item'];
+                $item_title = $item['title'] ?? $item['original_title'] ?? $title;
+                $this->extractFromApiItem($item, $item_title, $results);
+                if (!empty($results)) {
+                    return $this->deduplicate($results);
                 }
             }
+        }
 
-            if ($matched_post && !empty($matched_post['_id'])) {
-                $player_url = rtrim($host, '/') . "/wp-api/v1/player?postId={$matched_post['_id']}&demo=0";
-                $p_res = http_get($player_url, ['headers' => $headers, 'timeout' => 4]);
-                if ($p_res) {
-                    $p_data = json_decode($p_res, true);
-                    $this->parseMediaLinks($p_data['data'] ?? [], $matched_title, $results);
+        // 2. Respaldo por búsqueda de texto (/v1/search)
+        $clean_query = trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s]/u', ' ', $title)));
+        $queries = array_values(array_unique(array_filter([trim($title), $clean_query])));
+
+        foreach ($queries as $q) {
+            if (connection_aborted()) exit;
+            $searchData = $this->apiGet('/search?q=' . rawurlencode($q) . '&page=1&limit=18');
+            $items = $searchData['items'] ?? [];
+            if (empty($items)) continue;
+
+            foreach ($items as $cand) {
+                if (connection_aborted()) exit;
+                if (($cand['kind'] ?? '') !== 'movie') continue;
+
+                $cand_tmdb = isset($cand['tmdb_id']) ? (int)$cand['tmdb_id'] : null;
+                $cand_title = $cand['title'] ?? '';
+                $cand_orig = $cand['original_title'] ?? '';
+                $cand_year = !empty($cand['release_date']) ? substr($cand['release_date'], 0, 4) : null;
+
+                $matched = false;
+                if ($tmdb_id !== null && $cand_tmdb === $tmdb_id) {
+                    $matched = true;
+                } elseif (is_strict_title_match($title, $cand_title, $year, $cand_year) ||
+                          (!empty($cand_orig) && is_strict_title_match($title, $cand_orig, $year, $cand_year))) {
+                    $matched = true;
                 }
-                break;
+
+                if ($matched) {
+                    $matched_title = $cand_title ?: ($cand_orig ?: $title);
+                    if (!empty($cand['code'])) {
+                        $this->extractFromApiItem($cand, $matched_title, $results);
+                    } elseif ($cand_tmdb) {
+                        $detail = $this->apiGet("/items/movie/{$cand_tmdb}");
+                        if (!empty($detail['item'])) {
+                            $this->extractFromApiItem($detail['item'], $matched_title, $results);
+                        }
+                    }
+                    if (!empty($results)) break 2;
+                }
             }
         }
 
         return $this->deduplicate($results);
     }
 
-    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null): array
+    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?int $absolute_episode = null): array
     {
         if (!$this->isEnabled()) {
             return [];
         }
 
         $results = [];
-        $clean_query = preg_replace('/[^\w\s]/u', ' ', $title);
-        $clean_query = trim(preg_replace('/\s+/', ' ', $clean_query));
-        if (empty($clean_query)) return [];
+        $candidates = [];
 
-        foreach ($this->hosts as $host) {
+        // 1. Si tenemos TMDB ID, probar directamente tanto 'anime' como 'tvshow'
+        if ($tmdb_id !== null && $tmdb_id > 0) {
+            $candidates[] = ['kind' => 'anime', 'tmdb_id' => $tmdb_id, 'title' => $title];
+            $candidates[] = ['kind' => 'tvshow', 'tmdb_id' => $tmdb_id, 'title' => $title];
+        }
+
+        // 2. Intentar extraer el episodio de los candidatos directos por TMDB ID
+        foreach ($candidates as $cand) {
             if (connection_aborted()) exit;
-
-            $search_url = rtrim($host, '/') . '/wp-api/v1/search?filter=%7B%7D&postType=any&q=' . urlencode($clean_query) . '&postsPerPage=25&page=1';
-            $headers = [
-                'Referer' => rtrim($host, '/') . '/'
-            ];
-
-            $res = http_get($search_url, ['headers' => $headers, 'timeout' => 4]);
-            if (!$res) continue;
-
-            $data = json_decode($res, true);
-            $posts = $data['data']['posts'] ?? [];
-            if (empty($posts)) continue;
-
-            $matched_series = null;
-            $matched_title = null;
-
-            foreach ($posts as $post) {
-                if (connection_aborted()) exit;
-                $type = $post['type'] ?? '';
-                if ($type !== 'tvshows' && $type !== 'animes') continue;
-
-                $post_title = $post['title'] ?? '';
-                $clean_cand = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $post_title);
-                $clean_cand = trim(preg_replace('/\[.*?\]/', '', $clean_cand));
-
-                if (is_strict_title_match($title, $clean_cand)) {
-                    $matched_series = $post;
-                    $matched_title = $clean_cand ?: $title;
-                    break;
-                }
+            $this->fetchEpisodeLinks($cand['kind'], (int)$cand['tmdb_id'], $cand['title'], $season, $episode, $absolute_episode, $results);
+            if (!empty($results)) {
+                return $this->deduplicate($results);
             }
+        }
 
-            if ($matched_series && !empty($matched_series['_id'])) {
-                $ep_list_url = rtrim($host, '/') . "/wp-api/v1/single/episodes/list?_id={$matched_series['_id']}&season={$season}&postsPerPage=50&page=1";
-                $ep_res = http_get($ep_list_url, ['headers' => $headers, 'timeout' => 4]);
-                if ($ep_res) {
-                    $ep_data = json_decode($ep_res, true);
-                    $ep_posts = $ep_data['data']['posts'] ?? [];
+        // 3. Respaldo por búsqueda de título en /v1/search (soporta series y animes)
+        $clean_query = trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s]/u', ' ', $title)));
+        $queries = array_values(array_unique(array_filter([trim($title), $clean_query])));
 
-                    $matched_ep = null;
-                    foreach ($ep_posts as $ep) {
-                        $ep_num = $ep['episode_number'] ?? null;
-                        if ($ep_num !== null && (int)$ep_num === $episode) {
-                            $matched_ep = $ep;
-                            break;
-                        }
+        foreach ($queries as $q) {
+            if (connection_aborted()) exit;
+            $searchData = $this->apiGet('/search?q=' . rawurlencode($q) . '&page=1&limit=18');
+            $items = $searchData['items'] ?? [];
+            if (empty($items)) continue;
 
-                        if (preg_match('/Episodio\s*' . $episode . '\b/i', $ep['title'] ?? '')) {
-                            $matched_ep = $ep;
-                            break;
-                        }
-                    }
+            foreach ($items as $cand) {
+                if (connection_aborted()) exit;
+                $kind = $cand['kind'] ?? '';
+                if ($kind !== 'tvshow' && $kind !== 'anime') continue;
 
-                    if ($matched_ep && !empty($matched_ep['_id'])) {
-                        $player_url = rtrim($host, '/') . "/wp-api/v1/player?postId={$matched_ep['_id']}&demo=0";
-                        $p_res = http_get($player_url, ['headers' => $headers, 'timeout' => 4]);
-                        if ($p_res) {
-                            $p_data = json_decode($p_res, true);
-                            $formatted_title = sprintf('%s S%02dE%02d', $matched_title, $season, $episode);
-                            $this->parseMediaLinks($p_data['data'] ?? [], $formatted_title, $results);
-                        }
-                    }
+                $cand_tmdb = isset($cand['tmdb_id']) ? (int)$cand['tmdb_id'] : 0;
+                if ($cand_tmdb <= 0) continue;
+
+                $cand_title = $cand['title'] ?? '';
+                $cand_orig = $cand['original_title'] ?? '';
+
+                $matched = false;
+                if ($tmdb_id !== null && $cand_tmdb === $tmdb_id) {
+                    $matched = true;
+                } elseif (is_strict_title_match($title, $cand_title) ||
+                          (!empty($cand_orig) && is_strict_title_match($title, $cand_orig)) ||
+                          ($kind === 'anime' && (is_anime_title_match($title, $cand_title) || (!empty($cand_orig) && is_anime_title_match($title, $cand_orig))))) {
+                    $matched = true;
                 }
-                break;
+
+                if ($matched) {
+                    $matched_title = $cand_title ?: ($cand_orig ?: $title);
+                    $this->fetchEpisodeLinks($kind, $cand_tmdb, $matched_title, $season, $episode, $absolute_episode, $results);
+                    if (!empty($results)) break 2;
+                }
             }
         }
 
         return $this->deduplicate($results);
     }
 
+    private function fetchEpisodeLinks(string $kind, int $tmdb_id, string $series_title, int $season, int $episode, ?int $absolute_episode, array &$results): void
+    {
+        $epData = $this->apiGet("/items/{$kind}/{$tmdb_id}/seasons/{$season}/episodes/{$episode}");
+        if (empty($epData['episode']) && $season >= 2 && $absolute_episode !== null && $absolute_episode > $episode) {
+            $epData = $this->apiGet("/items/{$kind}/{$tmdb_id}/seasons/1/episodes/{$absolute_episode}");
+        }
+
+        if (!empty($epData['episode']) && is_array($epData['episode'])) {
+            $ep = $epData['episode'];
+            $formatted_title = sprintf('%s S%02dE%02d', $series_title, $season, $episode);
+            $this->extractFromApiItem($ep, $formatted_title, $results);
+        }
+    }
+
+    private function extractFromApiItem(array $item, string $item_title, array &$results): void
+    {
+        $code = trim($item['code'] ?? '');
+        $raw_q = trim($item['quality'] ?? '1080p Full HD');
+        $quality = (stripos($raw_q, '1080') !== false || strtoupper($raw_q) === 'HD') ? '1080p Full HD' : $raw_q;
+        $lang = !empty($item['lang']) ? $this->formatLanguage($item['lang']) : 'Español Latino';
+
+        if (!empty($code)) {
+            $embed_url = "https://vimeos.net/embed-{$code}.html";
+            $dl_url = "https://vimeos.net/d/{$code}_h";
+
+            $results[] = [
+                'provider' => $this->getId(),
+                'provider_name' => 'LaMovie',
+                'type' => 'streaming',
+                'title' => $item_title,
+                'server' => 'Vimeos',
+                'quality' => $quality,
+                'language' => $lang,
+                'url' => $embed_url,
+                'size' => null
+            ];
+
+            $results[] = [
+                'provider' => $this->getId(),
+                'provider_name' => 'LaMovie',
+                'type' => 'direct',
+                'title' => $item_title,
+                'server' => 'Vimeos Direct',
+                'quality' => $quality,
+                'language' => $lang,
+                'url' => $dl_url,
+                'size' => null
+            ];
+        }
+
+        // Soporte adicional si el item contiene embeds o downloads explícitos
+        if (!empty($item['embeds']) && is_array($item['embeds'])) {
+            $this->parseMediaLinks($item, $item_title, $results);
+        }
+    }
+
     private function parseMediaLinks(array $data, string $item_title, array &$results): void
     {
-        // 1. Procesar Servidores Streaming
         $embeds = $data['embeds'] ?? [];
         foreach ($embeds as $emb) {
             $url = trim($emb['url'] ?? '');
@@ -201,7 +262,6 @@ class LaMovieProvider implements ProviderInterface
             ];
         }
 
-        // 2. Procesar Descargas y Torrents
         $downloads = $data['downloads'] ?? [];
         foreach ($downloads as $dl) {
             $url = trim($dl['url'] ?? '');
@@ -277,7 +337,7 @@ class LaMovieProvider implements ProviderInterface
         $seen = [];
         $unique = [];
         foreach ($results as $item) {
-            $key = ($item['server'] ?? '') . '|' . ($item['url'] ?? '');
+            $key = ($item['type'] ?? '') . '|' . ($item['server'] ?? '') . '|' . ($item['url'] ?? '');
             if (!isset($seen[$key])) {
                 $seen[$key] = true;
                 $unique[] = $item;
@@ -286,4 +346,3 @@ class LaMovieProvider implements ProviderInterface
         return $unique;
     }
 }
-

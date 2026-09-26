@@ -5,8 +5,8 @@ require_once __DIR__ . '/../utils.php';
 class SeriesKaoProvider implements ProviderInterface
 {
     private string $id = 'serieskao';
-    private string $name = 'SeriesKao (Películas y Series HD)';
-    private array $hosts = ['https://serieskao.top', 'https://serieskao.org'];
+    private string $name = 'SeriesKao (Películas, Series y Anime HD)';
+    private array $hosts = ['https://serieskao.top'];
 
     public function getId(): string
     {
@@ -20,7 +20,7 @@ class SeriesKaoProvider implements ProviderInterface
 
     public function getType(): string
     {
-        return 'streaming';
+        return 'mixed';
     }
 
     public function isEnabled(): bool
@@ -98,7 +98,7 @@ class SeriesKaoProvider implements ProviderInterface
         return $this->deduplicate($results);
     }
 
-    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null): array
+    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?int $absolute_episode = null): array
     {
         if (!$this->isEnabled()) {
             return [];
@@ -121,7 +121,7 @@ class SeriesKaoProvider implements ProviderInterface
                 $search_url = rtrim($host, '/') . '/search?s=' . urlencode($q);
                 $headers = ['Referer' => rtrim($host, '/') . '/'];
 
-                $html = http_get($search_url, ['headers' => $headers, 'timeout' => 6]);
+                $html = http_get($search_url, ['headers' => $headers, 'timeout' => 5]);
                 if (!$html || strlen($html) < 500) continue;
 
                 preg_match_all('/<article class="card".*?<\/article>/s', $html, $cards);
@@ -141,7 +141,7 @@ class SeriesKaoProvider implements ProviderInterface
                     $clean_cand = preg_replace('/\s*\((?:19|20)\d{2}\).*/', '', $card_title);
                     $clean_cand = trim(preg_replace('/\[.*?\]/', '', $clean_cand));
 
-                    if (is_strict_title_match($title, $clean_cand)) {
+                    if (is_strict_title_match($title, $clean_cand) || is_anime_title_match($title, $clean_cand)) {
                         $matched_url = $mUrl[1];
                         $matched_title = $clean_cand ?: $title;
                         break;
@@ -150,47 +150,26 @@ class SeriesKaoProvider implements ProviderInterface
 
                 if ($matched_url) {
                     if (strpos($matched_url, 'http') !== 0) {
-                        $matched_url = rtrim($host, '/') . $matched_url;
+                        $matched_url = rtrim($host, '/') . '/' . ltrim($matched_url, '/');
                     }
+                    $matched_url = rtrim($matched_url, '/');
 
-                    $series_html = http_get($matched_url, ['headers' => $headers, 'timeout' => 6]);
-                    if (!$series_html) continue;
+                    // 1. Probar directamente la ruta canónica del episodio (/temporada/{season}/capitulo/{episode})
+                    $direct_ep_url = "{$matched_url}/temporada/{$season}/capitulo/{$episode}";
+                    $ep_html = http_get($direct_ep_url, ['headers' => ['Referer' => $matched_url], 'timeout' => 5]);
 
-                    // Localizar el bloque de la temporada: id="season-{season}"
-                    $matched_ep_url = null;
-                    if (preg_match('/id="season-' . $season . '"(.*?)(?:id="season-\d+"|(?:\s*<\/div>\s*){2,}|$)/is', $series_html, $mSeasonBlock)) {
-                        preg_match_all('/<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/is', $mSeasonBlock[1], $epItems, PREG_SET_ORDER);
-                        foreach ($epItems as $item) {
-                            if (preg_match('/<span class="episode-item__number">\s*' . $episode . '\s*<\/span>/i', $item[2])) {
-                                $matched_ep_url = $item[1];
-                                break;
-                            }
-                            if (preg_match('/\/capitulo\/' . $episode . '\/?$/i', $item[1])) {
-                                $matched_ep_url = $item[1];
-                                break;
-                            }
+                    if ((!$ep_html || strlen($ep_html) < 1000) && $season >= 2 && $absolute_episode !== null && $absolute_episode > $episode) {
+                        $alt_ep_url = "{$matched_url}/temporada/1/capitulo/{$absolute_episode}";
+                        $ep_html = http_get($alt_ep_url, ['headers' => ['Referer' => $matched_url], 'timeout' => 5]);
+                        if ($ep_html && strlen($ep_html) >= 1000) {
+                            $direct_ep_url = $alt_ep_url;
                         }
                     }
 
-                    // Respaldo de búsqueda por URL de capítulo en toda la página
-                    if (!$matched_ep_url) {
-                        $fallback_pat = sprintf('/<a[^>]+href="([^"]*\/temporada\/%d\/capitulo\/%d\/?)"/i', $season, $episode);
-                        if (preg_match($fallback_pat, $series_html, $mFallback)) {
-                            $matched_ep_url = $mFallback[1];
-                        }
-                    }
-
-                    if ($matched_ep_url) {
-                        if (strpos($matched_ep_url, 'http') !== 0) {
-                            $matched_ep_url = rtrim($host, '/') . $matched_ep_url;
-                        }
-
-                        $ep_html = http_get($matched_ep_url, ['headers' => ['Referer' => $matched_url], 'timeout' => 6]);
-                        if ($ep_html) {
-                            $formatted_title = sprintf('%s S%02dE%02d', $matched_title, $season, $episode);
-                            $extracted = $this->extractPlayers($ep_html, $matched_ep_url, $formatted_title, $host);
-                            $results = array_merge($results, $extracted);
-                        }
+                    if ($ep_html && strlen($ep_html) >= 1000) {
+                        $formatted_title = sprintf('%s S%02dE%02d', $matched_title, $season, $episode);
+                        $extracted = $this->extractPlayers($ep_html, $direct_ep_url, $formatted_title, $host);
+                        $results = array_merge($results, $extracted);
                     }
                     break 2;
                 }

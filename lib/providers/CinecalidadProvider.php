@@ -9,10 +9,7 @@ class CinecalidadProvider implements ProviderInterface
      * Cualquier dominio puede contener tanto servidores de streaming como torrents (4K/1080p) y descargas directas.
      */
     private array $hosts = [
-        'https://www.cinecalidad.ro/',
-        'https://cinecalidad.re/',
-        'https://cinecalidad.fun/',
-        'https://www.cinecalidad.my/'
+        'https://www.cinecalidad.ro/'
     ];
 
     private CinecalidadResolver $resolver;

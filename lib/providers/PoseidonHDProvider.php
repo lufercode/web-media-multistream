@@ -80,29 +80,33 @@ class PoseidonHDProvider implements ProviderInterface
         return [];
     }
 
-    private function extractVideosFromProps(?array $pageProps, string $pageUrl): array
+    private function extractVideosFromProps(?array $pageProps, string $title, ?int $expected_ep_num = null): array
     {
         if (!$pageProps) return [];
 
         $container = $pageProps['thisMovie'] ?? $pageProps['episode'] ?? $pageProps['thisEpisode'] ?? [];
-        $videos = $container['videos'] ?? [];
+        if ($expected_ep_num !== null && isset($container['number']) && (int)$container['number'] !== (int)$expected_ep_num) {
+            return [];
+        }
 
+        $videos = $container['videos'] ?? [];
         if (empty($videos) || !is_array($videos)) return [];
 
         $sources = [];
         $langMap = [
-            'latino' => ['Latino', 'lat'],
+            'latino' => ['Español Latino', 'lat'],
             'spanish' => ['Castellano', 'cast'],
-            'english' => ['Subtitulado', 'sub']
+            'english' => ['Subtitulado', 'sub'],
+            'japanese' => ['Japonés (Sub)', 'sub']
         ];
 
         foreach ($videos as $langKey => $serverList) {
             if (!is_array($serverList)) continue;
-            $langInfo = $langMap[strtolower($langKey)] ?? ['Latino', 'lat'];
+            $langInfo = $langMap[strtolower($langKey)] ?? ['Español Latino', 'lat'];
 
             foreach ($serverList as $item) {
                 $rawServer = $item['cyberlocker'] ?? 'Online Stream';
-                $playerUrl = $item['result'] ?? '';
+                $playerUrl = $item['result'] ?? ($item['url'] ?? '');
                 if (empty($playerUrl)) continue;
 
                 $serverName = $this->formatServer($rawServer);
@@ -111,12 +115,14 @@ class PoseidonHDProvider implements ProviderInterface
                 $sources[] = [
                     'provider' => $this->getId(),
                     'provider_name' => 'PoseidonHD',
+                    'title' => $title,
                     'server' => $serverName,
                     'url' => $playerUrl,
-                    'lang' => $langInfo[0],
-                    'lang_id' => $langInfo[1],
+                    'language' => $langInfo[0],
+                    'lang' => $langInfo[1],
                     'quality' => $quality,
-                    'type' => 'streaming'
+                    'type' => 'streaming',
+                    'size' => null
                 ];
             }
         }
@@ -126,17 +132,16 @@ class PoseidonHDProvider implements ProviderInterface
 
     public function searchMovie(string $title, ?string $year = null, ?int $tmdb_id = null): array
     {
+        if (!$this->isEnabled()) return [];
         if (connection_aborted()) exit;
 
         $results = $this->getSearchResults($title);
         if (empty($results)) return [];
 
-        $normTitle = $this->normalizeString($title);
         $bestMatchSlug = null;
 
         foreach ($results as $item) {
             $slug = $item['url']['slug'] ?? '';
-            // Ignorar series en búsqueda de película
             if (strpos($slug, 'series/') === 0) continue;
 
             $itemTmdb = isset($item['TMDbId']) ? (int)$item['TMDbId'] : null;
@@ -157,12 +162,11 @@ class PoseidonHDProvider implements ProviderInterface
 
         if (!$bestMatchSlug) return [];
 
-        // Convertir 'movies/19995/avatar' a URL 'https://poseidonhd2.co/pelicula/19995/avatar'
         $detailPath = preg_replace('/^movies\//', 'pelicula/', $bestMatchSlug);
         $detailUrl = "{$this->host}/{$detailPath}";
 
         $detailHtml = http_get($detailUrl, [
-            'timeout' => 3,
+            'timeout' => 4,
             'headers' => [
                 'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Referer' => "{$this->host}/search?q=" . urlencode($title)
@@ -172,11 +176,12 @@ class PoseidonHDProvider implements ProviderInterface
         if (!$detailHtml) return [];
 
         $pageProps = $this->extractNextData($detailHtml);
-        return $this->extractVideosFromProps($pageProps, $detailUrl);
+        return $this->extractVideosFromProps($pageProps, $title);
     }
 
-    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null): array
+    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?int $absolute_episode = null): array
     {
+        if (!$this->isEnabled()) return [];
         if (connection_aborted()) exit;
 
         $results = $this->getSearchResults($title);
@@ -186,7 +191,6 @@ class PoseidonHDProvider implements ProviderInterface
 
         foreach ($results as $item) {
             $slug = $item['url']['slug'] ?? '';
-            // Solo considerar series
             if (strpos($slug, 'series/') !== 0) continue;
 
             $itemTmdb = isset($item['TMDbId']) ? (int)$item['TMDbId'] : null;
@@ -207,22 +211,34 @@ class PoseidonHDProvider implements ProviderInterface
 
         if (!$bestMatchSlug) return [];
 
-        // Convertir 'series/1396/breaking-bad' a URL de episodio 'https://poseidonhd2.co/serie/1396/breaking-bad/temporada/{s}/episodio/{e}'
         $seriesPath = preg_replace('/^series\//', 'serie/', $bestMatchSlug);
         $episodeUrl = "{$this->host}/{$seriesPath}/temporada/{$season}/episodio/{$episode}";
+        $expected_ep = $episode;
 
         $epHtml = http_get($episodeUrl, [
-            'timeout' => 3,
+            'timeout' => 4,
             'headers' => [
                 'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Referer' => "{$this->host}/{$seriesPath}"
             ]
         ]);
 
+        if (!$epHtml && $season >= 2 && $absolute_episode !== null && $absolute_episode > $episode) {
+            $altUrl = "{$this->host}/{$seriesPath}/temporada/1/episodio/{$absolute_episode}";
+            $epHtml = http_get($altUrl, [
+                'timeout' => 4,
+                'headers' => [
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Referer' => "{$this->host}/{$seriesPath}"
+                ]
+            ]);
+            $expected_ep = $absolute_episode;
+        }
+
         if (!$epHtml) return [];
 
         $pageProps = $this->extractNextData($epHtml);
-        return $this->extractVideosFromProps($pageProps, $episodeUrl);
+        return $this->extractVideosFromProps($pageProps, sprintf('%s S%02dE%02d', $title, $season, $episode), $expected_ep);
     }
 }
 

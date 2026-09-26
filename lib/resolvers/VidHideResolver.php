@@ -16,7 +16,7 @@ class VidHideResolver implements ResolverInterface
 
     private function unpackPacker(string $script): string
     {
-        if (!preg_match('/}\s*\(\s*[\'"](.*)[\'"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\'"](.*)[\'"]\.split\(\s*[\'"]\|[\'"]\s*\)/s', $script, $m)) {
+        if (!preg_match('/\}\s*\(\s*[\'"](.*)[\'"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\'"]([^\'"]+)[\'"]\.split\(\s*[\'"]\|[\'"]\s*\)/s', $script, $m)) {
             return $script;
         }
 
@@ -67,11 +67,14 @@ class VidHideResolver implements ResolverInterface
             // 1. Búsqueda directa de stream m3u8 en el HTML
             if (preg_match('/["\'](https?:\/\/[^"\']+\.m3u8[^"\']*)["\']/i', $html, $m)) {
                 $stream_url = $m[1];
-            } elseif (preg_match('/eval\(function\(p,a,c,k,e,[rd]\).*?\.split\([\'"]\|[\'"]\)\)\)/s', $html, $m)) {
+            } elseif (preg_match_all('/eval\(function\(p,a,c,k,e,[rd]\).*?\.split\([\'"]\|[\'"]\)\)\)/s', $html, $packMatches)) {
                 // 2. Desempaquetar código Dean Edwards Packer
-                $unpacked = $this->unpackPacker($m[0]);
-                if (preg_match('/(https?:\/\/[^\s"\'<>]+\.m3u8[^\s"\'<>]*)/i', $unpacked, $m3)) {
-                    $stream_url = $m3[1];
+                foreach ($packMatches[0] as $packedBlock) {
+                    $unpacked = $this->unpackPacker($packedBlock);
+                    if (preg_match('/(https?:\/\/[^\s"\'<>]+\.m3u8[^\s"\'<>]*)/i', $unpacked, $m3)) {
+                        $stream_url = $m3[1];
+                        break;
+                    }
                 }
             }
         }

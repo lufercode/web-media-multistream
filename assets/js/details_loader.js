@@ -2505,6 +2505,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (id.includes('thepiratebay') || id.includes('piratebay') || id.includes('tpb')) return 'fas fa-ship text-warning';
             return 'fas fa-magnet text-warning';
         }
+        if (id.includes('lamovie')) return 'fas fa-play-circle text-danger';
         if (id.includes('cuevana')) return 'fas fa-play-circle text-primary';
         if (id.includes('poseidon')) return 'fas fa-water text-info';
         if (id.includes('gnula')) return 'fas fa-film text-danger';
@@ -2513,6 +2514,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (id.includes('retrotve')) return 'fas fa-history text-warning';
         if (id.includes('hacktorrent')) return 'fas fa-bolt text-danger';
         if (id.includes('pelisplus') || id.includes('pelispedia') || id.includes('pelisforte')) return 'fas fa-compact-disc text-success';
+        if (id.includes('latanime')) return 'fas fa-dragon text-warning';
         if (id.includes('tioanime') || id.includes('anime')) return 'fas fa-dragon text-danger';
         return 'fas fa-play text-success';
     };
@@ -2750,26 +2752,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const isAnimeContent = linksContainer?.dataset?.isAnime === '1';
         let rawProviders = (window._cachedProvidersList && window._cachedProvidersList.length > 0) ? window._cachedProvidersList : [
             { id: 'local_cdn', name: 'CDN Propio', type: 'direct' },
+            { id: 'lamovie', name: 'LaMovie', type: 'mixed' },
+            { id: 'serieskao', name: 'SeriesKao', type: 'mixed' },
+            { id: 'pelisplus', name: 'PelisPlus HD', type: 'mixed' },
+            { id: 'latanime', name: 'LatAnime', type: 'mixed' },
             { id: 'torrentio', name: 'Torrentio (TorrentGalaxy / Nyaa / 1337x / Multi-Audio)', type: 'torrent' },
             { id: 'cuevana', name: 'Cuevana', type: 'streaming' },
+            { id: 'poseidonhd', name: 'PoseidonHD', type: 'streaming' },
             { id: 'pelispedia', name: 'PelisPedia', type: 'streaming' },
+            { id: 'pelisforte', name: 'PelisForte', type: 'streaming' },
             { id: 'cinecalidad', name: 'Cinecalidad (Dual Latino)', type: 'mixed' },
-            { id: 'thepiratebay', name: 'The Pirate Bay (Dual Latino)', type: 'torrent' },
-            { id: 'yts', name: 'YTS (YIFY)', type: 'torrent' },
-            { id: 'elitetorrent', name: 'EliteTorrent', type: 'torrent' },
-            { id: 'dontorrent', name: 'DonTorrent', type: 'torrent' },
-            { id: 'hacktorrent', name: 'HackTorrent', type: 'mixed' },
-            { id: 'lamovie', name: 'LaMovie', type: 'mixed' },
-            { id: 'allpeliculas', name: 'AllPeliculas', type: 'streaming' },
+            { id: 'allpeliculas', name: 'AllPeliculas', type: 'mixed' },
+            { id: 'hacktorrent', name: 'HackStore', type: 'mixed' },
             { id: 'gnula', name: 'Gnula', type: 'streaming' },
-            { id: 'serieskao', name: 'SeriesKao', type: 'streaming' },
             { id: 'retrotve', name: 'RetroTVE', type: 'streaming' },
             { id: 'anime', name: 'JKAnime', type: 'streaming' },
             { id: 'tioanime', name: 'TioAnime', type: 'streaming' },
+            { id: 'thepiratebay', name: 'The Pirate Bay (Dual Latino)', type: 'torrent' },
+            { id: 'yts', name: 'YTS (YIFY)', type: 'torrent' },
             { id: 'nyaa', name: 'Nyaa (Anime Torrents)', type: 'torrent' }
         ];
 
-        const providers = isAnimeContent ? rawProviders : rawProviders.filter(p => p.id !== 'anime' && p.id !== 'tioanime' && p.id !== 'nyaa');
+        const providers = isAnimeContent ? rawProviders : rawProviders.filter(p => p.id !== 'anime' && p.id !== 'tioanime' && p.id !== 'latanime' && p.id !== 'nyaa');
 
         const totalProviders = providers.length;
         let completedProviders = 0;
@@ -3117,9 +3121,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Ordenar proveedores por prioridad y velocidad esperada
         const priorityOrder = [
-            'local_cdn', 'torrentio', 'cinecalidad', 'thepiratebay', 'yts', 'cuevana', 'allpeliculas', 
-            'pelispedia', 'anime', 'tioanime', 'nyaa', 'hacktorrent', 'elitetorrent', 'dontorrent', 
-            'lamovie', 'gnula', 'serieskao', 'retrotve'
+            'local_cdn', 'lamovie', 'serieskao', 'pelisplus', 'latanime', 'torrentio',
+            'cuevana', 'poseidonhd', 'cinecalidad', 'pelispedia', 'pelisforte',
+            'allpeliculas', 'hacktorrent', 'gnula', 'anime', 'tioanime',
+            'thepiratebay', 'yts', 'nyaa', 'retrotve'
         ];
         
         const sortedProviders = [...providers].sort((a, b) => {
@@ -3161,7 +3166,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
 
                         const streaming = (data.links.streaming || []).filter(item => {
-                            const u = item.url;
+                            const u = `${prov.id}|${item.url}`;
                             if (seenUrls.has(u)) return false;
                             seenUrls.add(u);
                             return true;

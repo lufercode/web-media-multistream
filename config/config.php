@@ -37,21 +37,57 @@ $PROVIDERS_CONFIG = [
         'enabled' => true,
         'name' => 'CDN Propio (Rakun)'
     ],
+    'lamovie' => [
+        'enabled' => true,
+        'name' => 'LaMovie (Películas, Series y Anime HD)'
+    ],
+    'serieskao' => [
+        'enabled' => true,
+        'name' => 'SeriesKao (Películas, Series y Anime HD)'
+    ],
+    'pelisplus' => [
+        'enabled' => true,
+        'name' => 'PelisPlus HD (Películas, Series y Anime Latino)'
+    ],
+    'latanime' => [
+        'enabled' => true,
+        'name' => 'LatAnime (Anime en Español Latino y Castellano HD)'
+    ],
     'cuevana' => [
         'enabled' => true,
         'name' => 'Cuevana (Streaming Películas y Series)'
     ],
-    'pelisplus' => [
-        'enabled' => false,
-        'name' => 'PelisPlus HD (Dominio extinto / Deshabilitado)'
+    'poseidonhd' => [
+        'enabled' => true,
+        'name' => 'PoseidonHD (Películas y Series HD / Alfa)'
     ],
     'cinecalidad' => [
         'enabled' => true,
         'name' => 'Cinecalidad (Películas / 4K / Torrents)'
     ],
-    'dontorrent' => [
+    'pelispedia' => [
         'enabled' => true,
-        'name' => 'DonTorrent (Torrents / 4K / MicroHD)'
+        'name' => 'PelisPedia (Películas, Series y Anime HD)'
+    ],
+    'pelisforte' => [
+        'enabled' => true,
+        'name' => 'PelisForte (Películas 1080p Full HD)'
+    ],
+    'allpeliculas' => [
+        'enabled' => true,
+        'name' => 'AllPeliculas (Películas, Series y Anime HD)'
+    ],
+    'hacktorrent' => [
+        'enabled' => true,
+        'name' => 'HackStore (Películas, Series y Anime HD)'
+    ],
+    'gnula' => [
+        'enabled' => true,
+        'name' => 'Gnula (Películas HD)'
+    ],
+    'retrotve' => [
+        'enabled' => true,
+        'name' => 'RetroTVE (Clásicos y Series Retro)'
     ],
     'anime' => [
         'enabled' => true,
@@ -61,61 +97,29 @@ $PROVIDERS_CONFIG = [
         'enabled' => true,
         'name' => 'TioAnime (Anime en Streaming / Mega / Waaw)'
     ],
-    'pelisforte' => [
-        'enabled' => false,
-        'name' => 'PelisForte (Dominio extinto / Deshabilitado)'
-    ],
-    'pelispedia' => [
+    'torrentio' => [
         'enabled' => true,
-        'name' => 'PelisPedia (Streaming HD / Fastream)'
-    ],
-    'lamovie' => [
-        'enabled' => true,
-        'name' => 'LaMovie (Películas, Series y Torrents)'
-    ],
-    'serieskao' => [
-        'enabled' => true,
-        'name' => 'SeriesKao (Películas y Series HD)'
-    ],
-    'retrotve' => [
-        'enabled' => true,
-        'name' => 'RetroTVE (Clásicos y Series Retro)'
-    ],
-    'gnula' => [
-        'enabled' => true,
-        'name' => 'Gnula (Películas HD)'
-    ],
-    'allpeliculas' => [
-        'enabled' => true,
-        'name' => 'AllPeliculas (Películas y Series HD)'
-    ],
-    'hacktorrent' => [
-        'enabled' => true,
-        'name' => 'HackTorrent (Torrents y Streaming HD)'
-    ],
-    'elitetorrent' => [
-        'enabled' => true,
-        'name' => 'EliteTorrent (Torrents HD / MicroHD / 4K)'
+        'name' => 'Torrentio (TorrentGalaxy / Nyaa / 1337x / Multi-Audio)'
     ],
     'yts' => [
         'enabled' => true,
         'name' => 'YTS (YIFY Torrents HD / 4K / VOSE)'
     ],
-    'poseidonhd' => [
+    'thepiratebay' => [
         'enabled' => true,
-        'name' => 'PoseidonHD (Películas y Series HD / Alfa)'
+        'name' => 'The Pirate Bay (Dual Latino / 4K / HD)'
     ],
     'nyaa' => [
         'enabled' => true,
         'name' => 'Nyaa (Anime Torrents HD / Multi-Sub)'
     ],
-    'thepiratebay' => [
-        'enabled' => true,
-        'name' => 'The Pirate Bay (Dual Latino / 4K / HD)'
+    'dontorrent' => [
+        'enabled' => false,
+        'name' => 'DonTorrent (Dominio inactivo)'
     ],
-    'torrentio' => [
-        'enabled' => true,
-        'name' => 'Torrentio (TorrentGalaxy / Nyaa / 1337x / Multi-Audio)'
+    'elitetorrent' => [
+        'enabled' => false,
+        'name' => 'EliteTorrent (Dominio inactivo)'
     ]
 ];
 

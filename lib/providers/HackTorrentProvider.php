@@ -4,7 +4,8 @@ require_once __DIR__ . '/../utils.php';
 
 class HackTorrentProvider implements ProviderInterface
 {
-    private string $host = 'https://hacktorrent.cc';
+    private string $host = 'https://hackstore.mx';
+    private string $apiBase = 'https://tmdb.allcalidad.re/v1';
 
     public function getId(): string
     {
@@ -13,7 +14,7 @@ class HackTorrentProvider implements ProviderInterface
 
     public function getName(): string
     {
-        return 'HackTorrent (Torrents y Streaming HD)';
+        return 'HackStore / HackTorrent (Películas, Series y Anime HD)';
     }
 
     public function getType(): string
@@ -27,274 +28,175 @@ class HackTorrentProvider implements ProviderInterface
         return $PROVIDERS_CONFIG['hacktorrent']['enabled'] ?? true;
     }
 
-    private function normalizeString(string $str): string
+    private function apiGet(string $path): ?array
     {
-        $str = mb_strtolower($str, 'UTF-8');
-        $str = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $str);
-        $str = preg_replace('/[^a-z0-9]/', '', $str);
-        return trim($str);
-    }
-
-    private function mapServerName(string $url): string
-    {
-        $lower = strtolower($url);
-        if (strpos($lower, 'voe') !== false) return 'Voe';
-        if (strpos($lower, 'streamwish') !== false || strpos($lower, 'hlswish') !== false || strpos($lower, 'wish') !== false) return 'StreamWish';
-        if (strpos($lower, 'filemoon') !== false) return 'Filemoon';
-        if (strpos($lower, 'goodstream') !== false) return 'GoodStream';
-        if (strpos($lower, 'vimeos') !== false) return 'Vimeos';
-        if (strpos($lower, 'videoapp') !== false) return 'VideoApp';
-        if (strpos($lower, 'dood') !== false) return 'Doodstream';
-        if (strpos($lower, 'streamtape') !== false) return 'Streamtape';
-        if (strpos($lower, 'vidhide') !== false) return 'VidHide';
-        return 'Online Stream';
-    }
-
-    private function formatQuality(string $rawQ): string
-    {
-        $q = strtolower(trim($rawQ));
-        if (strpos($q, '4k') !== false || strpos($q, '2160') !== false) return '4K UHD';
-        if (strpos($q, '1080') !== false || strpos($q, 'full') !== false) return '1080p Full HD';
-        if (strpos($q, '720') !== false) return 'HD 720p';
-        if (strpos($q, 'dvd') !== false) return 'DVDRip';
-        if (strpos($q, 'cam') !== false) return 'CAM';
-        return !empty($rawQ) ? $rawQ : 'HD';
+        $url = $this->apiBase . $path;
+        $res = http_get($url, [
+            'timeout' => 4,
+            'headers' => [
+                'Referer' => $this->host . '/',
+                'Origin' => $this->host,
+                'Accept' => 'application/json'
+            ]
+        ]);
+        if (!$res) return null;
+        $decoded = json_decode($res, true);
+        return is_array($decoded) ? $decoded : null;
     }
 
     public function searchMovie(string $title, ?string $year = null, ?int $tmdb_id = null): array
     {
+        if (!$this->isEnabled()) {
+            return [];
+        }
+
         $sources = [];
-        $searchUrl = $this->host . '/wp-json/wpreact/v1/search?query=' . urlencode($title) . '&posts_per_page=20&page=1';
 
-        $searchJson = http_get($searchUrl, [
-            'timeout' => 8,
-            'headers' => [
-                'Referer' => $this->host . '/',
-                'Accept' => 'application/json',
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            ]
-        ]);
-
-        if (!$searchJson) return [];
-
-        $data = json_decode($searchJson, true);
-        $results = $data['results'] ?? [];
-        if (empty($results)) return [];
-
-        $targetSlug = null;
-        $targetTitle = $title;
-        $targetNorm = $this->normalizeString($title);
-
-        foreach ($results as $item) {
-            $mType = $item['type'] ?? '';
-            if ($mType !== 'pelicula' && $mType !== 'movie') continue;
-
-            $mTmdb = isset($item['tmdb_id']) ? (int)$item['tmdb_id'] : null;
-            if ($tmdb_id !== null && $mTmdb !== null && $tmdb_id === $mTmdb) {
-                $targetSlug = $item['slug'] ?? null;
-                $targetTitle = $item['title'] ?? $title;
-                break;
-            }
-
-            $mTitle = $item['title'] ?? '';
-            $itemYear = isset($item['years']) ? substr($item['years'], 0, 4) : (isset($item['year']) ? substr($item['year'], 0, 4) : null);
-
-            if (is_strict_title_match($title, $mTitle, $year, $itemYear)) {
-                $targetSlug = $item['slug'] ?? null;
-                $targetTitle = $mTitle;
-                break;
+        if ($tmdb_id !== null && $tmdb_id > 0) {
+            if (connection_aborted()) exit;
+            $data = $this->apiGet("/items/movie/{$tmdb_id}");
+            if (!empty($data['item']) && is_array($data['item'])) {
+                $item = $data['item'];
+                $item_title = $item['title'] ?? $item['original_title'] ?? $title;
+                $this->extractFromApiItem($item, $item_title, $sources);
+                if (!empty($sources)) {
+                    return $sources;
+                }
             }
         }
 
-        if (!$targetSlug) return [];
+        $clean_query = trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s]/u', ' ', $title)));
+        $queries = array_values(array_unique(array_filter([trim($title), $clean_query])));
 
-        $detailUrl = $this->host . '/wp-json/wpreact/v1/movie/' . $targetSlug;
-        $detailJson = http_get($detailUrl, [
-            'timeout' => 8,
-            'headers' => [
-                'Referer' => $this->host . '/pelicula/' . $targetSlug . '/',
-                'Accept' => 'application/json',
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            ]
-        ]);
+        foreach ($queries as $q) {
+            if (connection_aborted()) exit;
+            $searchData = $this->apiGet('/search?q=' . rawurlencode($q) . '&page=1&limit=18');
+            $items = $searchData['items'] ?? [];
+            if (empty($items)) continue;
 
-        if (!$detailJson) return [];
+            foreach ($items as $cand) {
+                if (connection_aborted()) exit;
+                if (($cand['kind'] ?? '') !== 'movie') continue;
 
-        $movieData = json_decode($detailJson, true);
-        $downloads = $movieData['downloads'] ?? [];
+                $cand_tmdb = isset($cand['tmdb_id']) ? (int)$cand['tmdb_id'] : null;
+                $cand_title = $cand['title'] ?? '';
+                $cand_orig = $cand['original_title'] ?? '';
+                $cand_year = !empty($cand['release_date']) ? substr($cand['release_date'], 0, 4) : null;
 
-        foreach ($downloads as $dl) {
-            $link = $dl['download_link'] ?? '';
-            if (!$link || strpos($link, 'magnet:') !== 0) continue;
+                $matched = false;
+                if ($tmdb_id !== null && $cand_tmdb === $tmdb_id) {
+                    $matched = true;
+                } elseif (is_strict_title_match($title, $cand_title, $year, $cand_year) ||
+                          (!empty($cand_orig) && is_strict_title_match($title, $cand_orig, $year, $cand_year))) {
+                    $matched = true;
+                }
 
-            $rawQ = $dl['quality'] ?? 'HD';
-            $quality = $this->formatQuality($rawQ);
-            $server = (stripos($rawQ, '4k') !== false || stripos($rawQ, '2160') !== false) 
-                ? 'BitTorrent (4K UHD)' 
-                : 'BitTorrent Magnet';
-
-            $lang = $dl['language'] ?? 'Latino';
-            $langCode = 'lat';
-            if (is_latino_audio($lang)) {
-                $langCode = 'lat';
-            } elseif (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false || stripos($lang, 'spa') !== false) {
-                $langCode = 'cast';
-            } elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) {
-                $langCode = 'sub';
+                if ($matched) {
+                    $matched_title = $cand_title ?: ($cand_orig ?: $title);
+                    if (!empty($cand['code'])) {
+                        $this->extractFromApiItem($cand, $matched_title, $sources);
+                    } elseif ($cand_tmdb) {
+                        $detail = $this->apiGet("/items/movie/{$cand_tmdb}");
+                        if (!empty($detail['item'])) {
+                            $this->extractFromApiItem($detail['item'], $matched_title, $sources);
+                        }
+                    }
+                    if (!empty($sources)) break 2;
+                }
             }
-
-            $sources[] = [
-                'provider' => $this->getId(),
-                'provider_name' => 'HackTorrent (Torrent)',
-                'type' => 'torrent',
-                'title' => $movieData['title'] ?? $targetTitle,
-                'server' => $server,
-                'quality' => $quality,
-                'language' => $lang,
-                'lang' => $langCode,
-                'url' => $link,
-                'size' => $dl['size'] ?? null
-            ];
         }
 
         return $sources;
     }
 
-    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null): array
+    public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?int $absolute_episode = null): array
     {
+        if (!$this->isEnabled()) {
+            return [];
+        }
+
         $sources = [];
-        $searchUrl = $this->host . '/wp-json/wpreact/v1/search?query=' . urlencode($title) . '&posts_per_page=20&page=1';
 
-        $searchJson = http_get($searchUrl, [
-            'timeout' => 8,
-            'headers' => [
-                'Referer' => $this->host . '/',
-                'Accept' => 'application/json',
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            ]
-        ]);
-
-        if (!$searchJson) return [];
-
-        $data = json_decode($searchJson, true);
-        $results = $data['results'] ?? [];
-        if (empty($results)) return [];
-
-        $targetSlug = null;
-        $targetTitle = $title;
-        $targetNorm = $this->normalizeString($title);
-
-        foreach ($results as $item) {
-            $mType = $item['type'] ?? '';
-            if ($mType !== 'serie' && $mType !== 'tv') continue;
-
-            $mTmdb = isset($item['tmdb_id']) ? (int)$item['tmdb_id'] : null;
-            if ($tmdb_id !== null && $mTmdb !== null && $tmdb_id === $mTmdb) {
-                $targetSlug = $item['slug'] ?? null;
-                $targetTitle = $item['title'] ?? $title;
-                break;
-            }
-
-            $mTitle = $item['title'] ?? '';
-            $mNorm = $this->normalizeString($mTitle);
-
-            if ($mNorm === $targetNorm || strpos($mNorm, $targetNorm) !== false || strpos($targetNorm, $mNorm) !== false) {
-                $targetSlug = $item['slug'] ?? null;
-                $targetTitle = $mTitle;
-                break;
+        if ($tmdb_id !== null && $tmdb_id > 0) {
+            foreach (['anime', 'tvshow'] as $kind) {
+                if (connection_aborted()) exit;
+                $this->fetchEpisodeLinks($kind, $tmdb_id, $title, $season, $episode, $absolute_episode, $sources);
+                if (!empty($sources)) {
+                    return $sources;
+                }
             }
         }
 
-        if (!$targetSlug) return [];
+        $clean_query = trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s]/u', ' ', $title)));
+        $queries = array_values(array_unique(array_filter([trim($title), $clean_query])));
 
-        $detailUrl = $this->host . '/wp-json/wpreact/v1/serie/' . $targetSlug . '/related/';
-        $detailJson = http_get($detailUrl, [
-            'timeout' => 10,
-            'headers' => [
-                'Referer' => $this->host . '/serie/' . $targetSlug . '/',
-                'Accept' => 'application/json',
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            ]
-        ]);
+        foreach ($queries as $q) {
+            if (connection_aborted()) exit;
+            $searchData = $this->apiGet('/search?q=' . rawurlencode($q) . '&page=1&limit=18');
+            $items = $searchData['items'] ?? [];
+            if (empty($items)) continue;
 
-        if (!$detailJson) return [];
+            foreach ($items as $cand) {
+                if (connection_aborted()) exit;
+                $kind = $cand['kind'] ?? '';
+                if ($kind !== 'tvshow' && $kind !== 'anime') continue;
 
-        $seriesData = json_decode($detailJson, true);
+                $cand_tmdb = isset($cand['tmdb_id']) ? (int)$cand['tmdb_id'] : 0;
+                if ($cand_tmdb <= 0) continue;
 
-        // 1. Fuentes de Streaming
-        $embeds = $seriesData['embeds'] ?? [];
-        foreach ($embeds as $emb) {
-            $sNum = (int)($emb['season'] ?? 0);
-            $eNum = (int)($emb['episode'] ?? 0);
+                $cand_title = $cand['title'] ?? '';
+                $cand_orig = $cand['original_title'] ?? '';
 
-            if ($sNum === $season && $eNum === $episode) {
-                $url = $emb['url'] ?? '';
-                if (!$url) continue;
-
-                $server = $this->mapServerName($url);
-                $quality = $this->formatQuality($emb['quality'] ?? 'Full HD');
-                $lang = $emb['lang'] ?? 'Latino';
-                $langCode = 'lat';
-                if (is_latino_audio($lang)) {
-                    $langCode = 'lat';
-                } elseif (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false || stripos($lang, 'spa') !== false) {
-                    $langCode = 'cast';
-                } elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) {
-                    $langCode = 'sub';
+                $matched = false;
+                if ($tmdb_id !== null && $cand_tmdb === $tmdb_id) {
+                    $matched = true;
+                } elseif (is_strict_title_match($title, $cand_title) ||
+                          (!empty($cand_orig) && is_strict_title_match($title, $cand_orig)) ||
+                          ($kind === 'anime' && (is_anime_title_match($title, $cand_title) || (!empty($cand_orig) && is_anime_title_match($title, $cand_orig))))) {
+                    $matched = true;
                 }
 
-                $sources[] = [
-                    'provider' => $this->getId(),
-                    'provider_name' => 'HackTorrent (Streaming)',
-                    'type' => 'streaming',
-                    'title' => sprintf("%s S%02dE%02d", $targetTitle, $season, $episode),
-                    'server' => $server,
-                    'quality' => $quality,
-                    'language' => $lang,
-                    'lang' => $langCode,
-                    'url' => $url,
-                    'size' => null
-                ];
-            }
-        }
-
-        // 2. Fuentes de Torrents/Descargas
-        $downloads = $seriesData['downloads'] ?? [];
-        foreach ($downloads as $dl) {
-            $sNum = (int)($dl['season'] ?? 0);
-            $eNum = (int)($dl['episode'] ?? 0);
-
-            if ($sNum === $season && $eNum === $episode) {
-                $link = $dl['download_link'] ?? '';
-                if (!$link || strpos($link, 'magnet:') !== 0) continue;
-
-                $quality = $this->formatQuality($dl['quality'] ?? '1080p Full HD');
-                $lang = $dl['language'] ?? 'Latino';
-                $langCode = 'lat';
-                if (is_latino_audio($lang)) {
-                    $langCode = 'lat';
-                } elseif (stripos($lang, 'castellano') !== false || stripos($lang, 'esp') !== false || stripos($lang, 'spa') !== false) {
-                    $langCode = 'cast';
-                } elseif (stripos($lang, 'sub') !== false || stripos($lang, 'vose') !== false) {
-                    $langCode = 'sub';
+                if ($matched) {
+                    $matched_title = $cand_title ?: ($cand_orig ?: $title);
+                    $this->fetchEpisodeLinks($kind, $cand_tmdb, $matched_title, $season, $episode, $absolute_episode, $sources);
+                    if (!empty($sources)) break 2;
                 }
-
-                $sources[] = [
-                    'provider' => $this->getId(),
-                    'provider_name' => 'HackTorrent (Torrent)',
-                    'type' => 'torrent',
-                    'title' => sprintf("%s S%02dE%02d", $targetTitle, $season, $episode),
-                    'server' => 'BitTorrent Magnet',
-                    'quality' => $quality,
-                    'language' => $lang,
-                    'lang' => $langCode,
-                    'url' => $link,
-                    'size' => $dl['size'] ?? null
-                ];
             }
         }
 
         return $sources;
+    }
+
+    private function fetchEpisodeLinks(string $kind, int $tmdb_id, string $series_title, int $season, int $episode, ?int $absolute_episode, array &$sources): void
+    {
+        $epData = $this->apiGet("/items/{$kind}/{$tmdb_id}/seasons/{$season}/episodes/{$episode}");
+        if (empty($epData['episode']) && $season >= 2 && $absolute_episode !== null && $absolute_episode > $episode) {
+            $epData = $this->apiGet("/items/{$kind}/{$tmdb_id}/seasons/1/episodes/{$absolute_episode}");
+        }
+
+        if (!empty($epData['episode']) && is_array($epData['episode'])) {
+            $ep = $epData['episode'];
+            $formatted_title = sprintf('%s S%02dE%02d', $series_title, $season, $episode);
+            $this->extractFromApiItem($ep, $formatted_title, $sources);
+        }
+    }
+
+    private function extractFromApiItem(array $item, string $item_title, array &$sources): void
+    {
+        $code = trim($item['code'] ?? '');
+        if (empty($code)) return;
+
+        $sources[] = [
+            'provider' => $this->getId(),
+            'provider_name' => 'HackStore',
+            'type' => 'streaming',
+            'title' => $item_title,
+            'server' => 'Vimeos',
+            'quality' => '1080p Full HD',
+            'language' => 'Español Latino',
+            'lang' => 'lat',
+            'url' => "https://vimeos.net/embed-{$code}.html",
+            'size' => null
+        ];
     }
 }
-
