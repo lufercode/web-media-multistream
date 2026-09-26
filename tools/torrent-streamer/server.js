@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebTorrent from 'webtorrent';
+import { buildManifest, getStremioStreams } from './stremio_addon.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -439,6 +440,51 @@ const server = http.createServer(async (req, res) => {
             clientUploadSpeed: client.uploadSpeed,
             memoryMB: Math.round(process.memoryUsage().rss / (1024 * 1024))
         }));
+        return;
+    }
+
+    // =========================================================================
+    // STREMIO ADDON PROTOCOL ENDPOINTS (0% carga de video en Render)
+    // Soporta:
+    //   GET /manifest.json
+    //   GET /stremio/manifest.json
+    //   GET /stremio/:config/manifest.json
+    //   GET /stream/:type/:id.json
+    //   GET /stremio/stream/:type/:id.json
+    //   GET /stremio/:config/stream/:type/:id.json
+    // =========================================================================
+    const manifestMatch = pathname.match(/^(?:\/stremio)?(?:\/([^/]+))?\/manifest\.json$/i);
+    if (manifestMatch && req.method === 'GET') {
+        const configParam = manifestMatch[1] || parsedUrl.searchParams.get('config') || 'default';
+        const manifest = buildManifest(configParam, baseUrl);
+        res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600'
+        });
+        res.end(JSON.stringify(manifest));
+        return;
+    }
+
+    const stremioStreamMatch = pathname.match(/^(?:\/stremio)?(?:\/([^/]+))?\/stream\/(movie|series|anime|tv)\/([^/]+)\.json$/i);
+    if (stremioStreamMatch && req.method === 'GET') {
+        const configParam = stremioStreamMatch[1] || parsedUrl.searchParams.get('config') || 'default';
+        const rawType = stremioStreamMatch[2].toLowerCase();
+        const stremioType = (rawType === 'tv' || rawType === 'anime') ? 'series' : rawType;
+        const stremioId = decodeURIComponent(stremioStreamMatch[3]);
+
+        try {
+            console.log(`[Stremio Addon] Buscando streams para ${stremioType}/${stremioId} (config=${configParam})...`);
+            const result = await getStremioStreams(stremioType, stremioId, configParam);
+            res.writeHead(200, {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Cache-Control': 'public, max-age=300'
+            });
+            res.end(JSON.stringify(result));
+        } catch (err) {
+            console.error('[Stremio Addon] Error:', err);
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ streams: [] }));
+        }
         return;
     }
 
