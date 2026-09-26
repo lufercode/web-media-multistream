@@ -1752,6 +1752,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window._activeTorrentStreamHash) {
             window._vlcOpenedForHash = window._activeTorrentStreamHash;
         }
+        // Detener el sondeo frecuente de /status para no gastar peticiones mientras se usa VLC
+        if (window._torrentStatusPollInterval) {
+            clearInterval(window._torrentStatusPollInterval);
+            window._torrentStatusPollInterval = null;
+        }
         if (window._currentArtplayer) {
             try {
                 window._currentArtplayer.pause();
@@ -1761,6 +1766,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (webVideo) {
             try {
                 webVideo.pause();
+                // Cortar la descarga en segundo plano del navegador para que Render dedique el 100% de CPU/red a VLC
+                webVideo.removeAttribute('src');
+                webVideo.load();
             } catch (e) {}
         }
     };
@@ -1806,6 +1814,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const badgesEl = document.getElementById('playerModalBadges');
         const extLinkBtn = document.getElementById('btnExternalLink');
         const isRemote = Boolean(window.TORRENT_STREAMER_REMOTE_URL && window.TORRENT_STREAMER_REMOTE_URL.trim());
+        window._vlcOpenedForHash = null;
 
         if (badgesEl) {
             const hostBadge = isRemote 
@@ -1893,9 +1902,25 @@ document.addEventListener('DOMContentLoaded', () => {
             window._activeTorrentStreamHash = infoHash;
             window._activeTorrentRemoteBase = remoteBase;
 
-            const directStreamUrl = remoteBase 
-                ? `${remoteBase}/stream/${infoHash}` 
-                : (loadData.streamUrl || `api/torrent_stream.php?action=stream&infoHash=${infoHash}`);
+            // Extraer parámetros de episodio del magnet para conservarlos siempre en /status y /stream
+            const epMatch = magnetUrl.match(/[?&]ep=([^&]+)/i);
+            const idxMatch = magnetUrl.match(/[?&](?:fileIdx|so)=(\d+)/i);
+            const dnMatch = magnetUrl.match(/[?&]dn=([^&]+)/i);
+            const epQueryParts = [];
+            if (loadData.name && /\.(mkv|mp4|webm|avi)$/i.test(loadData.name)) {
+                epQueryParts.push(`file=${encodeURIComponent(loadData.name)}`);
+            } else if (dnMatch) {
+                epQueryParts.push(`file=${dnMatch[1]}`);
+            }
+            if (epMatch) epQueryParts.push(`ep=${epMatch[1]}`);
+            if (idxMatch) epQueryParts.push(`fileIdx=${idxMatch[1]}`);
+            const epQueryString = epQueryParts.length > 0 ? `?${epQueryParts.join('&')}` : '';
+
+            let directStreamUrl = (loadData.streamUrl && !loadData.streamUrl.includes('0.0.0.0'))
+                ? loadData.streamUrl
+                : (remoteBase
+                    ? `${remoteBase}/stream/${infoHash}${epQueryString}`
+                    : `api/torrent_stream.php?action=stream&infoHash=${infoHash}`);
 
             // Configurar botón externo de cabecera con el enlace de video para VLC
             if (extLinkBtn) {
@@ -1932,7 +1957,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const statusEndpoint = remoteBase
-                ? `${remoteBase}/status/${infoHash}`
+                ? `${remoteBase}/status/${infoHash}${epQueryString}`
                 : `api/torrent_stream.php?action=status&infoHash=${infoHash}`;
 
             const barEl = document.getElementById('torrentBufferBar');
@@ -1944,14 +1969,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let playerStarted = false;
             let pollAttempts = 0;
+            let isFetchingStatus = false;
+            let lastPostPlayPollTime = 0;
+            let consecutive404s = 0;
 
             window._torrentStatusPollInterval = setInterval(async () => {
+                if (isFetchingStatus) return;
+                // Si el modal ya se cerró o el usuario pasó el stream a VLC, detener el sondeo
+                const modalEl = document.getElementById('videoPlayerModal');
+                if ((modalEl && !modalEl.classList.contains('show') && !modalEl.classList.contains('player-minimized')) || window._vlcOpenedForHash === infoHash) {
+                    clearInterval(window._torrentStatusPollInterval);
+                    window._torrentStatusPollInterval = null;
+                    return;
+                }
+
+                // Una vez iniciado el reproductor web, consultar /status solo cada 12 segundos en lugar de cada 1s para no saturar Render
+                const now = Date.now();
+                if (playerStarted && (now - lastPostPlayPollTime < 12000)) {
+                    return;
+                }
+                if (playerStarted) {
+                    lastPostPlayPollTime = now;
+                }
+
+                isFetchingStatus = true;
                 pollAttempts++;
                 try {
                     const sRes = await fetch(statusEndpoint, remoteBase ? { mode: 'cors' } : {});
-                    if (!sRes.ok) return;
+                    if (!sRes.ok) {
+                        if (sRes.status === 404) {
+                            consecutive404s++;
+                            // Si Render se reinició, re-enviar /load silenciosamente una vez para re-hidratar el torrent
+                            if (consecutive404s === 1 && remoteBase) {
+                                await fetch(`${remoteBase}/load`, {
+                                    method: 'POST',
+                                    mode: 'cors',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ magnet: magnetUrl })
+                                }).catch(() => {});
+                            } else if (consecutive404s >= 3) {
+                                clearInterval(window._torrentStatusPollInterval);
+                                window._torrentStatusPollInterval = null;
+                            }
+                        }
+                        isFetchingStatus = false;
+                        return;
+                    }
+                    consecutive404s = 0;
                     const sData = await sRes.json();
-                    if (!sData || sData.status !== 'success') return;
+                    if (!sData || sData.status !== 'success') {
+                        isFetchingStatus = false;
+                        return;
+                    }
 
                     if (peersEl) peersEl.textContent = sData.peers || 0;
                     if (speedEl) speedEl.textContent = sData.downloadSpeed || '0 KB/s';
@@ -1977,15 +2046,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         artStats.textContent = `${sData.peers} seeds · ${sData.downloadSpeed}`;
                     }
 
-                    if ((sData.ready || forceWebPlay) && !playerStarted) {
+                    if ((sData.ready || forceWebPlay) && !playerStarted && window._vlcOpenedForHash !== infoHash) {
                         playerStarted = true;
+                        lastPostPlayPollTime = Date.now();
                         let streamUrl = sData.streamUrl || directStreamUrl;
                         if (remoteBase && (!streamUrl || streamUrl.includes('0.0.0.0') || streamUrl.startsWith('/'))) {
-                            streamUrl = `${remoteBase}/stream/${infoHash}`;
+                            streamUrl = `${remoteBase}/stream/${infoHash}${epQueryString}`;
                         }
                         if (sData.name && !streamUrl.includes('?file=')) {
                             streamUrl += `${streamUrl.includes('?') ? '&' : '?'}file=${encodeURIComponent(sData.name)}`;
                         }
+                        directStreamUrl = streamUrl;
                         const isMkvFile = (sData.name || '').toLowerCase().endsWith('.mkv');
                         const torrentSubs = (Array.isArray(sData.subtitles) ? sData.subtitles : []).map(s => {
                             let subUrl = s.url || '';
@@ -2326,8 +2397,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch (e) {
                     console.warn('[TorrentStatus] Error en sondeo:', e);
+                } finally {
+                    isFetchingStatus = false;
                 }
-            }, 800);
+            }, 1200);
 
         } catch (err) {
             console.error('[TorrentStream] Error:', err);
