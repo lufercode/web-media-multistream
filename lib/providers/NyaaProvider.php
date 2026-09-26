@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/ProviderInterface.php';
 require_once __DIR__ . '/../utils.php';
+require_once __DIR__ . '/../tmdb.php';
 
 class NyaaProvider implements ProviderInterface
 {
@@ -103,29 +104,39 @@ class NyaaProvider implements ProviderInterface
                 if ($hash) $seen_hashes[$hash] = true;
 
                 $quality = $this->detectQuality($cand_title);
-                $language = $this->detectLanguage($cand_title);
+                $langMeta = $this->analyzeLanguage($cand_title);
+
+                // Omitir releases exclusivamente en francés sin semillas o con VOSTFR si buscamos en español
+                if ($langMeta['is_french'] && $seeders < 2) continue;
 
                 $results[] = [
                     'provider' => $this->getId(),
                     'provider_name' => 'Nyaa (Anime Torrents)',
                     'type' => 'torrent',
                     'title' => $cand_title,
-                    'server' => 'BitTorrent Magnet',
+                    'server' => '⚙️ NyaaSi',
+                    'tracker' => 'NyaaSi',
                     'quality' => $quality,
-                    'language' => $language,
+                    'language' => $langMeta['language'],
+                    'is_latino' => $langMeta['is_latino'],
                     'url' => $magnet,
                     'size' => $size ?: null,
+                    'seeds' => $seeders,
                     'seeders' => $seeders,
-                    'leechers' => $leechers
+                    'leechers' => $leechers,
+                    '_score' => $langMeta['score'] + min($seeders, 1000)
                 ];
-
-                if (count($results) >= 6) break 2;
             }
 
-            if (!empty($results)) break;
+            if (count($results) >= 15) break;
         }
 
-        return $results;
+        usort($results, fn($a, $b) => $b['_score'] <=> $a['_score']);
+        $final = array_slice($results, 0, 12);
+        foreach ($final as &$r) {
+            unset($r['_score']);
+        }
+        return $final;
     }
 
     public function searchSeries(string $title, int $season, int $episode, ?int $tmdb_id = null, ?int $absolute_episode = null): array
@@ -138,19 +149,23 @@ class NyaaProvider implements ProviderInterface
         $padded_ep = sprintf('%02d', $episode);
         $s_padded = sprintf('S%02dE%02d', $season, $episode);
 
+        $season_name = ($tmdb_id !== null && $season >= 2 && function_exists('get_tmdb_anime_season_name'))
+            ? get_tmdb_anime_season_name($tmdb_id, $season)
+            : null;
+
         $queries = [];
-        // Priorizar versiones con audio Latino
-        $queries[] = "{$clean_title} Latino {$padded_ep}";
-        $queries[] = "{$clean_title} Latino {$s_padded}";
+        // Priorizar versiones con SxxExx (captura VARYG MULTi, ToonsHub, Z-A, DKB, sam, EMBER) y búsqueda con Latino
         $queries[] = "{$clean_title} {$s_padded}";
+        $queries[] = "{$clean_title} Latino {$padded_ep}";
+        if (!empty($season_name)) {
+            $queries[] = "{$clean_title} {$season_name} {$padded_ep}";
+        }
 
         if ($season === 1) {
             $queries[] = "{$clean_title} {$padded_ep}";
-            $queries[] = "{$clean_title} - {$padded_ep}";
         } else {
             $queries[] = "{$clean_title} S{$season} {$padded_ep}";
-            $queries[] = "{$clean_title} Season {$season} {$padded_ep}";
-            if ($absolute_episode) {
+            if ($absolute_episode && $absolute_episode > $episode) {
                 $queries[] = "{$clean_title} " . sprintf('%02d', $absolute_episode);
             }
         }
@@ -185,7 +200,7 @@ class NyaaProvider implements ProviderInterface
                 if (empty($mT)) {
                     preg_match('/<a href="\/view\/\d+"[^>]*>([^<]+)<\/a>/i', $raw_title_td, $mT);
                 }
-                $cand_title = trim($mT[1] ?? '');
+                $cand_title = trim(html_entity_decode($mT[1] ?? '', ENT_QUOTES, 'UTF-8'));
                 if (empty($cand_title)) continue;
 
                 $raw_links_td = $tds[1][2];
@@ -235,29 +250,50 @@ class NyaaProvider implements ProviderInterface
                 if ($hash) $seen_hashes[$hash] = true;
 
                 $quality = $this->detectQuality($cand_title);
-                $language = $this->detectLanguage($cand_title);
+                $langMeta = $this->analyzeLanguage($cand_title);
+
+                // Descartar releases exclusivamente franceses (VOSTFR / VF de Tsundere-Raws, TenmaLand, T3KASHi, KAF)
+                if ($langMeta['is_french']) {
+                    continue;
+                }
+
+                $ep_code = sprintf('S%02dE%02d', $season, $episode);
+                if (strpos($magnet, '&ep=') === false) {
+                    $magnet .= '&ep=' . rawurlencode($ep_code);
+                }
 
                 $results[] = [
                     'provider' => $this->getId(),
                     'provider_name' => 'Nyaa (Anime Torrents)',
                     'type' => 'torrent',
                     'title' => $cand_title,
-                    'server' => 'BitTorrent Magnet',
+                    'server' => '⚙️ NyaaSi',
+                    'tracker' => 'NyaaSi',
                     'quality' => $quality,
-                    'language' => $language,
+                    'language' => $langMeta['language'],
+                    'is_latino' => $langMeta['is_latino'],
                     'url' => $magnet,
                     'size' => $size ?: null,
+                    'seeds' => $seeders,
                     'seeders' => $seeders,
-                    'leechers' => $leechers
+                    'leechers' => $leechers,
+                    '_score' => $langMeta['score'] + min($seeders, 1000)
                 ];
 
-                if (count($results) >= 6) break 2;
+                if (count($results) >= 30) break 2;
             }
 
-            if (count($results) >= 3) break;
+            if (count($results) >= 12) break;
         }
 
-        return $results;
+        // Ordenar priorizando Audio Español Latino / Multi-Audio real -> Sub Español -> Dual Audio + Multi-Subs -> Seeds
+        usort($results, fn($a, $b) => $b['_score'] <=> $a['_score']);
+        $final = array_slice($results, 0, 12);
+        foreach ($final as &$r) {
+            unset($r['_score']);
+        }
+
+        return $final;
     }
 
     private function detectQuality(string $title): string
@@ -269,21 +305,98 @@ class NyaaProvider implements ProviderInterface
         return '1080p Full HD';
     }
 
-    private function detectLanguage(string $title): string
+    private function analyzeLanguage(string $title): array
     {
-        if (is_latino_audio($title)) {
-            return (stripos($title, 'Dual') !== false || stripos($title, 'Multi') !== false) ? 'Español Latino (Dual)' : 'Español Latino';
+        // 1. Detectar grupos y etiquetas francesas donde "MULTi" = Francés + Japonés (NO incluye Español)
+        if (function_exists('is_french_release') && is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx)\b/i', $title)) {
+            $is_vf = (bool)preg_match('/\b(multi|vf|vff|vfi|french|truefrench)\b/i', $title);
+            return [
+                'language' => $is_vf ? '🇫🇷 Audio Francés / Japonés (VF)' : '🇫🇷 Sub Francés (VOSTFR)',
+                'is_latino' => false,
+                'is_french' => true,
+                'score' => -5000
+            ];
         }
-        if (stripos($title, 'Castellano') !== false || stripos($title, 'Spanish') !== false) {
-            return 'Español Castellano';
+
+        $is_multi_audio = (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub|cr[\s\.\-_]*web-?dl[\s\.\-_]*multi)\b/i', $title);
+        $is_dual_audio = (bool)preg_match('/\b(dual[\s\.\-_]*audio|cr[\s\.\-_]*web-?dl[\s\.\-_]*dual|\bdual\b)\b/i', $title);
+        $is_multi_subs = (bool)preg_match('/\b(multi[\s\.\-_]*subs?|multisub)\b/i', $title);
+        $is_sub_esp = (bool)preg_match('/\b(sub[\s\.\-_]*(?:esp|español|espanol|lat|latino)|español[\s\.\-_]*sub)\b/i', $title);
+        $explicit_latino = (bool)preg_match('/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|latam|dual[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b/i', $title);
+
+        // CASO 1: Audio Español Latino confirmado (ej: VARYG CR WEB-DL MULTi Multi-Audio, o release explícito Latino)
+        if ($explicit_latino || $is_multi_audio) {
+            return [
+                'language' => $is_multi_audio ? '🇲🇽 Audio Español Latino (Multi Audio)' : '🇲🇽 Audio Español Latino',
+                'is_latino' => true,
+                'is_french' => false,
+                'score' => 60000
+            ];
         }
-        if (stripos($title, 'Dual-Audio') !== false || stripos($title, 'Dual Audio') !== false) {
-            return 'Dual Audio (Jap/Eng/Sub)';
+
+        // CASO 2: Subtitulado explícitamente al Español (ej: [Z-A] [Sub. Español])
+        if ($is_sub_esp) {
+            return [
+                'language' => '🇯🇵 Audio Japonés + 🇲🇽 Sub Español',
+                'is_latino' => false,
+                'is_french' => false,
+                'score' => 35000
+            ];
         }
-        if (stripos($title, 'Multi-Sub') !== false || stripos($title, 'Multi Sub') !== false || stripos($title, 'Multi-Audio') !== false) {
-            return 'Multi-Sub (Inc. Español)';
+
+        // CASO 3: Dual Audio (Japonés + Inglés) con Multi-Subs de Crunchyroll (incluye Sub Español Latino, ej: VARYG DUAL, ToonsHub CR)
+        if ($is_dual_audio && $is_multi_subs) {
+            return [
+                'language' => '🇬🇧/🇯🇵 Dual Audio (Ing/Jap) + 🇲🇽 Sub Latino',
+                'is_latino' => false,
+                'is_french' => false,
+                'score' => 26000
+            ];
         }
-        return 'Japonés (Subtitulado)';
+
+        // CASO 4: Multi-Subs (si es NF/BILI WEB-DL solo trae subs asiáticos/inglés; si es CR/semanal como DKB/Judas trae Sub Español Latino)
+        if ($is_multi_subs) {
+            if (preg_match('/\b(nf|bili)\s*web-?dl\b/i', $title)) {
+                return [
+                    'language' => '🇯🇵 Subtitulado (Multi-Subs Ing/Asia)',
+                    'is_latino' => false,
+                    'is_french' => false,
+                    'score' => 4000
+                ];
+            }
+            return [
+                'language' => '🇯🇵 Audio Japonés + 🇲🇽 Sub Latino (Multi-Subs)',
+                'is_latino' => false,
+                'is_french' => false,
+                'score' => 20000
+            ];
+        }
+
+        // CASO 5: Dual Audio solo Japonés + Inglés (ej: [sam], [EMBER], [Sokudo])
+        if ($is_dual_audio) {
+            return [
+                'language' => '🇬🇧/🇯🇵 Dual Audio (Inglés / Japonés)',
+                'is_latino' => false,
+                'is_french' => false,
+                'score' => 10000
+            ];
+        }
+
+        if (preg_match('/\b(english[\s\.\-_]*dub|eng[\s\.\-_]*dub)\b/i', $title)) {
+            return [
+                'language' => '🇬🇧 Audio Inglés (Dubbed)',
+                'is_latino' => false,
+                'is_french' => false,
+                'score' => 3000
+            ];
+        }
+
+        return [
+            'language' => '🇯🇵 Japonés (Sub Inglés)',
+            'is_latino' => false,
+            'is_french' => false,
+            'score' => 2000
+        ];
     }
 }
 

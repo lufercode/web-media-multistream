@@ -112,6 +112,10 @@ $PROVIDERS_CONFIG = [
     'thepiratebay' => [
         'enabled' => true,
         'name' => 'The Pirate Bay (Dual Latino / 4K / HD)'
+    ],
+    'torrentio' => [
+        'enabled' => true,
+        'name' => 'Torrentio (TorrentGalaxy / Nyaa / 1337x / Multi-Audio)'
     ]
 ];
 

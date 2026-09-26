@@ -144,15 +144,14 @@ class PirateBayProvider implements ProviderInterface
         $s_padded = sprintf('S%02dE%02d', $season, $episode);
         $queries = [
             "{$clean_title} {$s_padded} Latino",
+            "{$clean_title} {$s_padded} Multi",
             "{$clean_title} {$s_padded} Dual",
-            "{$clean_title} {$s_padded} Lat",
             "{$clean_title} {$s_padded}"
         ];
 
         if ($season === 1) {
             $ep_padded = sprintf('%02d', $episode);
             $queries[] = "{$clean_title} {$ep_padded} Latino";
-            $queries[] = "{$clean_title} {$ep_padded} Lat";
             $queries[] = "{$clean_title} {$ep_padded}";
         }
 
@@ -172,10 +171,12 @@ class PirateBayProvider implements ProviderInterface
                 $raw_name = html_entity_decode($item['name'] ?? '', ENT_QUOTES, 'UTF-8');
                 if (empty($raw_name)) continue;
 
-                // Validar que el título pertenezca a la serie buscada
+                // Validar que el título pertenezca a la serie buscada (permitiendo subtítulos de temporada como Science Future)
                 $parsed = parse_torrent_release_name($raw_name);
                 $title_part = preg_replace('/s\d{1,2}e\d{1,2}.*/i', '', $raw_name);
-                if (!is_strict_title_match($clean_title, $parsed['title']) && !is_strict_title_match($clean_title, $title_part)) {
+                if (!is_strict_title_match($clean_title, $parsed['title']) &&
+                    !is_strict_title_match($clean_title, $title_part) &&
+                    !is_anime_title_match($clean_title, $title_part)) {
                     continue;
                 }
 
@@ -217,11 +218,13 @@ class PirateBayProvider implements ProviderInterface
                     'provider_name' => 'The Pirate Bay',
                     'type' => 'torrent',
                     'title' => $raw_name,
-                    'server' => 'BitTorrent Magnet',
+                    'server' => '⚙️ ThePirateBay',
+                    'tracker' => 'ThePirateBay',
                     'quality' => $quality,
                     'language' => $language,
                     'url' => $magnet,
                     'size' => $size,
+                    'seeds' => $seeders,
                     'seeders' => $seeders,
                     'leechers' => $leechers,
                     'is_latino' => is_latino_audio($raw_name)
@@ -242,7 +245,7 @@ class PirateBayProvider implements ProviderInterface
         return array_map(function ($r) {
             unset($r['is_latino']);
             return $r;
-        }, array_slice($results, 0, 8));
+        }, array_slice($results, 0, 10));
     }
 
     private function queryApi(string $query): array

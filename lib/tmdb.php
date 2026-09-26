@@ -280,3 +280,49 @@ function get_tmdb_episode_groups_seasons(int|string $tv_id): ?array {
     return $group_details;
 }
 
+/**
+ * Obtiene el IMDb ID (ej: tt9679542) para una película o serie desde TMDB external_ids.
+ */
+function get_tmdb_imdb_id(int|string $tmdb_id, string $type = 'tv'): ?string {
+    $endpoint_type = ($type === 'movie') ? 'movie' : 'tv';
+    $ext = get_tmdb_data("{$endpoint_type}/{$tmdb_id}/external_ids");
+    $imdb = trim((string)($ext['imdb_id'] ?? ''));
+    if (!empty($imdb) && strpos($imdb, 'tt') === 0) {
+        return $imdb;
+    }
+    return null;
+}
+
+/**
+ * Obtiene el nombre canónico de una temporada o arco de anime desde TMDB (en inglés/internacional),
+ * útil para resolver subtítulos de temporadas como "Stone Wars", "New World", "Science Future", etc.
+ */
+function get_tmdb_anime_season_name(int|string $tmdb_id, int $season_num): ?string {
+    if ($season_num <= 0) return null;
+
+    // 1. Consultar metadatos de la serie en inglés (donde TMDB suele guardar el nombre internacional del arco)
+    $data_en = get_tmdb_data("tv/{$tmdb_id}", ['language' => 'en-US']);
+    foreach ($data_en['seasons'] ?? [] as $s) {
+        if ((int)($s['season_number'] ?? -1) === $season_num) {
+            $name = trim((string)($s['name'] ?? ''));
+            if (!empty($name) && !preg_match('/^(?:season|temporada|specials|especiales)\s*\d*$/iu', $name)) {
+                return $name;
+            }
+        }
+    }
+
+    // 2. Fallback: consultar en español
+    $data_es = get_tmdb_data("tv/{$tmdb_id}");
+    foreach ($data_es['seasons'] ?? [] as $s) {
+        if ((int)($s['season_number'] ?? -1) === $season_num) {
+            $name = trim((string)($s['name'] ?? ''));
+            if (!empty($name) && !preg_match('/^(?:season|temporada|specials|especiales)\s*\d*$/iu', $name)) {
+                return $name;
+            }
+        }
+    }
+
+    return null;
+}
+
+

@@ -206,18 +206,23 @@ class CuevanaProvider implements ProviderInterface
             $serie_slug = preg_replace('/^series\//', 'serie/', $raw_slug);
             $ep_url = "{$this->host}/{$serie_slug}/temporada/{$season}/episodio/{$episode}";
             $ep_html = http_get($ep_url, ['timeout' => 6]);
+            $expected_ep_num = $episode;
 
             // Si falla y la temporada es >= 2 (animes donde Cuevana unifica todo en temporada 1),
-            // probar con la numeración continua de temporada 1
-            if (!$ep_html && $season >= 2) {
-                $alt_ep = ($absolute_episode !== null && $absolute_episode > 0) ? $absolute_episode : (($season - 1) * 24 + $episode);
-                $alt_url = "{$this->host}/{$serie_slug}/temporada/1/episodio/{$alt_ep}";
+            // probar con la numeración continua en temporada 1 SOLO si el episodio absoluto es estrictamente mayor al relativo
+            if (!$ep_html && $season >= 2 && $absolute_episode !== null && $absolute_episode > $episode) {
+                $alt_url = "{$this->host}/{$serie_slug}/temporada/1/episodio/{$absolute_episode}";
                 $ep_html = http_get($alt_url, ['timeout' => 6]);
+                $expected_ep_num = $absolute_episode;
             }
 
             if ($ep_html && preg_match('/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s', $ep_html, $m_det)) {
                 $det_json = json_decode($m_det[1], true);
                 $ep_data = $det_json['props']['pageProps']['episode'] ?? [];
+                // Validar que el episodio devuelto por Cuevana corresponda realmente al número esperado
+                if (isset($ep_data['number']) && (int)$ep_data['number'] !== (int)$expected_ep_num) {
+                    continue;
+                }
                 $videos = $ep_data['videos'] ?? [];
 
                 foreach ($videos as $langKey => $serverList) {

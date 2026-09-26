@@ -351,18 +351,27 @@ function parse_torrent_release_name(string $raw): array {
 }
 
 /**
- * Detecta si un título o release de torrent contiene pistas de audio Latino
- * en sus diversas variantes: Latino, Audio Latino, Dual Lat, Lat, Esp-MX, ES-LA, Spa-Lat, Multi Audio Lat, etc.
+ * Detecta si un release pertenece a grupos o etiquetas en Francés (donde "MULTi" significa Francés + VO y NO incluye Español).
+ */
+function is_french_release(string $title): bool {
+    return (bool)preg_match('/\b(vf|vff|vfi|vfq|vf2|vostfr|french|truefrench|subfrench|tsundere[\s\.\-_]*raws|tenmaland|t3kashi|kaf)\b/i', $title);
+}
+
+/**
+ * Detecta si un título o release de torrent contiene explícitamente pistas de AUDIO Español Latino.
  */
 function is_latino_audio(string $title): bool {
+    if (is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b/i', $title)) {
+        return false;
+    }
     $patterns = [
-        '/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino)\b/i',
+        '/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|latam)\b/i',
         '/\bdual[\s\.\-_]*lat(?:ino)?\b/i',
-        '/\b(esp?[\s\.\-_]*(?:mx|la)|spa[\s\.\-_]*lat(?:ino)?)\b/i',
-        '/\bspanish[\s\.\-_]*latino\b/i',
+        '/\b(esp?[\s\.\-_]*(?:mx|la|419)|spa[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b/i',
+        '/\bspanish[\s\.\-_]*(?:latino|latin)\b/i',
         '/(?:[\.\[_\-\s]|^)lat(?:[\.\]_\-\s]|$)/i',
-        '/\bmulti(?:[\s\.\-_]*(?:audio|subs?))?[\s\.\-_].*?\b(lat|latino|mx)\b/i',
-        '/\b(lat|latino|mx)\b.*?[\s\.\-_]multi\b/i',
+        '/\bmulti[\s\.\-_]*audio\b/i',
+        '/\bcr[\s\.\-_]*web-?dl[\s\.\-_]*multi\b/i',
     ];
     foreach ($patterns as $p) {
         if (preg_match($p, $title)) {
@@ -373,34 +382,64 @@ function is_latino_audio(string $title): bool {
 }
 
 /**
- * Detecta el idioma formal de un release para mostrar en la interfaz.
+ * Detecta el idioma formal de un release para mostrar en la interfaz sin falsos positivos.
  */
 function detect_release_language(string $title): string {
-    $is_latino = is_latino_audio($title);
-    $is_dual = (bool)preg_match('/\b(dual|multi|eng|english|ingles|audio[\s\.\-_]*dual)\b/i', $title);
-    
-    if ($is_latino) {
-        if ($is_dual) {
-            return 'Español Latino (Dual)';
+    // 1. Filtrar primero releases franceses (donde MULTi = Francés + Japonés/Original)
+    if (is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx)\b/i', $title)) {
+        if (preg_match('/\b(multi|vf|vff|vfi|french|truefrench)\b/i', $title)) {
+            return '🇫🇷 Audio Francés / VO (VF)';
         }
-        return 'Español Latino';
+        return '🇫🇷 Sub Francés (VOSTFR)';
     }
-    
-    if (preg_match('/\b(castellano|spanish|español|espanol|spa)\b/i', $title) && !preg_match('/\b(mx|la|latino|lat)\b/i', $title)) {
-        if ($is_dual) {
-            return 'Español Castellano (Dual)';
+
+    $is_multi_audio = (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub|cr[\s\.\-_]*web-?dl[\s\.\-_]*multi)\b/i', $title);
+    $is_dual_audio = (bool)preg_match('/\b(dual[\s\.\-_]*audio|dual|audio[\s\.\-_]*dual)\b/i', $title);
+    $is_multi_subs = (bool)preg_match('/\b(multi[\s\.\-_]*subs?|multisub)\b/i', $title);
+    $is_sub_esp = (bool)preg_match('/\b(sub[\s\.\-_]*(?:esp|español|espanol|lat|latino)|español[\s\.\-_]*sub)\b/i', $title);
+
+    $explicit_latino = (bool)preg_match('/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|latam|dual[\s\.\-_]*lat(?:ino)?|esp?[\s\.\-_]*(?:mx|la|419)|spa[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b|(?:[\.\[_\-\s]|^)lat(?:[\.\]_\-\s]|$)/i', $title);
+
+    if ($explicit_latino) {
+        if ($is_multi_audio) {
+            return '🇲🇽 Audio Español Latino (Multi Audio)';
         }
-        return 'Español Castellano';
+        if ($is_dual_audio) {
+            return '🇲🇽 Audio Español Latino (Dual)';
+        }
+        return '🇲🇽 Audio Español Latino';
     }
-    
-    if (preg_match('/\b(dual|multi)\b/i', $title)) {
-        return 'Dual Audio / Multi';
+
+    if ($is_multi_audio) {
+        return '🇲🇽 Audio Español Latino (Multi Audio)';
     }
-    
+
+    if (preg_match('/\b(castellano|español|espanol|spa)\b/i', $title) && !$is_sub_esp) {
+        if ($is_dual_audio) {
+            return '🇪🇸 Español Castellano (Dual)';
+        }
+        return '🇪🇸 Español Castellano';
+    }
+
+    if ($is_dual_audio) {
+        if ($is_multi_subs || preg_match('/\bcr[\s\.\-_]*web-?dl\b/i', $title)) {
+            return '🇬🇧/🇯🇵 Dual Audio (Ing/Jap) + 🇲🇽 Sub Latino';
+        }
+        return '🇬🇧/🇯🇵 Dual Audio (Inglés / Original)';
+    }
+
+    if ($is_sub_esp) {
+        return '🇯🇵 Audio Original + 🇲🇽 Sub Español';
+    }
+
+    if ($is_multi_subs) {
+        return '🇯🇵 Audio Original + 🇲🇽 Multi-Subs';
+    }
+
     if (preg_match('/\b(subtitulado|sub|subs|subbed|vose|vost)\b/i', $title)) {
         return 'Subtitulado';
     }
-    
+
     return 'Inglés / VO';
 }
 
@@ -786,14 +825,19 @@ function is_anime_title_match(string $query_title, string $candidate_title): boo
     if (empty($q) || empty($c)) return false;
     if ($q === $c) return true;
 
-    if (strpos($c, $q) === 0) {
+    // Coincidencia por prefijo de palabra completa (ej: "dr stone" -> "dr stone science future")
+    if (strpos($c, $q . ' ') === 0) {
         $remainder = trim(substr($c, strlen($q)));
         if (empty($remainder)) return true;
 
-        // Debe coincidir estrictamente con patrones numéricos de temporada, secuelas o arcos canónicos (NO palabras arbitrarias)
         $valid_season_pattern = '/^(?:(?:\d+|[1-9]nd|[1-9]rd|[1-9]th|s\d+|season|temporada|part|parte|the|final|movie|pelicula|cour|kanketsu|hen|arc|arco|zenpen|kouhen|ii|iii|iv|v|vi|vii|viii|ix|x|shibuya\s+jihen|sennen\s+kessen\s+hen|yuukaku\s+hen|katanakaji\s+no\s+sato\s+hen|hashira\s+geiko\s+hen|shimetsu\s+kaiyuu)\s*)+$/iu';
 
         if (preg_match($valid_season_pattern, $remainder)) {
+            return true;
+        }
+
+        // Permitir subtítulos de temporada/arco en franquicias de anime (ej: Stone Wars, New World, Science Future)
+        if (mb_strlen($q, 'UTF-8') >= 4 && str_word_count($remainder) <= 6) {
             return true;
         }
     }

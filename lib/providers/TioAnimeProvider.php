@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/ProviderInterface.php';
 require_once __DIR__ . '/../utils.php';
+require_once __DIR__ . '/../tmdb.php';
 
 class TioAnimeProvider implements ProviderInterface
 {
@@ -53,11 +54,14 @@ class TioAnimeProvider implements ProviderInterface
         if (empty($matches)) return [];
 
         $candidates = [];
+        $seen_slugs = [];
         foreach ($matches as $m) {
             $rel_slug = basename($m[1]);
+            if (isset($seen_slugs[$rel_slug])) continue;
             $anime_title = trim(strip_tags($m[2]));
 
             if (is_anime_title_match($title, $anime_title)) {
+                $seen_slugs[$rel_slug] = true;
                 $candidates[] = [
                     'slug' => $rel_slug,
                     'title' => $anime_title
@@ -67,7 +71,11 @@ class TioAnimeProvider implements ProviderInterface
 
         if (empty($candidates)) return [];
 
-        $attempts = $this->resolveSeasonAttempts($candidates, $season, $episode, $absolute_episode);
+        $season_name = ($tmdb_id !== null && $season >= 2 && function_exists('get_tmdb_anime_season_name'))
+            ? get_tmdb_anime_season_name($tmdb_id, $season)
+            : null;
+
+        $attempts = $this->resolveSeasonAttempts($candidates, $season, $episode, $absolute_episode, $season_name);
 
         foreach ($attempts as $att) {
             if (connection_aborted()) exit;
@@ -91,7 +99,7 @@ class TioAnimeProvider implements ProviderInterface
                             'provider' => $this->getId(),
                             'provider_name' => 'TioAnime',
                             'type' => 'streaming',
-                            'title' => "{$att['title']} Ep. {$target_ep}",
+                            'title' => "{$att['title']} Ep. {$target_ep} (S{$season}E{$episode})",
                             'server' => ucfirst($server_name),
                             'quality' => '1080p Full HD',
                             'language' => 'Japonés (Subtitulado)',
@@ -125,7 +133,7 @@ class TioAnimeProvider implements ProviderInterface
                         'provider' => $this->getId(),
                         'provider_name' => 'TioAnime',
                         'type' => 'direct',
-                        'title' => "{$att['title']} Ep. {$target_ep}",
+                        'title' => "{$att['title']} Ep. {$target_ep} (S{$season}E{$episode})",
                         'server' => ucfirst($srv),
                         'quality' => '1080p Full HD',
                         'language' => $lang,
@@ -141,19 +149,66 @@ class TioAnimeProvider implements ProviderInterface
         return $results;
     }
 
-    private function resolveSeasonAttempts(array $candidates, int $season, int $episode, ?int $absolute_episode = null): array
+    private function resolveSeasonAttempts(array $candidates, int $season, int $episode, ?int $absolute_episode = null, ?string $season_name = null): array
     {
         $tv_candidates = array_values(array_filter($candidates, function($c) {
             $slug = strtolower($c['slug']);
-            return strpos($slug, 'movie') === false && strpos($slug, 'pelicula') === false;
+            return strpos($slug, 'movie') === false && strpos($slug, 'pelicula') === false && strpos($slug, 'especial') === false && strpos($slug, 'ova') === false;
         }));
 
         if (empty($tv_candidates)) {
             $tv_candidates = $candidates;
         }
 
+        $attempts = [];
+
+        // 1. Si tenemos el nombre oficial del arco/temporada desde TMDB (ej: "Science Future", "New World", "Stone Wars")
+        if ($season >= 2 && !empty($season_name)) {
+            $arc_words = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($season_name, 'UTF-8'), -1, PREG_SPLIT_NO_EMPTY);
+            if (!empty($arc_words)) {
+                $arc_regex = '/' . implode('[-_ :\s]+', array_map(fn($w) => preg_quote($w, '/'), $arc_words)) . '/iu';
+                $arc_matches = array_values(array_filter($tv_candidates, function($c) use ($arc_regex) {
+                    return preg_match($arc_regex, $c['slug']) || preg_match($arc_regex, $c['title']);
+                }));
+
+                if (!empty($arc_matches)) {
+                    $part1_cands = [];
+                    $part2_cands = [];
+                    $part3_cands = [];
+
+                    foreach ($arc_matches as $c) {
+                        if (preg_match('/(?:part[-_ ]*3|parte[-_ ]*3|cour[-_ ]*3)/i', $c['slug'] . ' ' . $c['title'])) {
+                            $part3_cands[] = $c;
+                        } elseif (preg_match('/(?:part[-_ ]*2|parte[-_ ]*2|cour[-_ ]*2|2nd[-_ ]*cour)/i', $c['slug'] . ' ' . $c['title'])) {
+                            $part2_cands[] = $c;
+                        } else {
+                            $part1_cands[] = $c;
+                        }
+                    }
+
+                    // Probar primero el candidato base del arco (TioAnime suele unificar todos los episodios del arco en una sola entrada)
+                    foreach ($part1_cands as $c) {
+                        $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $episode];
+                    }
+                    if ($episode > 24 && !empty($part3_cands)) {
+                        foreach ($part3_cands as $c) {
+                            $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $episode - 24];
+                        }
+                    }
+                    if ($episode > 11 && !empty($part2_cands)) {
+                        foreach ($part2_cands as $c) {
+                            if ($episode > 12) {
+                                $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $episode - 12];
+                            }
+                            $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $episode - 11];
+                        }
+                    }
+                }
+            }
+        }
+
         $season_patterns = [
-            2 => '/(?:2nd[-_ ]season|second[-_ ]season|season[-_ ]2|2da[-_ ]temporada|part[-_ ]2|[-_ ]2(?=[-_\/]|$))/i',
+            2 => '/(?:2nd[-_ ]season|second[-_ ]season|season[-_ ]2|2da[-_ ]temporada|[-_ ]2(?=[-_\/]|$))/i',
             3 => '/(?:3rd[-_ ]season|third[-_ ]season|season[-_ ]3|3ra[-_ ]temporada|[-_ ]3(?=[-_\/]|$))/i',
             4 => '/(?:4th[-_ ]season|fourth[-_ ]season|season[-_ ]4|4ta[-_ ]temporada|the[-_ ]final[-_ ]season|final[-_ ]season|[-_ ]4(?=[-_\/]|$))/i',
             5 => '/(?:5th[-_ ]season|season[-_ ]5|[-_ ]5(?=[-_\/]|$))/i',
@@ -161,14 +216,11 @@ class TioAnimeProvider implements ProviderInterface
             7 => '/(?:7th[-_ ]season|season[-_ ]7|[-_ ]7(?=[-_\/]|$))/i',
         ];
 
-        $attempts = [];
-
-        // Caso 1: Solicitud explícita de temporada >= 2
+        // Caso 2: Solicitud explícita de temporada >= 2 por número
         if ($season >= 2 && isset($season_patterns[$season])) {
             foreach ($tv_candidates as $c) {
                 if (preg_match($season_patterns[$season], $c['slug']) || preg_match($season_patterns[$season], $c['title'])) {
                     $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $episode];
-                    // Si el episodio es absoluto (ej: 25 para temporada 2), probar con offset
                     if ($episode > 24) {
                         $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $episode - 24];
                     }
@@ -176,7 +228,7 @@ class TioAnimeProvider implements ProviderInterface
             }
         }
 
-        // Caso 2: Solicitud de Temporada 1 pero con número de episodio continuo (> 24, ej: Jujutsu Kaisen Ep 25)
+        // Caso 3: Solicitud de Temporada 1 pero con número de episodio continuo (> 24)
         if ($season === 1 && $episode > 24) {
             foreach ($tv_candidates as $c) {
                 if (preg_match($season_patterns[2], $c['slug']) || preg_match($season_patterns[2], $c['title'])) {
@@ -185,19 +237,19 @@ class TioAnimeProvider implements ProviderInterface
             }
         }
 
-        // Caso 3: Temporada 1 base
+        // Caso 4: Temporada 1 base
         foreach ($tv_candidates as $c) {
             $slug = strtolower($c['slug']);
-            if (preg_match('/(?:2nd|3rd|4th|5th|6th|7th|season[-_ ][2-9]|temporada[-_ ][2-9]|final[-_ ]season)/i', $slug)) {
+            if (preg_match('/(?:2nd|3rd|4th|5th|6th|7th|season[-_ ][2-9]|temporada[-_ ][2-9]|final[-_ ]season|part[-_ ][2-9])/i', $slug)) {
                 continue;
             }
-            $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $episode];
+            if ($season === 1) {
+                $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $episode];
+            } elseif ($absolute_episode !== null && $absolute_episode > $episode) {
+                // En temporadas >= 2 NUNCA usar el episodio relativo sobre la temporada 1
+                $attempts[] = ['slug' => $c['slug'], 'title' => $c['title'], 'episode' => $absolute_episode];
+            }
             break;
-        }
-
-        // Fallback final con el primer candidato
-        if (empty($attempts) && !empty($tv_candidates)) {
-            $attempts[] = ['slug' => $tv_candidates[0]['slug'], 'title' => $tv_candidates[0]['title'], 'episode' => $episode];
         }
 
         return $attempts;

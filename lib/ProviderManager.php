@@ -20,6 +20,7 @@ require_once __DIR__ . '/providers/YTSProvider.php';
 require_once __DIR__ . '/providers/PoseidonHDProvider.php';
 require_once __DIR__ . '/providers/NyaaProvider.php';
 require_once __DIR__ . '/providers/PirateBayProvider.php';
+require_once __DIR__ . '/providers/TorrentioProvider.php';
 
 class ProviderManager
 {
@@ -45,6 +46,7 @@ class ProviderManager
             new GnulaProvider(),
             new AllPeliculasProvider(),
             new PoseidonHDProvider(),
+            new TorrentioProvider(),
             new HackTorrentProvider(),
             new EliteTorrentProvider(),
             new YTSProvider(),

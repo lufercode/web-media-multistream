@@ -141,6 +141,7 @@ if ($type === 'tv' && ($requested_season === null || $requested_episode === null
     }
 
     if ($use_episode_groups) {
+        $running_abs_counter = 0;
         foreach ($valid_groups as $g) {
             $s_num = (int)($g['order'] ?? 1);
             $s_padded = str_pad((string)$s_num, 2, '0', STR_PAD_LEFT);
@@ -155,11 +156,13 @@ if ($type === 'tv' && ($requested_season === null || $requested_episode === null
 
             $episode_list = [];
             foreach ($episodes_data as $ep) {
+                $running_abs_counter++;
                 $e_num = ($ep['order'] ?? 0) + 1;
                 $e_padded = str_pad((string)$e_num, 2, '0', STR_PAD_LEFT);
                 $episode_key = "E{$e_padded}";
 
-                $abs_num = (int)($ep['episode_number'] ?? $e_num);
+                $raw_ep_num = (int)($ep['episode_number'] ?? $e_num);
+                $abs_num = ($s_num > 1 && $raw_ep_num <= $e_num) ? $running_abs_counter : max($raw_ep_num, $running_abs_counter);
 
                 $ep_name = trim($ep['name'] ?? '');
                 if (empty($ep_name)) {
@@ -188,6 +191,7 @@ if ($type === 'tv' && ($requested_season === null || $requested_episode === null
         }
     } else {
         $seasons = $item['seasons'] ?? [];
+        $running_abs_counter = 0;
         foreach ($seasons as $season_info) {
             $s_num = $season_info['season_number'] ?? null;
             if ($s_num === null || $s_num == 0) continue;
@@ -200,6 +204,7 @@ if ($type === 'tv' && ($requested_season === null || $requested_episode === null
             $episode_list = [];
 
             foreach ($episodes_data as $ep) {
+                $running_abs_counter++;
                 $e_num = $ep['episode_number'];
                 $e_padded = str_pad((string)$e_num, 2, '0', STR_PAD_LEFT);
                 $episode_key = "E{$e_padded}";
@@ -213,7 +218,7 @@ if ($type === 'tv' && ($requested_season === null || $requested_episode === null
                     'name' => $ep_name,
                     'season_number' => $s_num,
                     'episode_number' => $e_num,
-                    'absolute_number' => $e_num,
+                    'absolute_number' => $running_abs_counter,
                     'overview' => $ep['overview'] ?? '',
                     'air_date' => $ep['air_date'] ?? null,
                     'still_path' => !empty($ep['still_path']) ? "https://image.tmdb.org/t/p/w300{$ep['still_path']}" : null,

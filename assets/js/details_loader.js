@@ -2422,6 +2422,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const getProviderIcon = (provId, type) => {
         const id = (provId || '').toLowerCase();
         if (type === 'torrent') {
+            if (id.includes('torrentio')) return 'fas fa-bolt text-warning';
             if (id.includes('hacktorrent')) return 'fas fa-bolt text-danger';
             if (id.includes('cinecalidad')) return 'fas fa-star text-info';
             if (id.includes('dontorrent')) return 'fas fa-arrow-circle-down text-warning';
@@ -2676,6 +2677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isAnimeContent = linksContainer?.dataset?.isAnime === '1';
         let rawProviders = (window._cachedProvidersList && window._cachedProvidersList.length > 0) ? window._cachedProvidersList : [
             { id: 'local_cdn', name: 'CDN Propio', type: 'direct' },
+            { id: 'torrentio', name: 'Torrentio (TorrentGalaxy / Nyaa / 1337x / Multi-Audio)', type: 'torrent' },
             { id: 'cuevana', name: 'Cuevana', type: 'streaming' },
             { id: 'pelispedia', name: 'PelisPedia', type: 'streaming' },
             { id: 'cinecalidad', name: 'Cinecalidad (Dual Latino)', type: 'mixed' },
@@ -2941,45 +2943,78 @@ document.addEventListener('DOMContentLoaded', () => {
             const slot = cardWrapper.querySelector('.torrents-slot');
             group.items.forEach(src => {
                 const url = src.url;
-                const srv = (src.server || 'BitTorrent Magnet').replace(/"/g, '&quot;');
+                const srv = (src.server || src.tracker || 'BitTorrent Magnet').replace(/"/g, '&quot;');
                 const qlt = src.quality || 'HD';
-                const lang = src.language ? `<span class="badge bg-warning text-dark ms-1">${src.language}</span>` : '';
-                const size = src.size ? `<span class="badge bg-secondary ms-1">${src.size}</span>` : '';
-                const seeds = (src.seeders !== undefined && src.seeders !== null && src.seeders > 0) ? `<span class="badge bg-dark border border-success text-success ms-1"><i class="fas fa-arrow-up me-1"></i>${src.seeders}</span>` : '';
+                const rawLang = src.language || '';
+                const isLatinoAudio = src.is_latino === true || /Audio Español Latino/i.test(rawLang);
+                const hasSpanishSubs = !isLatinoAudio && (rawLang.includes('🇲🇽') || /Sub Esp|Sub Latino/i.test(rawLang));
+                const langBadgeClass = isLatinoAudio
+                    ? 'badge bg-success text-white border border-light border-opacity-25'
+                    : (hasSpanishSubs ? 'badge bg-info text-dark fw-semibold' : 'badge bg-warning text-dark');
+                const lang = rawLang ? `<span class="${langBadgeClass}">${rawLang}</span>` : '';
+                const audioTags = (src.audio_tags && src.audio_tags !== rawLang)
+                    ? `<span class="badge bg-dark border border-info border-opacity-50 text-info fw-normal">${src.audio_tags}</span>`
+                    : '';
+                const trackerBadge = (src.tracker || (src.server && src.server.includes('⚙️')))
+                    ? `<span class="badge bg-dark border border-secondary text-light fw-normal">${src.server && src.server.includes('⚙️') ? src.server : '⚙️ ' + src.tracker}</span>`
+                    : '';
+                const size = src.size ? `<span class="badge bg-secondary">💾 ${src.size}</span>` : '';
+                const seedCount = src.seeds !== undefined ? src.seeds : src.seeders;
+                const seeds = (seedCount !== undefined && seedCount !== null && seedCount > 0)
+                    ? `<span class="badge bg-dark border border-success text-success">👤 ${seedCount}</span>`
+                    : '';
+                const releaseTitle = (src.title && src.title !== itemTitle) ? src.title : '';
 
                 const itemBox = document.createElement('div');
-                itemBox.className = 'torrent-item-row d-flex align-items-center justify-content-between gap-1.5 bg-dark bg-opacity-75 border border-secondary border-opacity-50 rounded p-1.5 pop-in-card w-100 flex-wrap flex-sm-nowrap';
+                itemBox.className = 'torrent-item-row d-flex flex-column flex-md-row align-items-stretch align-items-md-center justify-content-between gap-2 bg-dark bg-opacity-75 border border-secondary border-opacity-50 rounded p-2 pop-in-card w-100';
 
                 if (url && url.startsWith('magnet:?')) {
+                    const infoCol = document.createElement('div');
+                    infoCol.className = 'd-flex flex-column gap-1 flex-grow-1';
+                    infoCol.style.minWidth = '0';
+                    infoCol.innerHTML = `
+                        ${releaseTitle ? `<div class="text-light fw-semibold small text-break" style="line-height:1.25; font-size:0.82rem;">${releaseTitle}</div>` : ''}
+                        <div class="d-flex flex-wrap align-items-center gap-1">
+                            <span class="badge bg-black border border-warning text-warning">${qlt}</span>
+                            ${lang}
+                            ${audioTags}
+                            ${seeds}
+                            ${size}
+                            ${trackerBadge}
+                        </div>
+                    `;
+                    itemBox.appendChild(infoCol);
+
+                    const actionsCol = document.createElement('div');
+                    actionsCol.className = 'd-flex align-items-center gap-1.5 flex-shrink-0';
+
                     // Botón principal: Ver en ArtPlayer con streaming secuencial
                     const btnPlay = document.createElement('button');
                     btnPlay.type = 'button';
-                    btnPlay.className = 'btn btn-sm btn-warning text-dark fw-bold stream-torrent-play-btn d-inline-flex align-items-center flex-wrap gap-1 py-1 px-2 shadow-sm flex-grow-1 text-start';
+                    btnPlay.className = 'btn btn-sm btn-warning text-dark fw-bold stream-torrent-play-btn d-inline-flex align-items-center gap-1 py-1 px-2.5 shadow-sm';
                     btnPlay.title = 'Reproducir directamente en el navegador online';
                     btnPlay.innerHTML = `
-                        <i class="fas fa-play-circle me-1 flex-shrink-0"></i>
-                        <span class="stream-btn-text">Ver en Reproductor</span>
-                        <span class="badge bg-black text-warning">${qlt}</span>
-                        ${size}
-                        ${lang}
-                        ${seeds}
+                        <i class="fas fa-play-circle flex-shrink-0"></i>
+                        <span>Reproducir</span>
                     `;
                     btnPlay.addEventListener('click', (e) => {
                         e.stopPropagation();
                         openTorrentStreamModal(url, safeTitle, srv, src.provider_name || 'Torrent', safeThumb, episodeMeta);
                     });
-                    itemBox.appendChild(btnPlay);
+                    actionsCol.appendChild(btnPlay);
 
                     // Botón secundario: Enlace externo para qBittorrent o VLC
                     const aExt = document.createElement('a');
                     aExt.href = url;
                     aExt.className = 'btn btn-sm btn-outline-secondary text-warning py-1 px-2 flex-shrink-0';
-                    aExt.title = 'Abrir en cliente torrent externo (qBittorrent / VLC)';
-                    aExt.innerHTML = '<i class="fas fa-external-link-alt"></i>';
+                    aExt.title = 'Abrir en cliente torrent externo (qBittorrent / Stremio)';
+                    aExt.innerHTML = '<i class="fas fa-magnet"></i>';
                     aExt.addEventListener('click', (e) => {
                         e.stopPropagation();
                     });
-                    itemBox.appendChild(aExt);
+                    actionsCol.appendChild(aExt);
+
+                    itemBox.appendChild(actionsCol);
                 } else {
                     const a = document.createElement('a');
                     a.href = url;
@@ -3009,9 +3044,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Ordenar proveedores por prioridad y velocidad esperada
         const priorityOrder = [
-            'local_cdn', 'cinecalidad', 'thepiratebay', 'yts', 'cuevana', 'allpeliculas', 
-            'pelispedia', 'hacktorrent', 'elitetorrent', 'dontorrent', 
-            'lamovie', 'gnula', 'serieskao', 'retrotve', 'anime', 'tioanime', 'nyaa'
+            'local_cdn', 'torrentio', 'cinecalidad', 'thepiratebay', 'yts', 'cuevana', 'allpeliculas', 
+            'pelispedia', 'anime', 'tioanime', 'nyaa', 'hacktorrent', 'elitetorrent', 'dontorrent', 
+            'lamovie', 'gnula', 'serieskao', 'retrotve'
         ];
         
         const sortedProviders = [...providers].sort((a, b) => {

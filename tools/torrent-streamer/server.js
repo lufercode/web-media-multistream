@@ -150,16 +150,79 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        // Extraer infoHash preliminar
+        // Extraer infoHash preliminar y parámetros de episodio para Season Packs (dn / ep / fileIdx)
         let infoHash = '';
         const match = magnet.match(/xt=urn:btih:([a-zA-Z0-9]+)/i);
         if (match) {
             infoHash = match[1].toLowerCase();
         }
+        const fileIdxMatch = magnet.match(/[?&](?:fileIdx|so)=(\d+)/i);
+        const requestedFileIdx = fileIdxMatch ? parseInt(fileIdxMatch[1], 10) : null;
+        const epMatch = magnet.match(/[?&]ep=([^&]+)/i);
+        const requestedEpCode = epMatch ? decodeURIComponent(epMatch[1]) : null;
+        const dnMatch = magnet.match(/[?&]dn=([^&]+)/i);
+        const requestedDn = dnMatch ? decodeURIComponent(dnMatch[1].replace(/\+/g, ' ')) : null;
+
+        const pickTargetFile = (torrent, reqIdx, reqEp, reqDn) => {
+            const videoRegex = /\.(mp4|mkv|webm|avi|mov|m4v|ts)$/i;
+            const videoFiles = torrent.files.filter(f => videoRegex.test(f.name));
+
+            // 1. Coincidencia exacta por nombre de archivo en dn= (ej. Dr.STONE.S04E15...mkv)
+            if (reqDn && videoFiles.length > 1) {
+                const dnLower = reqDn.toLowerCase().trim();
+                const exactDn = videoFiles.find(f => f.name.toLowerCase() === dnLower || f.path.toLowerCase().endsWith(dnLower));
+                if (exactDn) return exactDn;
+            }
+
+            // 2. Coincidencia por código explícito SxxExx (ej. S04E15) en el nombre del archivo
+            if (reqEp && videoFiles.length > 1) {
+                const exactEp = videoFiles.find(f => f.name.toLowerCase().includes(reqEp.toLowerCase()));
+                if (exactEp) return exactEp;
+            }
+
+            // 3. Coincidencia por índice de archivo fileIdx
+            if (reqIdx !== null && torrent.files[reqIdx] && videoRegex.test(torrent.files[reqIdx].name)) {
+                return torrent.files[reqIdx];
+            }
+
+            // 4. Coincidencia por número de episodio suelto (ej. E15 o - 15)
+            if (reqEp && videoFiles.length > 1) {
+                const epNumMatch = reqEp.match(/E(\d+)$/i);
+                if (epNumMatch) {
+                    const epPadded = epNumMatch[1];
+                    const epRegex = new RegExp(`(?:[\\s._\\-\\[]|\\b)(?:e|ep|episode)?${epPadded}(?:v\\d+)?(?:[\\s._\\-\\]]|\\b)`, 'i');
+                    const byNum = videoFiles.find(f => epRegex.test(f.name));
+                    if (byNum) return byNum;
+                }
+            }
+
+            if (videoFiles.length > 0) {
+                return videoFiles.reduce((prev, curr) => (prev.length > curr.length ? prev : curr));
+            }
+            if (torrent.files.length > 0) {
+                return torrent.files.reduce((prev, curr) => (prev.length > curr.length ? prev : curr));
+            }
+            return null;
+        };
 
         if (infoHash && activeTorrents.has(infoHash)) {
             const entry = activeTorrents.get(infoHash);
             entry.lastAccess = Date.now();
+            entry.requestedFileIdx = requestedFileIdx;
+            entry.requestedEpCode = requestedEpCode;
+            entry.requestedDn = requestedDn;
+
+            // Si es un Season Pack y se pidió un episodio específico, actualizar el archivo activo
+            if (entry.torrent && entry.torrent.files && entry.torrent.files.length > 1 && (requestedFileIdx !== null || requestedEpCode !== null || requestedDn !== null)) {
+                const newTarget = pickTargetFile(entry.torrent, requestedFileIdx, requestedEpCode, requestedDn);
+                if (newTarget && (!entry.file || entry.file.name !== newTarget.name)) {
+                    try { entry.torrent.deselect(0, entry.torrent.pieces.length - 1, false); } catch (e) {}
+                    entry.torrent.files.forEach(f => { try { f.deselect(); } catch (e) {} });
+                    entry.file = newTarget;
+                    newTarget.select();
+                    console.log(`[Streamer] Cambiado episodio en pack a: ${newTarget.name}`);
+                }
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 status: 'success',
@@ -196,8 +259,9 @@ const server = http.createServer(async (req, res) => {
                 }
             }
 
-            console.log(`[Streamer] Cargando magnet: ${magnet.substring(0, 60)}...`);
-            const torrent = client.add(magnet, {
+            console.log(`[Streamer] Cargando magnet: ${magnet.substring(0, 60)}... (ep=${requestedEpCode || '-'}, idx=${requestedFileIdx ?? '-'})`);
+            const cleanMagnet = magnet.replace(/&(?:fileIdx|ep)=[^&]*/gi, '');
+            const torrent = client.add(cleanMagnet, {
                 path: CACHE_DIR,
                 announce: DEFAULT_TRACKERS
             });
@@ -207,6 +271,9 @@ const server = http.createServer(async (req, res) => {
                 torrent,
                 file: null,
                 subtitles: [],
+                requestedFileIdx,
+                requestedEpCode,
+                requestedDn,
                 addedAt: Date.now(),
                 lastAccess: Date.now()
             };
@@ -215,19 +282,12 @@ const server = http.createServer(async (req, res) => {
             const onTorrentReady = () => {
                 if (entry.file) return;
 
-                // Deseleccionar todos los archivos por defecto para ahorrar ancho de banda
-                torrent.deselect(0, torrent.pieces.length - 1, false);
+                // Deseleccionar todos los archivos y piezas por defecto para no descargar el resto del Season Pack
+                try { torrent.deselect(0, torrent.pieces.length - 1, false); } catch (e) {}
+                torrent.files.forEach(f => { try { f.deselect(); } catch (e) {} });
 
-                // Encontrar el archivo de video más grande (.mp4, .mkv, .avi, etc.)
-                let mainVideo = null;
-                const videoRegex = /\.(mp4|mkv|webm|avi|mov|m4v|ts)$/i;
-                const videoFiles = torrent.files.filter(f => videoRegex.test(f.name));
-
-                if (videoFiles.length > 0) {
-                    mainVideo = videoFiles.reduce((prev, curr) => (prev.length > curr.length ? prev : curr));
-                } else if (torrent.files.length > 0) {
-                    mainVideo = torrent.files.reduce((prev, curr) => (prev.length > curr.length ? prev : curr));
-                }
+                // Encontrar el archivo de video solicitado (por dn, código SxxExx, fileIdx, o el más grande)
+                const mainVideo = pickTargetFile(torrent, entry.requestedFileIdx, entry.requestedEpCode, entry.requestedDn);
 
                 if (mainVideo) {
                     entry.file = mainVideo;
@@ -361,9 +421,10 @@ const server = http.createServer(async (req, res) => {
 
         // Colchón inicial óptimo y ligero (2.0 a 3.5 MB, ~0.2% - 0.5% del archivo):
         // Permite arranque casi instantáneo en 3-5 segundos sin esperar minutos
-        const downloadedBytes = t.downloaded || 0;
+        const downloadedBytes = (f && typeof f.downloaded === 'number') ? f.downloaded : (t.downloaded || 0);
         const totalBytes = f ? f.length : (t.length || 1);
         const initialBufferNeeded = Math.min(3.5 * 1024 * 1024, Math.max(1.5 * 1024 * 1024, totalBytes * 0.003));
+        const fileProgress = (f && typeof f.progress === 'number') ? f.progress : (t.progress || 0);
 
         // Condición de arranque rápido:
         // Arranca con 2.5 MB, o con solo 1.2 MB si la velocidad de descarga supera los 200 KB/s
@@ -380,13 +441,13 @@ const server = http.createServer(async (req, res) => {
             totalSize: formatBytes(totalBytes),
             downloadedSize: formatBytes(downloadedBytes),
             bufferTargetSize: formatBytes(initialBufferNeeded),
-            progressPct: Math.round(t.progress * 1000) / 10,
+            progressPct: Math.round(fileProgress * 1000) / 10,
             initialBufferPct: Math.min(100, Math.round((downloadedBytes / initialBufferNeeded) * 100)),
             downloadSpeed: formatBytes(t.downloadSpeed) + '/s',
             uploadSpeed: formatBytes(t.uploadSpeed) + '/s',
             peers: t.numPeers,
             ready: isReadyToPlay,
-            streamUrl: `${baseUrl}/stream/${t.infoHash}`,
+            streamUrl: `${baseUrl}/stream/${t.infoHash}${f ? '?file=' + encodeURIComponent(f.name) : ''}`,
             subtitles: (entry.subtitles || []).map(s => ({
                 name: s.name,
                 fileName: s.fileName,
@@ -411,7 +472,16 @@ const server = http.createServer(async (req, res) => {
         }
 
         entry.lastAccess = Date.now();
-        const file = entry.file || (entry.torrent.files && entry.torrent.files[0]);
+        let file = entry.file || (entry.torrent.files && entry.torrent.files[0]);
+
+        // Si se pasa ?file= en la URL de stream y el torrent es un pack, asegurar que apunte a ese archivo exacto
+        const queryFile = parsedUrl.query && parsedUrl.query.file ? String(parsedUrl.query.file).toLowerCase() : null;
+        if (queryFile && entry.torrent.files && entry.torrent.files.length > 1) {
+            const matchedFile = entry.torrent.files.find(f => f.name.toLowerCase() === queryFile);
+            if (matchedFile) {
+                file = matchedFile;
+            }
+        }
 
         if (!file) {
             res.writeHead(503, { 'Content-Type': 'text/plain' });
