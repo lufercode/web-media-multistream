@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebTorrent from 'webtorrent';
-import { buildManifest, getStremioStreams } from './stremio_addon.js';
+import { buildManifest, getStremioStreams, getStremiosCatalog } from './stremio_addon.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -462,6 +462,32 @@ const server = http.createServer(async (req, res) => {
             'Cache-Control': 'public, max-age=3600'
         });
         res.end(JSON.stringify(manifest));
+        return;
+    }
+
+    // GET /stremio/:config/catalog/:type/:id.json  (o sin config)
+    // Soporta skip via query param &skip=20
+    const stremioCatalogMatch = pathname.match(/^(?:\/stremio)?(?:\/([^/]+))?\/catalog\/(movie|series|anime|tv)\/([^/]+)\.json$/i);
+    if (stremioCatalogMatch && req.method === 'GET') {
+        const configParam = stremioCatalogMatch[1] || parsedUrl.searchParams.get('config') || 'default';
+        const rawType = stremioCatalogMatch[2].toLowerCase();
+        const catalogId = decodeURIComponent(stremioCatalogMatch[3]);
+        const skip = parseInt(parsedUrl.searchParams.get('skip') || '0', 10) || 0;
+        const stremioType = (rawType === 'tv') ? 'series' : rawType;
+
+        try {
+            console.log(`[Stremio Catalog] ${catalogId} (type=${stremioType}, skip=${skip})...`);
+            const result = await getStremiosCatalog(catalogId, stremioType, skip);
+            res.writeHead(200, {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Cache-Control': 'public, max-age=2700'  // 45 min, igual que el TTL interno
+            });
+            res.end(JSON.stringify(result));
+        } catch (err) {
+            console.error('[Stremio Catalog] Error:', err);
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ metas: [] }));
+        }
         return;
     }
 

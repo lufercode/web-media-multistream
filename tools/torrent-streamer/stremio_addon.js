@@ -6,6 +6,8 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 export const ALL_STREMIO_PROVIDERS = [
     { id: 'lamovie', name: 'LaMovie / AllCalidad (HLS Directo)', category: 'streaming', default: true },
     { id: 'latanime', name: 'LatAnime (Anime Español Latino)', category: 'streaming', default: true },
+    { id: 'jkanime', name: 'JKAnime (Anime Latino/Sub — HLS Directo)', category: 'streaming', default: true },
+    { id: 'animeflv', name: 'AnimeFLV (Anime Latino/Sub — HLS Directo)', category: 'streaming', default: true },
     { id: 'serieskao', name: 'SeriesKao (Embed69 HLS Directo)', category: 'streaming', default: true },
     { id: 'pelisplus', name: 'PelisPlusHD (Películas, Series y Anime)', category: 'streaming', default: true },
     { id: 'cuevana', name: 'Cuevana 3 (Multi-Servidor HLS)', category: 'streaming', default: true },
@@ -126,21 +128,41 @@ export function buildManifest(configStr = '', baseUrl = '') {
 
     return {
         id: 'org.streammedia.multistream.latino',
-        version: '2.4.0',
+        version: '2.5.0',
         name: 'StreamMedia Latino & Multi-Scraper',
         description: `Addon Multi-Fuente (${activeNames.join(', ')}). Idiomas: ${langLabels.join(', ')}. Combina Streaming HLS Directo (.m3u8) y Torrents P2P nativos para Películas, Series y Anime.`,
         logo: 'https://cdn-icons-png.flaticon.com/512/2503/2503508.png',
         background: 'https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?auto=format&fit=crop&w=1400&q=80',
-        resources: ['stream'],
+        resources: ['catalog', 'stream'],
         types: ['movie', 'series', 'anime'],
         idPrefixes: ['tt', 'tmdb:'],
-        catalogs: [],
+        catalogs: [
+            {
+                id: 'streammedia_trending_movies',
+                type: 'movie',
+                name: '🇲🇽 Películas en Español (Trending)',
+                extra: [{ name: 'skip', isRequired: false }]
+            },
+            {
+                id: 'streammedia_trending_series',
+                type: 'series',
+                name: '🇲🇽 Series en Español (Trending)',
+                extra: [{ name: 'skip', isRequired: false }]
+            },
+            {
+                id: 'streammedia_anime_latino',
+                type: 'anime',
+                name: '🐉 Anime en Español Latino (Trending)',
+                extra: [{ name: 'skip', isRequired: false }]
+            }
+        ],
         behaviorHints: {
             configurable: true,
             configurationRequired: false
         }
     };
 }
+
 
 async function httpGet(url, options = {}) {
     const timeoutMs = options.timeout || 5000;
@@ -1154,6 +1176,195 @@ async function scrapeCinecalidad(meta) {
 }
 
 /**
+ * 9. Scraper: JKAnime (https://jkanime.net) — Anime Español Latino y Subtitulado
+ */
+async function scrapeJkAnime(meta) {
+    if (!meta.isAnime) return [];
+    const host = 'https://jkanime.net';
+    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
+
+    for (const q of queries.slice(0, 2)) {
+        const html = await httpGet(`${host}/buscar/${encodeURIComponent(q)}/`, { headers: { Referer: `${host}/` }, timeout: 4500 });
+        if (!html || html.length < 500) continue;
+
+        const cards = [...html.matchAll(/<div class="anime__item">(.*?)<\/div>\s*<\/div>/gs)];
+        for (const m of cards) {
+            const block = m[1];
+            const href = block.match(/href="(https?:\/\/jkanime\.net\/[^"]+)"/)?.[1];
+            const titleRaw = block.match(/<h5[^>]*>([^<]+)<\/h5>/)?.[1]?.trim() || '';
+            if (!href || !isTitleMatch(meta.title, titleRaw) && !isTitleMatch(meta.originalTitle, titleRaw)) continue;
+
+            const slug = href.replace(/\/$/, '').split('/').pop();
+            if (!slug) continue;
+
+            const epCandidates = [meta.episode];
+            if (meta.absoluteEpisode && meta.absoluteEpisode !== meta.episode) epCandidates.unshift(meta.absoluteEpisode);
+
+            for (const epNum of epCandidates) {
+                const epUrl = `${host}/${slug}/${epNum}/`;
+                const epHtml = await httpGet(epUrl, { headers: { Referer: href }, timeout: 4500 });
+                if (!epHtml || epHtml.length < 1500) continue;
+
+                // JKAnime usa iframes con src que apuntan a jk.php?v=... o a embeds externos
+                const iframeSrcs = [...epHtml.matchAll(/(?:src|data-src)=["'](https?:\/\/(?:[^"']*(?:embed|player|voe|wish|streamwish|vidhide|filemoon|jk\.php)[^"']*))["']/gi)].map(x => x[1]);
+                if (!iframeSrcs.length) continue;
+
+                const isLatino = /latino/i.test(epHtml);
+                const langKey = isLatino ? 'latino' : 'sub';
+                const langBadge = isLatino ? '🇲🇽 Español Latino' : '🇯🇵 Subtitulado';
+                const flag = isLatino ? '🇲🇽' : '🇯🇵';
+
+                const resolved = await Promise.all(iframeSrcs.slice(0, 3).map(async (src) => {
+                    const r = await resolveEmbedToHls(src, epUrl);
+                    if (!r?.url) return null;
+                    return {
+                        name: `${flag} JKAnime\n1080p HD`,
+                        title: `${meta.title} - Ep. ${epNum}\n⚡ HLS Directo • ${langBadge}`,
+                        url: r.url,
+                        _lang: langKey,
+                        behaviorHints: {
+                            notWebReady: false,
+                            proxyHeaders: { request: { 'Referer': r.referer || `${host}/`, 'User-Agent': UA } }
+                        }
+                    };
+                }));
+                const valid = resolved.filter(Boolean);
+                if (valid.length > 0) return valid;
+            }
+        }
+    }
+    return [];
+}
+
+/**
+ * 10. Scraper: AnimeFLV (https://www3.animeflv.net) — Catálogo más grande en español de anime
+ */
+async function scrapeAnimeFLV(meta) {
+    if (!meta.isAnime) return [];
+    const host = 'https://www3.animeflv.net';
+    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
+
+    for (const q of queries.slice(0, 2)) {
+        const data = await httpGet(`${host}/api/animes/search?value=${encodeURIComponent(q)}`, {
+            json: true, headers: { Referer: `${host}/` }, timeout: 4500
+        });
+        if (!Array.isArray(data) || data.length === 0) continue;
+
+        const match = data.find(item => isTitleMatch(meta.title, item.title || '') || isTitleMatch(meta.originalTitle, item.title || '') || isTitleMatch(meta.title, item.title_english || ''));
+        if (!match) continue;
+
+        const slug = match.slug;
+        if (!slug) continue;
+
+        const epCandidates = [meta.episode];
+        if (meta.absoluteEpisode && meta.absoluteEpisode !== meta.episode) epCandidates.unshift(meta.absoluteEpisode);
+
+        for (const epNum of epCandidates) {
+            const epUrl = `${host}/ver/${slug}-${epNum}`;
+            const epHtml = await httpGet(epUrl, { headers: { Referer: `${host}/anime/${slug}` }, timeout: 4500 });
+            if (!epHtml || epHtml.length < 1000) continue;
+
+            // AnimeFLV guarda los videos en un array JS: var videos = {"SUB":[...],"LAT":[...]}
+            const videosMatch = epHtml.match(/var\s+videos\s*=\s*(\{.*?\});\s*\n/s);
+            if (!videosMatch) continue;
+
+            let videosJson = null;
+            try { videosJson = JSON.parse(videosMatch[1]); } catch (e) { continue; }
+
+            const streams = [];
+            for (const [langGroup, list] of Object.entries(videosJson)) {
+                if (!Array.isArray(list)) continue;
+                const isLatino = langGroup.toUpperCase() === 'LAT' || langGroup.toUpperCase() === 'LATINO';
+                const langKey = isLatino ? 'latino' : 'sub';
+                const langBadge = isLatino ? '🇲🇽 Español Latino' : '🇯🇵 Subtitulado';
+                const flag = isLatino ? '🇲🇽' : '🇯🇵';
+
+                const resolvable = list.filter(v => v.url && /(?:voe|wish|streamwish|vidhide|hglink|morencius|filemoon|fembed)/i.test(v.url)).slice(0, 3);
+                const resolved = await Promise.all(resolvable.map(async (v) => {
+                    const r = await resolveEmbedToHls(v.url, epUrl);
+                    if (!r?.url) return null;
+                    return {
+                        name: `${flag} AnimeFLV\n1080p HD`,
+                        title: `${meta.title} - Ep. ${epNum}\n⚡ ${v.title || 'HLS Directo'} • ${langBadge}`,
+                        url: r.url,
+                        _lang: langKey,
+                        behaviorHints: {
+                            notWebReady: false,
+                            proxyHeaders: { request: { 'Referer': r.referer || `${host}/`, 'User-Agent': UA } }
+                        }
+                    };
+                }));
+                streams.push(...resolved.filter(Boolean));
+            }
+            if (streams.length > 0) return streams;
+        }
+    }
+    return [];
+}
+
+/**
+ * Obtiene el catálogo trending desde TMDB para mostrar contenido navegable en Stremio.
+ * Usa solo TMDB (sin scraping, respuesta rápida) y devuelve en el formato esperado por Stremio.
+ */
+export async function getStremiosCatalog(catalogId, type, skip = 0) {
+    const cacheKey = `catalog|${catalogId}|${skip}`;
+    const cached = getCached(tmdbCache, cacheKey, 45 * 60 * 1000); // 45 min TTL para catálogos
+    if (cached) return cached;
+
+    const page = Math.floor(skip / 20) + 1;
+    let url = '';
+
+    if (catalogId === 'streammedia_trending_movies') {
+        url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=es-MX&sort_by=popularity.desc&with_original_language=es&region=MX&page=${page}`;
+    } else if (catalogId === 'streammedia_trending_series') {
+        url = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=es-MX&sort_by=popularity.desc&with_original_language=es&page=${page}`;
+    } else if (catalogId === 'streammedia_anime_latino') {
+        // Anime popular con audio disponible en español (genre 16 = Animation, origin_country = JP)
+        url = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=es-MX&sort_by=popularity.desc&with_genres=16&with_origin_country=JP&page=${page}`;
+    } else {
+        return { metas: [] };
+    }
+
+    const data = await httpGet(url, { json: true, timeout: 5000 });
+    if (!data?.results) return { metas: [] };
+
+    // Para obtener los imdbIds necesitamos external_ids — lo hacemos en paralelo (máx 10 items)
+    const items = (data.results || []).slice(0, 20);
+    const endpoint = (type === 'movie') ? 'movie' : 'tv';
+
+    const metas = (await Promise.all(items.map(async (item) => {
+        const tmdbId = item.id;
+        const title = item.title || item.name || '';
+        const poster = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null;
+        const background = item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : null;
+        const releaseDate = item.release_date || item.first_air_date || '';
+        const year = releaseDate ? releaseDate.substring(0, 4) : '';
+        const description = item.overview || '';
+
+        // Obtener imdbId para que Stremio pueda hacer match con Cinemeta
+        const extIds = await httpGet(`https://api.themoviedb.org/3/${endpoint}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`, { json: true, timeout: 3000 }).catch(() => null);
+        const imdbId = extIds?.imdb_id || null;
+
+        if (!imdbId && !tmdbId) return null;
+
+        return {
+            id: imdbId || `tmdb:${tmdbId}`,
+            type: type === 'anime' ? 'anime' : type,
+            name: title,
+            poster,
+            background,
+            description,
+            releaseInfo: year,
+            imdbRating: item.vote_average ? String(item.vote_average.toFixed(1)) : undefined
+        };
+    }))).filter(Boolean);
+
+    const payload = { metas };
+    if (metas.length > 0) setCached(tmdbCache, cacheKey, payload);
+    return payload;
+}
+
+/**
  * Ejecuta todos los scrapers seleccionados en paralelo con límite de tiempo y devuelve el array `streams` de Stremio.
  */
 export async function getStremioStreams(type, rawId, configStr = '') {
@@ -1172,6 +1383,8 @@ export async function getStremioStreams(type, rawId, configStr = '') {
     if (cfg.providers.has('local_cdn')) tasks.push(scrapeLocalCdn(meta));
     if (cfg.providers.has('lamovie')) tasks.push(scrapeLaMovie(meta));
     if (cfg.providers.has('latanime')) tasks.push(scrapeLatAnime(meta));
+    if (cfg.providers.has('jkanime')) tasks.push(scrapeJkAnime(meta));
+    if (cfg.providers.has('animeflv')) tasks.push(scrapeAnimeFLV(meta));
     if (cfg.providers.has('serieskao')) tasks.push(scrapeKaoOrPelisPlus(meta, 'serieskao'));
     if (cfg.providers.has('pelisplus')) tasks.push(scrapeKaoOrPelisPlus(meta, 'pelisplus'));
     if (cfg.providers.has('cuevana')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'cuevana'));

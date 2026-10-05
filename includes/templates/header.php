@@ -11,6 +11,22 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <!-- Google Identity Services (Sign In with Google / OAuth 2.0 Web) -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Pre-warming silencioso de Render (reduce cold-start de ~30s a ~3s) -->
+    <script>
+    (function() {
+        var RENDER_PING = <?= json_encode(
+            (defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRENT_STREAMER_REMOTE_URL)
+                ? rtrim(TORRENT_STREAMER_REMOTE_URL, '/')
+                : 'https://web-media-multistream.onrender.com')
+            . '/ping'
+        ) ?>;
+        try {
+            fetch(RENDER_PING, { method: 'GET', mode: 'no-cors', keepalive: true, cache: 'no-store',
+                signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
+            }).catch(function(){});
+        } catch(e) {}
+    })();
+    </script>
 </head>
 
 <body>
@@ -22,28 +38,28 @@ $has_google_client_id = defined('GOOGLE_CLIENT_ID') && strpos(GOOGLE_CLIENT_ID, 
 
     <header class="py-2 px-3 mb-4 sticky-top navbar-glass">
         <div class="container-fluid px-lg-4">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div class="d-flex flex-wrap flex-lg-nowrap align-items-center justify-content-between gap-2">
                 <!-- Marca / Logo -->
-                <a href="index.php" class="navbar-brand d-flex align-items-center text-decoration-none me-2">
+                <a href="index.php" class="navbar-brand d-flex align-items-center text-decoration-none me-1 flex-shrink-0">
                     <i class="bi bi-play-circle-fill text-danger fs-3 me-2"></i>
                     <span class="brand-logo-text">StreamMedia</span>
                 </a>
 
                 <!-- Navegación de categorías -->
-                <nav class="d-none d-md-flex align-items-center gap-1">
-                    <a href="index.php" class="nav-pill-link"><i class="bi bi-house-door me-1"></i> Inicio</a>
-                    <a href="index.php#section-popular-movies" class="nav-pill-link"><i class="bi bi-film me-1"></i> Películas</a>
-                    <a href="index.php#section-popular-series" class="nav-pill-link"><i class="bi bi-tv me-1"></i> Series</a>
-                    <a href="index.php#section-animation-movies" class="nav-pill-link"><i class="bi bi-stars me-1"></i> Animación</a>
-                    <a href="index.php#watchlist-container" class="nav-pill-link">
+                <nav class="d-none d-md-flex align-items-center gap-1 flex-shrink-0">
+                    <a href="index.php" class="nav-pill-link text-nowrap"><i class="bi bi-house-door me-1"></i> Inicio</a>
+                    <a href="index.php#section-popular-movies" class="nav-pill-link text-nowrap"><i class="bi bi-film me-1"></i> Películas</a>
+                    <a href="index.php#section-popular-series" class="nav-pill-link text-nowrap"><i class="bi bi-tv me-1"></i> Series</a>
+                    <a href="index.php#section-animation-movies" class="nav-pill-link text-nowrap"><i class="bi bi-stars me-1"></i> Animación</a>
+                    <a href="index.php#watchlist-container" class="nav-pill-link text-nowrap">
                         <i class="bi bi-bookmark-fill me-1"></i> Mi Lista
                         <span class="badge bg-danger rounded-pill ms-1 nav-watchlist-count" style="display:none; font-size: 0.68rem;">0</span>
                     </a>
                 </nav>
 
                 <!-- Buscador en tiempo real y acciones -->
-                <div class="d-flex align-items-center gap-2 flex-grow-1 flex-md-grow-0 justify-content-end">
-                    <form action="search.php" method="get" class="header-search-wrap position-relative">
+                <div class="d-flex align-items-center gap-2 flex-grow-1 flex-lg-grow-0 justify-content-end flex-nowrap">
+                    <form action="search.php" method="get" class="header-search-wrap position-relative" style="min-width: 180px; max-width: 270px;">
                         <input id="search-rakun" 
                                type="text" 
                                name="q" 
@@ -60,17 +76,19 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
     : 'https://web-media-multistream.onrender.com';
 ?>
                     <button type="button" 
-                            class="btn btn-sm d-flex align-items-center gap-1 px-2.5 py-1 fw-semibold text-white shadow-sm"
-                            style="background: linear-gradient(135deg, #7b2cbf 0%, #5a189a 100%); border: 1px solid rgba(157, 78, 221, 0.65); border-radius: 8px;"
+                            class="btn btn-sm d-inline-flex align-items-center gap-1 px-3 py-1 fw-semibold text-white text-nowrap flex-shrink-0"
+                            style="background: rgba(123, 44, 191, 0.28); border: 1px solid rgba(157, 78, 221, 0.65); border-radius: 50px; font-size: 0.82rem; height: 34px; transition: all 0.2s ease;"
+                            onmouseover="this.style.background='rgba(123, 44, 191, 0.5)'"
+                            onmouseout="this.style.background='rgba(123, 44, 191, 0.28)'"
                             data-bs-toggle="modal" 
                             data-bs-target="#stremioAddonModal"
                             title="Configurar e Instalar Addon en Stremio">
-                        <i class="fas fa-puzzle-piece" style="color: #e0aaff;"></i>
-                        <span class="d-none d-sm-inline" style="font-size: 0.8rem;">Addon Stremio</span>
+                        <i class="bi bi-puzzle-fill" style="color: #c77dff;"></i>
+                        <span class="d-none d-sm-inline">Stremio</span>
                     </button>
 
-                    <form action="clear_cache.php" method="post" class="d-inline">
-                        <button type="submit" class="btn btn-outline-danger btn-sm px-2 py-1" title="Limpiar Caché de la aplicación">
+                    <form action="clear_cache.php" method="post" class="d-inline flex-shrink-0">
+                        <button type="submit" class="btn btn-outline-danger btn-sm px-2 py-1" style="border-radius: 50px; height: 34px; width: 34px;" title="Limpiar Caché de la aplicación">
                             <i class="bi bi-trash-fill"></i>
                         </button>
                     </form>
@@ -231,7 +249,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
     <div class="modal fade" id="stremioAddonModal" tabindex="-1" aria-labelledby="stremioAddonModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content bg-dark text-white border-secondary shadow-lg">
-                <div class="modal-header border-secondary py-2.5 px-3" style="background: linear-gradient(90deg, #1a0933 0%, #0f172a 100%);">
+                <div class="modal-header border-secondary py-2 px-3" style="background: linear-gradient(90deg, #1a0933 0%, #0f172a 100%);">
                     <div>
                         <h6 class="modal-title fw-bold d-flex align-items-center gap-2 mb-0" id="stremioAddonModalLabel">
                             <i class="fas fa-puzzle-piece" style="color: #c77dff;"></i>
@@ -259,7 +277,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
 
                     <!-- 1. Idiomas Preferidos -->
                     <div class="mb-3">
-                        <label class="form-label fw-bold text-info small mb-1.5 d-flex align-items-center gap-1">
+                        <label class="form-label fw-bold text-info small mb-2 d-flex align-items-center gap-1">
                             <i class="fas fa-globe-americas"></i> 1. Idiomas a mostrar en Stremio:
                         </label>
                         <div class="row g-2">
@@ -292,7 +310,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
 
                     <!-- 2. Scrapers de Streaming Directo / HLS -->
                     <div class="mb-3">
-                        <div class="d-flex justify-content-between align-items-center mb-1.5">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
                             <label class="form-label fw-bold text-warning small mb-0 d-flex align-items-center gap-1">
                                 <i class="fas fa-play-circle"></i> 2. Scrapers de Streaming Directo (.m3u8 / .mp4):
                             </label>
@@ -317,6 +335,24 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🐉 LatAnime</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Anime en Español Latino y Castellano</div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="jkanime" checked>
+                                    <div class="text-truncate">
+                                        <div class="fw-semibold text-white">🎌 JKAnime</div>
+                                        <div class="text-secondary" style="font-size:0.68rem;">Anime Latino y Subtitulado (HLS Directo)</div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="animeflv" checked>
+                                    <div class="text-truncate">
+                                        <div class="fw-semibold text-white">⛩️ AnimeFLV</div>
+                                        <div class="text-secondary" style="font-size:0.68rem;">Anime Latino/Sub — Catálogo más grande</div>
                                     </div>
                                 </label>
                             </div>
@@ -370,7 +406,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
 
                     <!-- 3. Scrapers de Torrents P2P (Descargados por Stremio) -->
                     <div class="mb-3">
-                        <label class="form-label fw-bold text-success small mb-1.5 d-flex align-items-center gap-1">
+                        <label class="form-label fw-bold text-success small mb-2 d-flex align-items-center gap-1">
                             <i class="fas fa-magnet"></i> 3. Scrapers de Torrents P2P (Descarga directa nativa en Stremio):
                         </label>
                         <div class="row g-2">
@@ -423,7 +459,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                     </div>
 
                     <!-- 4. URL del Manifiesto Generado -->
-                    <div class="p-2.5 rounded bg-black border border-secondary">
+                    <div class="p-3 rounded bg-black border border-secondary">
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <span class="text-secondary" style="font-size: 0.72rem;">
                                 <i class="fas fa-link me-1 text-info"></i>URL de tu Addon configurado en Render:
@@ -439,7 +475,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                     </div>
                 </div>
 
-                <div class="modal-footer border-secondary py-2.5 px-3 bg-black d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div class="modal-footer border-secondary py-2 px-3 bg-black d-flex flex-wrap justify-content-between align-items-center gap-2">
                     <span class="text-secondary" style="font-size: 0.72rem;">
                         <i class="fas fa-tv me-1 text-success"></i>Compatible con Stremio PC, Web, Android y Smart TV
                     </span>
@@ -459,7 +495,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
     <script>
     (function() {
         const RENDER_BASE = <?= json_encode($stremio_addon_base_url) ?>;
-        const ALL_PROV_COUNT = 12;
+        const ALL_PROV_COUNT = 14;
         const ALL_LANG_COUNT = 4;
 
         function updateStremioAddonLinks() {
