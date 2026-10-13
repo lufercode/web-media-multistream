@@ -119,12 +119,16 @@ class PirateBayProvider implements ProviderInterface
             }
         }
 
+        if (empty($results) && $tmdb_id) {
+            $results = $this->fetchTpbMirrorFallback('movie', $tmdb_id, $clean_title, null, null);
+        }
+
         // Ordenar: primero los que tienen audio Latino/Dual, luego por cantidad de seeders
         usort($results, function ($a, $b) {
-            if ($a['is_latino'] !== $b['is_latino']) {
-                return $b['is_latino'] ? 1 : -1;
+            if (($a['is_latino'] ?? false) !== ($b['is_latino'] ?? false)) {
+                return ($b['is_latino'] ?? false) ? 1 : -1;
             }
-            return $b['seeders'] <=> $a['seeders'];
+            return ($b['seeders'] ?? 0) <=> ($a['seeders'] ?? 0);
         });
 
         // Limpiar clave temporal
@@ -234,18 +238,74 @@ class PirateBayProvider implements ProviderInterface
             }
         }
 
+        if (empty($results) && $tmdb_id) {
+            $results = $this->fetchTpbMirrorFallback('tv', $tmdb_id, $clean_title, $season, $episode);
+        }
+
         // Ordenar: primero Latino/Dual, luego por seeds
         usort($results, function ($a, $b) {
-            if ($a['is_latino'] !== $b['is_latino']) {
-                return $b['is_latino'] ? 1 : -1;
+            if (($a['is_latino'] ?? false) !== ($b['is_latino'] ?? false)) {
+                return ($b['is_latino'] ?? false) ? 1 : -1;
             }
-            return $b['seeders'] <=> $a['seeders'];
+            return ($b['seeders'] ?? 0) <=> ($a['seeders'] ?? 0);
         });
 
         return array_map(function ($r) {
             unset($r['is_latino']);
             return $r;
         }, array_slice($results, 0, 10));
+    }
+
+    private function fetchTpbMirrorFallback(string $type, int $tmdb_id, string $fallbackTitle, ?int $season, ?int $episode): array
+    {
+        $imdb_id = get_tmdb_imdb_id($tmdb_id, $type);
+        if (!$imdb_id) return [];
+
+        $stremioType = ($type === 'movie') ? 'movie' : 'series';
+        $streamId = ($type === 'movie') ? $imdb_id : "{$imdb_id}:{$season}:{$episode}";
+        $url = "https://torrentio.strem.fun/providers=thepiratebay/stream/{$stremioType}/" . rawurlencode($streamId) . ".json";
+
+        $raw = http_get($url, ['timeout' => 5, 'headers' => ['Accept' => 'application/json']]);
+        if (!$raw) return [];
+
+        $data = json_decode($raw, true);
+        if (empty($data['streams']) || !is_array($data['streams'])) return [];
+
+        $results = [];
+        foreach ($data['streams'] as $s) {
+            $hash = strtoupper(trim($s['infoHash'] ?? ''));
+            if (empty($hash)) continue;
+            $rawTitle = trim($s['title'] ?? '');
+            $lines = array_values(array_filter(array_map('trim', explode("\n", $rawTitle))));
+            $releaseName = $lines[0] ?? $fallbackTitle;
+
+            $seeders = 0;
+            if (preg_match('/👤\s*(\d+)/u', $rawTitle, $mSeeds)) {
+                $seeders = (int)$mSeeds[1];
+            }
+            $size = '';
+            if (preg_match('/💾\s*([0-9.,]+\s*(?:GB|MB|TB|KB))/iu', $rawTitle, $mSize)) {
+                $size = trim($mSize[1]);
+            }
+
+            $results[] = [
+                'provider' => $this->getId(),
+                'provider_name' => 'The Pirate Bay',
+                'type' => 'torrent',
+                'title' => $releaseName,
+                'server' => 'BitTorrent Magnet',
+                'tracker' => 'ThePirateBay',
+                'quality' => $this->detectQuality($releaseName),
+                'language' => $this->detectLanguage($rawTitle),
+                'url' => $this->buildMagnet($hash, $releaseName),
+                'size' => $size,
+                'seeds' => $seeders,
+                'seeders' => $seeders,
+                'leechers' => 0,
+                'is_latino' => is_latino_audio($rawTitle)
+            ];
+        }
+        return $results;
     }
 
     private function queryApi(string $query): array

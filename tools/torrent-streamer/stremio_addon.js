@@ -1298,10 +1298,11 @@ async function scrapeTorrentio(meta) {
         }
     }
 
+    const allowedProviders = 'yts,eztv,rarbg,1337x,thepiratebay,kickasstorrents,torrentgalaxy,magnetdl,horriblesubs,nyaasi,tokyotosho,anidex,mejortorrent,wolfmax4k,cinecalidad';
     const endpoints = [];
     for (const qId of queries) {
-        endpoints.push(`https://torrentio.strem.fun/providers=yts,eztv,rarbg,1337x,thepiratebay,kickasstorrents,torrentgalaxy,magnetdl,horriblesubs,nyaasi,tokyotosho,anidex,mejortorrent,wolfmax4k,cinecalidad|language=latino,spanish/stream/${stremioType}/${qId}.json`);
-        endpoints.push(`https://torrentio.strem.fun/sort=seeders/stream/${stremioType}/${qId}.json`);
+        endpoints.push(`https://torrentio.strem.fun/providers=${allowedProviders}|language=latino,spanish/stream/${stremioType}/${qId}.json`);
+        endpoints.push(`https://torrentio.strem.fun/providers=${allowedProviders}|sort=seeders/stream/${stremioType}/${qId}.json`);
     }
 
     const responses = await Promise.all(endpoints.map(u => httpGet(u, { json: true, timeout: 4800 })));
@@ -1330,13 +1331,21 @@ async function scrapeTorrentio(meta) {
             const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
             const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
 
+            // Extraer tracker de origen (ej. Cinecalidad, MejorTorrent, 1337x, TorrentGalaxy, ThePirateBay, YTS)
+            const trackerMatch = rawTitle.match(/⚙️\s*([^\s\n\r•]+)/u);
+            const trackerRaw = trackerMatch ? trackerMatch[1].trim() : '';
+            const trackerShort = trackerRaw
+                .replace(/^ThePirateBay$/i, 'TPB')
+                .replace(/^TorrentGalaxy$/i, 'TGx')
+                .replace(/^KickassTorrents$/i, 'KAT');
+
             const mergedSources = Array.from(new Set([
                 ...(Array.isArray(s.sources) ? s.sources : []),
                 ...STREMIO_TRACKER_SOURCES
             ]));
 
             const streamObj = {
-                name: `${langInfo.flag} Torrentio\n${quality}`,
+                name: `${langInfo.flag} Torrentio${trackerShort ? ' • ' + trackerShort : ''}\n${quality}`,
                 title: `${langInfo.badge}\n${rawTitle}`,
                 infoHash: hash,
                 sources: mergedSources,
@@ -1360,11 +1369,11 @@ async function scrapeTorrentio(meta) {
         return (b._seeders || 0) - (a._seeders || 0);
     });
 
-    return results.slice(0, 25);
+    return results.slice(0, 18);
 }
 
 /**
- * 7. Scraper: YTS (Películas 1080p / 4K nativas por infoHash — Espejos activos yts.lt / accel.li / yts.mx)
+ * 7. Scraper: YTS (Películas 1080p / 4K nativas por infoHash — Espejos activos yts.lt / accel.li / yts.mx + fallback Torrentio YTS)
  */
 async function scrapeYts(meta) {
     if (meta.type !== 'movie') return [];
@@ -1374,7 +1383,7 @@ async function scrapeYts(meta) {
     let movie = null;
     for (const host of hosts) {
         for (const q of queries.slice(0, 2)) {
-            const data = await httpGet(`${host}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=5`, { json: true, timeout: 4000 });
+            const data = await httpGet(`${host}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=5`, { json: true, timeout: 3800 });
             const movies = data?.data?.movies;
             if (Array.isArray(movies) && movies.length > 0) {
                 movie = movies.find(m => (meta.imdbId && m.imdb_code === meta.imdbId) || isTitleMatch(meta.originalTitle || meta.title, m.title || '', meta.year, m.year)) || movies[0];
@@ -1384,21 +1393,56 @@ async function scrapeYts(meta) {
         if (movie?.torrents) break;
     }
 
-    if (!movie?.torrents) return [];
+    const results = [];
+    const seen = new Set();
 
-    return movie.torrents.map(t => {
-        const hash = (t.hash || '').toLowerCase();
-        if (!hash) return null;
-        return {
-            name: `🇺🇸 YTS\n${t.quality || '1080p'}`,
-            title: `${movie.title_long || meta.title} [${(t.quality || '1080p').toUpperCase()} ${(t.type || 'BLURAY').toUpperCase()}]\n🇺🇸 Audio Original (Inglés) • 👤 ${t.seeds || 0} • 💾 ${t.size || ''} • ⚙️ YTS`,
-            infoHash: hash,
-            sources: STREMIO_TRACKER_SOURCES,
-            _lang: 'sub',
-            _prov: 'yts',
-            _seeders: t.seeds || 0
-        };
-    }).filter(Boolean);
+    if (movie?.torrents) {
+        for (const t of movie.torrents) {
+            const hash = (t.hash || '').toLowerCase();
+            if (!hash || seen.has(hash)) continue;
+            seen.add(hash);
+            const qual = (t.quality || '1080p').toUpperCase();
+            const vType = (t.type || 'BLURAY').toUpperCase();
+            results.push({
+                name: `🎥 YTS (${vType})\n${qual}`,
+                title: `${movie.title_long || meta.title} [${qual} ${vType}]\n🇺🇸 Audio Original (Inglés) • 👤 ${t.seeds || 0} • 💾 ${t.size || ''} • ⚙️ YTS Oficial`,
+                infoHash: hash,
+                sources: STREMIO_TRACKER_SOURCES,
+                _lang: 'sub',
+                _prov: 'yts',
+                _seeders: t.seeds || 0
+            });
+        }
+    }
+
+    // Fallback en caso de bloqueo de IP en la nube (Render) hacia la API de YTS
+    if (results.length === 0 && meta.imdbId) {
+        const ytsFallback = await httpGet(`https://torrentio.strem.fun/providers=yts/stream/movie/${meta.imdbId}.json`, { json: true, timeout: 4000 });
+        if (Array.isArray(ytsFallback?.streams)) {
+            for (const s of ytsFallback.streams) {
+                const hash = (s.infoHash || '').toLowerCase();
+                if (!hash || seen.has(hash)) continue;
+                seen.add(hash);
+                const rawTitle = s.title || '';
+                const qMatch = ((s.name || '') + ' ' + rawTitle).match(/\b(2160p|4k|1080p|720p)\b/i);
+                const qual = qMatch ? qMatch[1].toUpperCase() : '1080P';
+                const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
+                const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
+                results.push({
+                    name: `🎥 YTS\n${qual}`,
+                    title: `🇺🇸 Audio Original (Inglés)\n${rawTitle}`,
+                    infoHash: hash,
+                    sources: STREMIO_TRACKER_SOURCES,
+                    _lang: 'sub',
+                    _prov: 'yts',
+                    _seeders: seeders
+                });
+            }
+        }
+    }
+
+    results.sort((a, b) => (b._seeders || 0) - (a._seeders || 0));
+    return results;
 }
 
 /**
@@ -1444,7 +1488,7 @@ async function scrapeNyaa(meta) {
 }
 
 /**
- * 9. Scraper: ThePirateBay (apibay.org) — Busca con título en español y título original (Latino, Dual y HD)
+ * 9. Scraper: ThePirateBay (apibay.org + espejo de indexación TPB para IPs Cloud/Render bloqueadas por Cloudflare)
  */
 async function scrapeTpb(meta) {
     const sStr = String(meta.season).padStart(2, '0');
@@ -1468,11 +1512,22 @@ async function scrapeTpb(meta) {
         ];
     const queries = Array.from(new Set(rawQueries.filter(Boolean)));
 
-    const responses = await Promise.all(queries.map(q => httpGet(`https://apibay.org/q.php?q=${encodeURIComponent(q)}&cat=200`, { json: true, timeout: 4200 })));
+    const stremioType = meta.type === 'movie' ? 'movie' : 'series';
+    const tpbMirrorUrl = meta.imdbId
+        ? (stremioType === 'movie'
+            ? `https://torrentio.strem.fun/providers=thepiratebay/stream/movie/${meta.imdbId}.json`
+            : `https://torrentio.strem.fun/providers=thepiratebay/stream/series/${meta.imdbId}:${meta.season}:${meta.episode}.json`)
+        : null;
+
+    const [apiBayResponses, tpbMirrorData] = await Promise.all([
+        Promise.all(queries.map(q => httpGet(`https://apibay.org/q.php?q=${encodeURIComponent(q)}&cat=200`, { json: true, timeout: 3800 }))),
+        tpbMirrorUrl ? httpGet(tpbMirrorUrl, { json: true, timeout: 4200 }) : Promise.resolve(null)
+    ]);
+
     const seen = new Set();
     const streams = [];
 
-    for (const list of responses) {
+    for (const list of apiBayResponses) {
         if (!Array.isArray(list)) continue;
         for (const item of list.slice(0, 8)) {
             const hash = (item.info_hash || '').toLowerCase();
@@ -1494,7 +1549,7 @@ async function scrapeTpb(meta) {
             const quality = qMatch ? qMatch[1].toUpperCase() : '1080P';
 
             streams.push({
-                name: `${langInfo.flag} PirateBay\n${quality}`,
+                name: `🏴‍☠️ PirateBay\n${quality}`,
                 title: `${name}\n${langInfo.badge} • 👤 ${seeders} • 💾 ${sizeGb} • ⚙️ ThePirateBay`,
                 infoHash: hash,
                 sources: STREMIO_TRACKER_SOURCES,
@@ -1502,6 +1557,37 @@ async function scrapeTpb(meta) {
                 _prov: 'tpb',
                 _seeders: seeders
             });
+        }
+    }
+
+    // Integrar resultados del índice de ThePirateBay (garantiza disponibilidad en Render cuando Cloudflare bloquea apibay.org)
+    if (Array.isArray(tpbMirrorData?.streams)) {
+        for (const s of tpbMirrorData.streams) {
+            const hash = (s.infoHash || '').toLowerCase();
+            if (!hash || seen.has(hash)) continue;
+            seen.add(hash);
+
+            const rawTitle = s.title || '';
+            const rawName = (s.name || '').replace(/\s+/g, ' ').trim();
+            const langInfo = classifyTorrentLanguage(rawTitle, meta.isAnime);
+            const qMatch = (rawName + ' ' + rawTitle).match(/\b(2160p|4k|1080p|720p|480p)\b/i);
+            const quality = qMatch ? qMatch[1].toUpperCase() : '1080P';
+            const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
+            const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
+
+            const streamObj = {
+                name: `🏴‍☠️ PirateBay\n${quality}`,
+                title: `${langInfo.badge}\n${rawTitle}`,
+                infoHash: hash,
+                sources: Array.from(new Set([...(Array.isArray(s.sources) ? s.sources : []), ...STREMIO_TRACKER_SOURCES])),
+                _lang: langInfo.langKey,
+                _prov: 'tpb',
+                _seeders: seeders
+            };
+            if (typeof s.fileIdx === 'number') streamObj.fileIdx = s.fileIdx;
+            if (s.behaviorHints) streamObj.behaviorHints = s.behaviorHints;
+
+            streams.push(streamObj);
         }
     }
 
@@ -2026,42 +2112,57 @@ export async function getStremioStreams(type, rawId, configStr = '') {
     if (cfg.providers.has('pelisplus')) tasks.push(scrapeKaoOrPelisPlus(meta, 'pelisplus'));
     if (cfg.providers.has('cuevana')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'cuevana'));
     if (cfg.providers.has('poseidonhd')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'poseidonhd'));
+    // Ejecutar primero los scrapers P2P dedicados (Cinecalidad, TPB, YTS, Nyaa) antes de Torrentio
+    // para que al deduplicar infoHash prevalezca la etiqueta dedicada (PirateBay, YTS, Cinecalidad)
     if (cfg.providers.has('cinecalidad')) tasks.push(scrapeCinecalidad(meta));
-    if (cfg.providers.has('torrentio')) tasks.push(scrapeTorrentio(meta));
     if (cfg.providers.has('tpb')) tasks.push(scrapeTpb(meta));
     if (cfg.providers.has('yts')) tasks.push(scrapeYts(meta));
     if (cfg.providers.has('nyaa')) tasks.push(scrapeNyaa(meta));
+    if (cfg.providers.has('torrentio')) tasks.push(scrapeTorrentio(meta));
 
     const settled = await Promise.allSettled(tasks);
-    let allStreams = [];
+    let rawStreams = [];
     for (const res of settled) {
         if (res.status === 'fulfilled' && Array.isArray(res.value)) {
-            allStreams.push(...res.value);
+            rawStreams.push(...res.value);
         }
     }
 
-    // Filtrar por idiomas seleccionados (si la lista filtrada queda vacía, devolver todos como respaldo)
-    const langFiltered = allStreams.filter(s => !s._lang || cfg.langs.has(s._lang));
+    // Deduplicar torrents P2P por infoHash (conservando el primer proveedor dedicado que lo aportó: Cinecalidad, LaMovie P2P, PirateBay, YTS, Nyaa)
+    const seenHashes = new Set();
+    let allStreams = [];
+    for (const s of rawStreams) {
+        if (s.infoHash) {
+            const hKey = (meta.type === 'movie' || !s.fileIdx)
+                ? s.infoHash.toLowerCase()
+                : `${s.infoHash.toLowerCase()}:${s.fileIdx}`;
+            if (seenHashes.has(hKey)) continue;
+            seenHashes.add(hKey);
+        }
+        allStreams.push(s);
+    }
+
+    // Filtrar por idiomas seleccionados, pero NUNCA ocultar los scrapers P2P dedicados (YTS, PirateBay, Nyaa) si el usuario los dejó activos
+    const dedicatedP2p = new Set(['cinecalidad', 'lamovie_p2p', 'tpb', 'yts', 'nyaa']);
+    const langFiltered = allStreams.filter(s => !s._lang || cfg.langs.has(s._lang) || dedicatedP2p.has(s._prov));
     if (langFiltered.length > 0) {
         allStreams = langFiltered;
     }
 
-    // Asignar índice de aparición por proveedor e idioma para que Torrentio (25 enlaces)
-    // no oculte al final los enlaces de Cinecalidad, LaMovie P2P, PirateBay, YTS o Nyaa
-    const provLangCounts = new Map();
-    for (const s of allStreams) {
-        if (!s.url && s._prov) {
-            const pk = `${s._prov}|${s._lang || 'sub'}`;
-            const idx = provLangCounts.get(pk) || 0;
-            s._provRank = idx;
-            provLangCounts.set(pk, idx + 1);
-        }
-    }
-
     // Ordenar streams:
     // 1° HLS/Directos agrupados por prioridad de idioma (Latino > Castellano > Multi > Sub)
-    // 2° Torrents P2P agrupados por prioridad de idioma, mostrando primero el Top 3 de cada proveedor (Cinecalidad, LaMovie P2P, PirateBay, YTS, Nyaa, Torrentio) y luego el resto por seeders
+    // 2° Torrents P2P en Español Latino / Castellano / Multi-Audio
+    // 3° Torrents P2P de proveedores dedicados (Cinecalidad, LaMovie P2P, PirateBay, YTS, Nyaa) seguidos por Torrentio Multi-Indexer
     const langRank = { latino: 40, castellano: 30, multi: 20, sub: 10 };
+    const provPriority = {
+        cinecalidad: 1,
+        lamovie_p2p: 2,
+        tpb: 3,
+        yts: 4,
+        nyaa: 5,
+        torrentio: 6
+    };
+
     allStreams.sort((a, b) => {
         const aIsHls = Boolean(a.url) ? 1 : 0;
         const bIsHls = Boolean(b.url) ? 1 : 0;
@@ -2069,13 +2170,23 @@ export async function getStremioStreams(type, rawId, configStr = '') {
 
         const aLangScore = langRank[a._lang] || 0;
         const bLangScore = langRank[b._lang] || 0;
-        if (bLangScore !== aLangScore) return bLangScore - aLangScore;
 
-        if (!aIsHls && !bIsHls) {
-            const aTop = (a._provRank ?? 99) < 3 ? 1 : 0;
-            const bTop = (b._provRank ?? 99) < 3 ? 1 : 0;
-            if (bTop !== aTop) return bTop - aTop;
+        if (aIsHls && bIsHls) {
+            return bLangScore - aLangScore;
         }
+
+        // En P2P: Español/Multi siempre arriba; luego agrupar proveedores dedicados (PirateBay, YTS, Nyaa) antes del resto de Torrentio
+        const aIsSpanishOrMulti = aLangScore >= 20 ? 1 : 0;
+        const bIsSpanishOrMulti = bLangScore >= 20 ? 1 : 0;
+        if (bIsSpanishOrMulti !== aIsSpanishOrMulti) return bIsSpanishOrMulti - aIsSpanishOrMulti;
+
+        if (aIsSpanishOrMulti && bIsSpanishOrMulti && bLangScore !== aLangScore) {
+            return bLangScore - aLangScore;
+        }
+
+        const aProvOrder = provPriority[a._prov] || 99;
+        const bProvOrder = provPriority[b._prov] || 99;
+        if (aProvOrder !== bProvOrder) return aProvOrder - bProvOrder;
 
         return (b._seeders || 0) - (a._seeders || 0);
     });
