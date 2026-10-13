@@ -2515,7 +2515,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (id.includes('hacktorrent')) return 'fas fa-bolt text-danger';
         if (id.includes('pelisplus') || id.includes('pelispedia') || id.includes('pelisforte')) return 'fas fa-compact-disc text-success';
         if (id.includes('latanime')) return 'fas fa-dragon text-warning';
-        if (id.includes('tioanime') || id.includes('anime')) return 'fas fa-dragon text-danger';
+        if (id.includes('animeflv')) return 'fas fa-tv text-warning';
+        if (id.includes('tioanime') || id.includes('anime') || id.includes('jkanime')) return 'fas fa-dragon text-danger';
         return 'fas fa-play text-success';
     };
 
@@ -2756,6 +2757,8 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 'serieskao', name: 'SeriesKao', type: 'mixed' },
             { id: 'pelisplus', name: 'PelisPlus HD', type: 'mixed' },
             { id: 'latanime', name: 'LatAnime', type: 'mixed' },
+            { id: 'animeflv', name: 'AnimeFLV', type: 'mixed' },
+            { id: 'jkanime', name: 'JKAnime', type: 'streaming' },
             { id: 'torrentio', name: 'Torrentio (TorrentGalaxy / Nyaa / 1337x / Multi-Audio)', type: 'torrent' },
             { id: 'cuevana', name: 'Cuevana', type: 'streaming' },
             { id: 'poseidonhd', name: 'PoseidonHD', type: 'streaming' },
@@ -2773,7 +2776,7 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 'nyaa', name: 'Nyaa (Anime Torrents)', type: 'torrent' }
         ];
 
-        const providers = isAnimeContent ? rawProviders : rawProviders.filter(p => p.id !== 'anime' && p.id !== 'tioanime' && p.id !== 'latanime' && p.id !== 'nyaa');
+        const providers = isAnimeContent ? rawProviders : rawProviders.filter(p => p.id !== 'anime' && p.id !== 'jkanime' && p.id !== 'animeflv' && p.id !== 'tioanime' && p.id !== 'latanime' && p.id !== 'nyaa');
 
         const totalProviders = providers.length;
         let completedProviders = 0;
@@ -3121,7 +3124,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Ordenar proveedores por prioridad y velocidad esperada
         const priorityOrder = [
-            'local_cdn', 'lamovie', 'serieskao', 'pelisplus', 'latanime', 'torrentio',
+            'local_cdn', 'lamovie', 'serieskao', 'pelisplus', 'latanime', 'animeflv', 'jkanime', 'torrentio',
             'cuevana', 'poseidonhd', 'cinecalidad', 'pelispedia', 'pelisforte',
             'allpeliculas', 'hacktorrent', 'gnula', 'anime', 'tioanime',
             'thepiratebay', 'yts', 'nyaa', 'retrotve'

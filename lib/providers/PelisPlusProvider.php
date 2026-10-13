@@ -185,7 +185,7 @@ class PelisPlusProvider implements ProviderInterface
                 if (strpos($player_url, '//') === 0) $player_url = 'https:' . $player_url;
                 if (strpos($player_url, 'http') !== 0) continue;
 
-                $lang = $srv[2] ?: 'Español Latino';
+                $lang = $this->formatLanguage($srv[2] ?? 'LAT');
                 $results[] = [
                     'provider' => $this->getId(),
                     'provider_name' => 'PelisPlus',
@@ -199,6 +199,15 @@ class PelisPlusProvider implements ProviderInterface
                 ];
             }
         }
+    }
+
+    private function formatLanguage(string $raw): string
+    {
+        $r = mb_strtoupper(trim($raw), 'UTF-8');
+        if ($r === 'JAP' || $r === '3' || strpos($r, 'JAP') !== false) return 'Japonés (Sub)';
+        if ($r === 'SUB' || $r === '2' || $r === 'VOSE' || strpos($r, 'SUB') !== false || strpos($r, 'VOSE') !== false || strpos($r, 'ING') !== false || strpos($r, 'ENG') !== false || strpos($r, 'ORIG') !== false) return 'Subtitulado';
+        if ($r === 'ESP' || $r === '1' || strpos($r, 'CAST') !== false) return 'Español Castellano';
+        return 'Español Latino';
     }
 
     private function solveEmbed69PoWAndExtract(string $html, string $item_title, array &$links): void
@@ -231,11 +240,7 @@ class PelisPlusProvider implements ProviderInterface
         if (!is_array($dataLink)) return;
 
         foreach ($dataLink as $group) {
-            $raw_lang = strtoupper(trim($group['video_language'] ?? 'LAT'));
-            $language = 'Español Latino';
-            if ($raw_lang === 'ESP' || $raw_lang === '1') $language = 'Español Castellano';
-            elseif ($raw_lang === 'SUB' || $raw_lang === '2' || $raw_lang === 'VOSE') $language = 'Subtitulado';
-            elseif ($raw_lang === 'JAP' || $raw_lang === '3') $language = 'Japonés (Sub)';
+            $language = $this->formatLanguage($group['video_language'] ?? 'LAT');
 
             foreach ($group['sortedEmbeds'] ?? [] as $emb) {
                 $decrypted_url = $this->decryptAesCbc($emb['link'] ?? '', $aesKey);

@@ -375,11 +375,11 @@ class SeriesKaoProvider implements ProviderInterface
 
     private function formatLanguage(string $raw): string
     {
-        $r = strtoupper(trim($raw));
-        if ($r === 'LAT' || $r === '0') return 'Español Latino';
-        if ($r === 'ESP' || $r === '1') return 'Español Castellano';
-        if ($r === 'SUB' || $r === '2' || $r === 'VOSE') return 'Subtitulado';
-        if ($r === 'JAP' || $r === '3') return 'Japonés (Sub)';
+        $r = mb_strtoupper(trim($raw), 'UTF-8');
+        if ($r === 'JAP' || $r === '3' || strpos($r, 'JAP') !== false) return 'Japonés (Sub)';
+        if ($r === 'SUB' || $r === '2' || $r === 'VOSE' || strpos($r, 'SUB') !== false || strpos($r, 'VOSE') !== false || strpos($r, 'ING') !== false || strpos($r, 'ENG') !== false || strpos($r, 'ORIG') !== false) return 'Subtitulado';
+        if ($r === 'ESP' || $r === '1' || strpos($r, 'CAST') !== false) return 'Español Castellano';
+        if ($r === 'LAT' || $r === '0' || strpos($r, 'LAT') !== false) return 'Español Latino';
         return 'Español Latino';
     }
 

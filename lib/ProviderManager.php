@@ -8,6 +8,8 @@ require_once __DIR__ . '/providers/DonTorrentProvider.php';
 require_once __DIR__ . '/providers/AnimeProvider.php';
 require_once __DIR__ . '/providers/TioAnimeProvider.php';
 require_once __DIR__ . '/providers/LatAnimeProvider.php';
+require_once __DIR__ . '/providers/AnimeFLVProvider.php';
+require_once __DIR__ . '/providers/JKAnimeProvider.php';
 require_once __DIR__ . '/providers/PelisForteProvider.php';
 require_once __DIR__ . '/providers/PelisPediaProvider.php';
 require_once __DIR__ . '/providers/LaMovieProvider.php';
@@ -41,6 +43,8 @@ class ProviderManager
             new SeriesKaoProvider(),
             new PelisPlusProvider(),
             new LatAnimeProvider(),
+            new AnimeFLVProvider(),
+            new JKAnimeProvider(),
             new CuevanaProvider(),
             new PoseidonHDProvider(),
             new PelisPediaProvider(),
@@ -53,7 +57,6 @@ class ProviderManager
             new HackTorrentProvider(),
             new YTSProvider(),
             new PirateBayProvider(),
-            new AnimeProvider(),
             new TioAnimeProvider(),
             new NyaaProvider(),
             new EliteTorrentProvider(),
@@ -79,6 +82,9 @@ class ProviderManager
                 return $provider;
             }
         }
+        if ($id === 'anime') {
+            return $this->getProvider('jkanime');
+        }
         return null;
     }
 
@@ -88,7 +94,7 @@ class ProviderManager
     public function checkAvailability(string $title, string $type, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null, bool $is_anime = true): bool
     {
         if (connection_aborted()) exit;
-        $anime_providers = ['anime', 'tioanime', 'latanime', 'nyaa'];
+        $anime_providers = ['anime', 'tioanime', 'latanime', 'animeflv', 'jkanime', 'nyaa'];
 
         foreach ($this->providers as $provider) {
             if (!$provider->isEnabled()) continue;
@@ -131,7 +137,7 @@ class ProviderManager
         ];
 
         $titles = array_filter(array_unique([$title, $original_title]));
-        $anime_providers = ['anime', 'tioanime', 'latanime', 'nyaa'];
+        $anime_providers = ['anime', 'tioanime', 'latanime', 'animeflv', 'jkanime', 'nyaa'];
 
         foreach ($this->providers as $provider) {
             if (connection_aborted()) exit;
@@ -192,7 +198,7 @@ class ProviderManager
         ];
 
         $titles = array_filter(array_unique([$title, $original_title]));
-        $anime_providers = ['anime', 'tioanime', 'latanime', 'nyaa'];
+        $anime_providers = ['anime', 'tioanime', 'latanime', 'animeflv', 'jkanime', 'nyaa'];
 
         foreach ($this->providers as $provider) {
             if (connection_aborted()) exit;
@@ -246,7 +252,7 @@ class ProviderManager
     public function getEnabledProvidersList(bool $is_anime = true): array
     {
         $list = [];
-        $anime_providers = ['anime', 'tioanime', 'latanime', 'nyaa'];
+        $anime_providers = ['anime', 'tioanime', 'latanime', 'animeflv', 'jkanime', 'nyaa'];
         foreach ($this->providers as $provider) {
             if (!$is_anime && in_array($provider->getId(), $anime_providers, true)) {
                 continue;
@@ -273,7 +279,7 @@ class ProviderManager
             'torrent' => []
         ];
 
-        $anime_providers = ['anime', 'tioanime', 'latanime', 'nyaa'];
+        $anime_providers = ['anime', 'tioanime', 'latanime', 'animeflv', 'jkanime', 'nyaa'];
         if (!$is_anime && in_array($provider_id, $anime_providers, true)) {
             return $consolidated;
         }
@@ -336,7 +342,7 @@ class ProviderManager
             'torrent' => []
         ];
 
-        $anime_providers = ['anime', 'tioanime', 'latanime', 'nyaa'];
+        $anime_providers = ['anime', 'tioanime', 'latanime', 'animeflv', 'jkanime', 'nyaa'];
         if (!$is_anime && in_array($provider_id, $anime_providers, true)) {
             return $consolidated;
         }

@@ -89,6 +89,14 @@ $PROVIDERS_CONFIG = [
         'enabled' => true,
         'name' => 'RetroTVE (Clásicos y Series Retro)'
     ],
+    'animeflv' => [
+        'enabled' => true,
+        'name' => 'AnimeFLV (Anime Latino y Subtitulado HD)'
+    ],
+    'jkanime' => [
+        'enabled' => true,
+        'name' => 'JKAnime (Anime en Español Latino y Subtitulado HD)'
+    ],
     'anime' => [
         'enabled' => true,
         'name' => 'JKAnime (Anime en Streaming)'

@@ -254,7 +254,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                         <h6 class="modal-title fw-bold d-flex align-items-center gap-2 mb-0" id="stremioAddonModalLabel">
                             <i class="fas fa-puzzle-piece" style="color: #c77dff;"></i>
                             Configurador de Addon para Stremio
-                            <span class="badge rounded-pill" style="background-color: #7b2cbf; font-size: 0.68rem;">v2.4 Cloud</span>
+                            <span class="badge rounded-pill" style="background-color: #7b2cbf; font-size: 0.68rem;">v2.5 Cloud</span>
                         </h6>
                         <div class="text-secondary" style="font-size: 0.73rem;">
                             Elige los scrapers e idiomas que deseas agregar a tu Stremio (PC, Android y Android TV)
@@ -315,23 +315,23 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                                 <i class="fas fa-play-circle"></i> 2. Scrapers de Streaming Directo (.m3u8 / .mp4):
                             </label>
                             <div class="btn-group btn-group-sm">
-                                <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="toggleStremioGroup('.stremio-prov-chk', true)">Todos</button>
-                                <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="toggleStremioGroup('.stremio-prov-chk', false)">Ninguno</button>
+                                <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="toggleStremioGroup('.stremio-prov-hls', true)">Todos</button>
+                                <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="toggleStremioGroup('.stremio-prov-hls', false)">Ninguno</button>
                             </div>
                         </div>
                         <div class="row g-2">
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="lamovie" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="lamovie" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">⚡ LaMovie / AllCalidad</div>
-                                        <div class="text-secondary" style="font-size:0.68rem;">Películas, Series y Anime (Vimeos HLS)</div>
+                                        <div class="text-secondary" style="font-size:0.68rem;">Películas, Series y Anime (Vimeos/Voe HLS)</div>
                                     </div>
                                 </label>
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="latanime" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="latanime" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🐉 LatAnime</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Anime en Español Latino y Castellano</div>
@@ -340,7 +340,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="jkanime" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="jkanime" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🎌 JKAnime</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Anime Latino y Subtitulado (HLS Directo)</div>
@@ -349,7 +349,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="animeflv" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="animeflv" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">⛩️ AnimeFLV</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Anime Latino/Sub — Catálogo más grande</div>
@@ -358,7 +358,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="serieskao" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="serieskao" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🎬 SeriesKao</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Películas, Series y Anime (Embed69)</div>
@@ -367,7 +367,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="pelisplus" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="pelisplus" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🍿 PelisPlusHD</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Catálogo Latino, Series y Anime</div>
@@ -376,7 +376,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="cuevana" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="cuevana" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">📺 Cuevana 3</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Multi-Servidor HLS Directo</div>
@@ -385,7 +385,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="poseidonhd" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="poseidonhd" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🔱 PoseidonHD</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Películas y Series en Español</div>
@@ -394,7 +394,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="local_cdn" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="local_cdn" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">☁️ CDN Propio</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Rakun Cloud Directo (.mp4/.mkv)</div>
@@ -406,13 +406,19 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
 
                     <!-- 3. Scrapers de Torrents P2P (Descargados por Stremio) -->
                     <div class="mb-3">
-                        <label class="form-label fw-bold text-success small mb-2 d-flex align-items-center gap-1">
-                            <i class="fas fa-magnet"></i> 3. Scrapers de Torrents P2P (Descarga directa nativa en Stremio):
-                        </label>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label fw-bold text-success small mb-0 d-flex align-items-center gap-1">
+                                <i class="fas fa-magnet"></i> 3. Scrapers de Torrents P2P (Descarga directa nativa en Stremio):
+                            </label>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="toggleStremioGroup('.stremio-prov-p2p', true)">Todos</button>
+                                <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.7rem;" onclick="toggleStremioGroup('.stremio-prov-p2p', false)">Ninguno</button>
+                            </div>
+                        </div>
                         <div class="row g-2">
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="torrentio" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-p2p" value="torrentio" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🇲🇽 Torrentio Latino+</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">15 Indexers + Detector Multi-Audio</div>
@@ -421,7 +427,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="cinecalidad" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-p2p" value="cinecalidad" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🎞️ Cinecalidad</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Películas Dual Latino 1080p / 4K</div>
@@ -430,7 +436,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="tpb" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-p2p" value="tpb" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🏴‍☠️ ThePirateBay</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Películas y Series P2P</div>
@@ -439,7 +445,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="yts" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-p2p" value="yts" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">🎥 YTS Oficial</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Películas 1080p / 4K ligeras</div>
@@ -448,7 +454,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                             </div>
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
-                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk" value="nyaa" checked>
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-p2p" value="nyaa" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">⛩️ Nyaa.si</div>
                                         <div class="text-secondary" style="font-size:0.68rem;">Anime P2P 1080p Multi/Sub</div>
@@ -495,10 +501,10 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
     <script>
     (function() {
         const RENDER_BASE = <?= json_encode($stremio_addon_base_url) ?>;
-        const ALL_PROV_COUNT = 14;
-        const ALL_LANG_COUNT = 4;
 
         function updateStremioAddonLinks() {
+            const allProvBoxes = document.querySelectorAll('.stremio-prov-chk');
+            const allLangBoxes = document.querySelectorAll('.stremio-lang-chk');
             const provChks = Array.from(document.querySelectorAll('.stremio-prov-chk:checked')).map(c => c.value);
             const langChks = Array.from(document.querySelectorAll('.stremio-lang-chk:checked')).map(c => c.value);
 
@@ -506,7 +512,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
             const selectedLangs = langChks.length > 0 ? langChks : ['latino', 'castellano', 'multi', 'sub'];
 
             let configSlug = 'default';
-            if (selectedProvs.length < ALL_PROV_COUNT || selectedLangs.length < ALL_LANG_COUNT) {
+            if (selectedProvs.length < allProvBoxes.length || selectedLangs.length < allLangBoxes.length) {
                 configSlug = 'p-' + selectedProvs.join('.') + '_l-' + selectedLangs.join('.');
             }
 

@@ -307,8 +307,10 @@ class NyaaProvider implements ProviderInterface
 
     private function analyzeLanguage(string $title): array
     {
+        $cleaned = function_exists('strip_subtitle_mentions') ? strip_subtitle_mentions($title) : $title;
+
         // 1. Detectar grupos y etiquetas francesas donde "MULTi" = Francés + Japonés (NO incluye Español)
-        if (function_exists('is_french_release') && is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx)\b/i', $title)) {
+        if (function_exists('is_french_release') && is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx)\b/i', $cleaned)) {
             $is_vf = (bool)preg_match('/\b(multi|vf|vff|vfi|french|truefrench)\b/i', $title);
             return [
                 'language' => $is_vf ? '🇫🇷 Audio Francés / Japonés (VF)' : '🇫🇷 Sub Francés (VOSTFR)',
@@ -318,11 +320,11 @@ class NyaaProvider implements ProviderInterface
             ];
         }
 
-        $is_multi_audio = (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub|cr[\s\.\-_]*web-?dl[\s\.\-_]*multi)\b/i', $title);
-        $is_dual_audio = (bool)preg_match('/\b(dual[\s\.\-_]*audio|cr[\s\.\-_]*web-?dl[\s\.\-_]*dual|\bdual\b)\b/i', $title);
+        $is_multi_audio = (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub|cr[\s\.\-_]*web-?dl[\s\.\-_]*multi|multi[\s\.\-_]+(?:\d{3,4}p[\s\.\-_]+)?cr[\s\.\-_]*web-?dl)\b/i', $cleaned);
+        $is_dual_audio = (bool)preg_match('/\b(dual[\s\.\-_]*audio|cr[\s\.\-_]*web-?dl[\s\.\-_]*dual|\bdual\b)\b/i', $cleaned);
         $is_multi_subs = (bool)preg_match('/\b(multi[\s\.\-_]*subs?|multisub)\b/i', $title);
-        $is_sub_esp = (bool)preg_match('/\b(sub[\s\.\-_]*(?:esp|español|espanol|lat|latino)|español[\s\.\-_]*sub)\b/i', $title);
-        $explicit_latino = (bool)preg_match('/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|latam|dual[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b/i', $title);
+        $is_sub_esp = (bool)preg_match('/\b(sub(?:s|titulos?|titulado|titles?)?[\s\.\-_]*(?:en[\s\.\-_]*)?(?:esp(?:añol|anol)?[\s\.\-_]*)?(?:lat(?:ino|am)?|es|spa)?|(?:español|espanol|latino|spa)[\s\.\-_]*sub(?:s|titulos?)?)\b/iu', $title);
+        $explicit_latino = (bool)preg_match('/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|latam|dual[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b/i', $cleaned);
 
         // CASO 1: Audio Español Latino confirmado (ej: VARYG CR WEB-DL MULTi Multi-Audio, o release explícito Latino)
         if ($explicit_latino || $is_multi_audio) {

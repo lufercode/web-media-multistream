@@ -358,10 +358,23 @@ function is_french_release(string $title): bool {
 }
 
 /**
+ * Elimina menciones explícitas de SUBTÍTULOS (ej: "Sub Español Latino", "Sub Latino", "Multi-Subs")
+ * de un título antes de evaluar si tiene AUDIO doblado en Español Latino o Castellano.
+ */
+function strip_subtitle_mentions(string $text): string {
+    return (string)preg_replace(
+        '/\b(?:multi[\s\.\-_]*subs?|multisub|sub(?:s|titulos?|titulado|titles?)?[\s\.\-_]*(?:en[\s\.\-_]*)?(?:esp(?:añol|anol)?[\s\.\-_]*)?(?:lat(?:ino|am)?|es[\s\.\-_]*mx|es[\s\.\-_]*419|cast(?:ellano)?)|(?:lat(?:ino|am)?|esp(?:añol|anol)?|spanish|cast(?:ellano)?|spa)[\s\.\-_]*sub(?:s|titulos?|titulado|titles?)?|sub(?:s|titulos?|titulado|titles?)?[\s\.\-_]*(?:esp(?:añol|anol)?|spa|es|eng|ing))\b/iu',
+        ' ',
+        $text
+    );
+}
+
+/**
  * Detecta si un título o release de torrent contiene explícitamente pistas de AUDIO Español Latino.
  */
 function is_latino_audio(string $title): bool {
-    if (is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b/i', $title)) {
+    $cleaned = strip_subtitle_mentions($title);
+    if (is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b/i', $cleaned)) {
         return false;
     }
     $patterns = [
@@ -371,10 +384,10 @@ function is_latino_audio(string $title): bool {
         '/\bspanish[\s\.\-_]*(?:latino|latin)\b/i',
         '/(?:[\.\[_\-\s]|^)lat(?:[\.\]_\-\s]|$)/i',
         '/\bmulti[\s\.\-_]*audio\b/i',
-        '/\bcr[\s\.\-_]*web-?dl[\s\.\-_]*multi\b/i',
+        '/\b(?:cr[\s\.\-_]*web-?dl[\s\.\-_]*multi|multi[\s\.\-_]+(?:\d{3,4}p[\s\.\-_]+)?cr[\s\.\-_]*web-?dl)\b/i',
     ];
     foreach ($patterns as $p) {
-        if (preg_match($p, $title)) {
+        if (preg_match($p, $cleaned)) {
             return true;
         }
     }
@@ -385,20 +398,22 @@ function is_latino_audio(string $title): bool {
  * Detecta el idioma formal de un release para mostrar en la interfaz sin falsos positivos.
  */
 function detect_release_language(string $title): string {
+    $cleaned = strip_subtitle_mentions($title);
+
     // 1. Filtrar primero releases franceses (donde MULTi = Francés + Japonés/Original)
-    if (is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx)\b/i', $title)) {
+    if (is_french_release($title) && !preg_match('/\b(latino|latam|es[\s\.\-_]*mx)\b/i', $cleaned)) {
         if (preg_match('/\b(multi|vf|vff|vfi|french|truefrench)\b/i', $title)) {
             return '🇫🇷 Audio Francés / VO (VF)';
         }
         return '🇫🇷 Sub Francés (VOSTFR)';
     }
 
-    $is_multi_audio = (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub|cr[\s\.\-_]*web-?dl[\s\.\-_]*multi)\b/i', $title);
-    $is_dual_audio = (bool)preg_match('/\b(dual[\s\.\-_]*audio|dual|audio[\s\.\-_]*dual)\b/i', $title);
+    $is_multi_audio = (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub|cr[\s\.\-_]*web-?dl[\s\.\-_]*multi|multi[\s\.\-_]+(?:\d{3,4}p[\s\.\-_]+)?cr[\s\.\-_]*web-?dl)\b/i', $cleaned);
+    $is_dual_audio = (bool)preg_match('/\b(dual[\s\.\-_]*audio|dual|audio[\s\.\-_]*dual)\b/i', $cleaned);
     $is_multi_subs = (bool)preg_match('/\b(multi[\s\.\-_]*subs?|multisub)\b/i', $title);
-    $is_sub_esp = (bool)preg_match('/\b(sub[\s\.\-_]*(?:esp|español|espanol|lat|latino)|español[\s\.\-_]*sub)\b/i', $title);
+    $is_sub_esp = (bool)preg_match('/\b(sub(?:s|titulos?|titulado|titles?)?[\s\.\-_]*(?:en[\s\.\-_]*)?(?:esp(?:añol|anol)?[\s\.\-_]*)?(?:lat(?:ino|am)?|es|spa)?|(?:español|espanol|latino|spa)[\s\.\-_]*sub(?:s|titulos?)?)\b/iu', $title);
 
-    $explicit_latino = (bool)preg_match('/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|latam|dual[\s\.\-_]*lat(?:ino)?|esp?[\s\.\-_]*(?:mx|la|419)|spa[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b|(?:[\.\[_\-\s]|^)lat(?:[\.\]_\-\s]|$)/i', $title);
+    $explicit_latino = (bool)preg_match('/\b(latino|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|latam|dual[\s\.\-_]*lat(?:ino)?|esp?[\s\.\-_]*(?:mx|la|419)|spa[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419)\b|(?:[\.\[_\-\s]|^)lat(?:[\.\]_\-\s]|$)/i', $cleaned);
 
     if ($explicit_latino) {
         if ($is_multi_audio) {
@@ -414,26 +429,29 @@ function detect_release_language(string $title): string {
         return '🇲🇽 Audio Español Latino (Multi Audio)';
     }
 
-    if (preg_match('/\b(castellano|español|espanol|spa)\b/i', $title) && !$is_sub_esp) {
+    if (preg_match('/\b(castellano|español|espanol|spa)\b/i', $cleaned) && !$is_sub_esp) {
         if ($is_dual_audio) {
             return '🇪🇸 Español Castellano (Dual)';
         }
         return '🇪🇸 Español Castellano';
     }
 
+    $is_japanese = (bool)preg_match('/\b(jap|japanese|jpn|nyaa|crunchyroll|cr[\s\.\-_]*web-?dl|subsplease|erai[\s\.\-_]*raws|toonshub)\b/i', $title);
+    $orig_flag = $is_japanese ? '🇯🇵' : '🇺🇸';
+
     if ($is_dual_audio) {
-        if ($is_multi_subs || preg_match('/\bcr[\s\.\-_]*web-?dl\b/i', $title)) {
-            return '🇬🇧/🇯🇵 Dual Audio (Ing/Jap) + 🇲🇽 Sub Latino';
+        if ($is_multi_subs || $is_sub_esp || preg_match('/\bcr[\s\.\-_]*web-?dl\b/i', $title)) {
+            return $is_japanese ? '🇬🇧/🇯🇵 Dual Audio (Ing/Jap) + 🇲🇽 Sub Latino' : '🇺🇸 Dual Audio (Original) + 🇲🇽 Sub Latino';
         }
-        return '🇬🇧/🇯🇵 Dual Audio (Inglés / Original)';
+        return $is_japanese ? '🇬🇧/🇯🇵 Dual Audio (Inglés / Japonés)' : '🇬🇧 Dual Audio (Inglés / Original)';
     }
 
     if ($is_sub_esp) {
-        return '🇯🇵 Audio Original + 🇲🇽 Sub Español';
+        return "{$orig_flag} Audio Original + 🇲🇽 Sub Español";
     }
 
     if ($is_multi_subs) {
-        return '🇯🇵 Audio Original + 🇲🇽 Multi-Subs';
+        return "{$orig_flag} Audio Original + 🇲🇽 Multi-Subs";
     }
 
     if (preg_match('/\b(subtitulado|sub|subs|subbed|vose|vost)\b/i', $title)) {
