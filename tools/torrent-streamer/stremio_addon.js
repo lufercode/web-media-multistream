@@ -302,8 +302,10 @@ async function resolveEmbedToHls(embedUrl, customReferer = '') {
         // 1. Vimeos / StreamWish / VidHide / Goodstream / Fastream
         if (/(?:vimeos|streamwish|hlswish|sfastwish|wishfast|strwish|swhoi|wishembed|embedwish|hglink|dwish|awish|mwish|flaswish|obeywish|cdnwish|asnwish|luluvdoo|vide0|vidhide|vidhidevip|vidguard|filelions|streamhide|morencius|kinotv|dramiyos|earnvids|smoothpre|dhtpre|peytonepre|ryderjet|goodstream|fastream)/i.test(lower)) {
             let targetUrl = embedUrl;
+            let effectiveHost = host;
             let referer = customReferer || `${host}/`;
             const isVidHide = /(?:vidhide|vidhidevip|vidguard|filelions|streamhide|morencius|kinotv|dramiyos|earnvids|smoothpre|dhtpre|peytonepre)/i.test(lower);
+            const isStreamWish = /(?:streamwish|hlswish|sfastwish|wishfast|strwish|swhoi|wishembed|embedwish|hglink|dwish|awish|mwish|flaswish|obeywish|cdnwish|asnwish)/i.test(lower);
 
             if (lower.includes('vimeos')) {
                 const vm = embedUrl.match(/(?:embed-|\/d\/|\/e\/|\/)([a-zA-Z0-9]{8,20})(?:_[a-z])?(?:\.html)?/i);
@@ -318,6 +320,18 @@ async function resolveEmbedToHls(embedUrl, customReferer = '') {
                 }
                 if (id) targetUrl = `${host}/v/${id}`;
                 referer = targetUrl;
+            } else if (isStreamWish) {
+                const segs = parsed.pathname.split('/').filter(Boolean);
+                let id = segs[segs.length - 1]?.replace(/\.html$/i, '');
+                if (!id || id.length < 5 || ['embed', 'v', 'd', 'e', 'f'].includes(id.toLowerCase())) {
+                    const mId = embedUrl.match(/(?:embed-|embed\/|v\/|d\/|e\/|f\/)([a-zA-Z0-9]+)/i);
+                    if (mId) id = mId[1];
+                }
+                if (id) {
+                    effectiveHost = 'https://sfastwish.com';
+                    targetUrl = `${effectiveHost}/e/${id}`;
+                    referer = `${effectiveHost}/`;
+                }
             } else if (!lower.includes('/e/') && !lower.includes('embed-')) {
                 const segs = parsed.pathname.split('/').filter(Boolean);
                 const id = segs[segs.length - 1];
@@ -333,7 +347,7 @@ async function resolveEmbedToHls(embedUrl, customReferer = '') {
 
             const directM3u8 = html.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
             if (directM3u8) {
-                return { url: directM3u8[1], referer: `${host}/` };
+                return { url: directM3u8[1], referer: `${effectiveHost}/` };
             }
 
             const packedBlocks = html.match(/eval\(function\(p,a,c,k,e,[rd]\).*?\.split\(['"]\|['"]\)\)\)/gs) || [];
@@ -341,11 +355,11 @@ async function resolveEmbedToHls(embedUrl, customReferer = '') {
                 const unpacked = unpackDeanEdwards(block);
                 const m3 = unpacked.match(/(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/i);
                 if (m3) {
-                    return { url: m3[1], referer: `${host}/` };
+                    return { url: m3[1], referer: `${effectiveHost}/` };
                 }
                 const relM3 = unpacked.match(/["'](\/stream\/[^"']+\.m3u8[^"']*)["']/i);
                 if (relM3) {
-                    return { url: `${host}${relM3[1]}`, referer: `${host}/` };
+                    return { url: `${effectiveHost}${relM3[1]}`, referer: `${effectiveHost}/` };
                 }
             }
         }
@@ -623,8 +637,15 @@ async function scrapeLaMovie(meta) {
             for (const emb of embeds) {
                 if (!emb.url || !emb.url.startsWith('http') || emb.url.includes('videoapp.zip')) continue;
                 const langInfo = classifyStreamingLangTag(emb.lang || fallbackRawLang, meta.isAnime);
+                let srvName = 'HLS';
+                if (/vimeos/i.test(emb.url)) srvName = 'Vimeos';
+                else if (/goodstream/i.test(emb.url)) srvName = 'Goodstream';
+                else if (/wish/i.test(emb.url)) srvName = 'StreamWish';
+                else if (/voe/i.test(emb.url)) srvName = 'Voe';
+                else if (/vidhide|filelions/i.test(emb.url)) srvName = 'VidHide';
                 candidateEmbeds.push({
                     url: emb.url,
+                    server: srvName,
                     langKey: langInfo.langKey,
                     flag: langInfo.flag,
                     langBadge: langInfo.langBadge,
@@ -632,18 +653,27 @@ async function scrapeLaMovie(meta) {
                 });
             }
 
-            // Si LaMovie incluye torrents en downloads, agregarlos también
+            // Si LaMovie incluye torrents en downloads, inspeccionar también el nombre dentro del magnet y la calidad (ej. "Dual 1080p" / "1080P-Dual-Lat")
             for (const dl of (playerData?.data?.downloads || [])) {
-                const magM = String(dl.url || '').match(/magnet:\?xt=urn:btih:([a-fA-F0-9]{40})/i);
+                const rawDlUrl = String(dl.url || '');
+                const magM = rawDlUrl.match(/magnet:\?xt=urn:btih:([a-fA-F0-9]{40})/i);
                 if (magM) {
-                    const langInfo = classifyStreamingLangTag(dl.lang || fallbackRawLang, meta.isAnime);
+                    let decMag = rawDlUrl;
+                    try { decMag = decodeURIComponent(rawDlUrl); } catch (e) {}
+                    const torrentCheck = classifyTorrentLanguage(`${decMag} ${dl.quality || ''}`, meta.isAnime);
+                    const langInfo = (torrentCheck.langKey === 'latino' || torrentCheck.langKey === 'castellano')
+                        ? { langKey: torrentCheck.langKey, flag: torrentCheck.flag, langBadge: torrentCheck.badge }
+                        : classifyStreamingLangTag(dl.lang || fallbackRawLang, meta.isAnime);
+                    const dnMatch = decMag.match(/[?&]dn=([^&]+)/i);
+                    const releaseName = dnMatch ? dnMatch[1].replace(/\+/g, ' ') : labelTitle;
                     streams.push({
                         name: `${langInfo.flag} LaMovie P2P\n${dl.quality || '1080p'}`,
-                        title: `${labelTitle}\n${langInfo.langBadge} • ⚙️ LaMovie Torrent`,
+                        title: `${releaseName}\n${langInfo.langBadge} • ⚙️ LaMovie Torrent`,
                         infoHash: magM[1].toLowerCase(),
                         sources: STREMIO_TRACKER_SOURCES,
                         _lang: langInfo.langKey,
-                        _seeders: 35
+                        _prov: 'lamovie_p2p',
+                        _seeders: 45
                     });
                 }
             }
@@ -676,6 +706,7 @@ async function scrapeLaMovie(meta) {
                 const langInfo = classifyStreamingLangTag(item.lang || 'Latino', meta.isAnime);
                 candidateEmbeds.push({
                     url: `https://vimeos.net/embed-${code}.html`,
+                    server: 'Vimeos',
                     langKey: langInfo.langKey,
                     flag: langInfo.flag,
                     langBadge: langInfo.langBadge,
@@ -685,13 +716,13 @@ async function scrapeLaMovie(meta) {
         }
     }
 
-    const resolvable = candidateEmbeds.filter(e => /(?:vimeos|streamwish|hlswish|wish|voe|vidhide|goodstream)/i.test(e.url)).slice(0, 4);
+    const resolvable = candidateEmbeds.filter(e => /(?:vimeos|streamwish|hlswish|wish|voe|vidhide|goodstream)/i.test(e.url)).slice(0, 5);
     const resolvedList = await Promise.all(resolvable.map(async (emb) => {
         const resolved = await resolveEmbedToHls(emb.url, 'https://lamovie.org/');
         if (!resolved?.url) return null;
         return {
             name: `${emb.flag} LaMovie\n1080p HD`,
-            title: `${labelTitle}\n⚡ HLS Directo • ${emb.langBadge}`,
+            title: `${labelTitle}\n⚡ ${emb.server || 'HLS'} Directo • ${emb.langBadge}`,
             url: resolved.url,
             _lang: emb.langKey,
             behaviorHints: {
@@ -988,41 +1019,46 @@ async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana') {
     const host = providerId === 'poseidonhd' ? 'https://poseidonhd2.co' : 'https://www.cuevana-3.mx';
     const providerLabel = providerId === 'poseidonhd' ? 'PoseidonHD' : 'Cuevana 3';
 
-    const searchUrl = `${host}/search?q=${encodeURIComponent(meta.title)}`;
-    const html = await httpGet(searchUrl, { timeout: 4500 });
-    if (!html) return [];
-
-    const mNext = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
-    if (!mNext) return [];
-
-    let nextData = null;
-    try {
-        nextData = JSON.parse(mNext[1]);
-    } catch (e) {
-        return [];
-    }
-
-    const items = [
-        ...(nextData?.props?.pageProps?.movies || []),
-        ...(nextData?.props?.pageProps?.series || [])
-    ];
-
+    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
     let matchedItem = null;
-    for (const item of items) {
-        const rawSlug = item?.url?.slug || '';
-        const isMovieItem = rawSlug.startsWith('movies/') || rawSlug.startsWith('pelicula/');
-        if (meta.type === 'movie' && !isMovieItem) continue;
-        if (meta.type !== 'movie' && isMovieItem) continue;
 
-        if (meta.tmdbId && Number(item.TMDbId) === Number(meta.tmdbId)) {
-            matchedItem = item;
-            break;
+    for (const q of queries.slice(0, 2)) {
+        const searchUrl = `${host}/search?q=${encodeURIComponent(q)}`;
+        const html = await httpGet(searchUrl, { timeout: 4500 });
+        if (!html) continue;
+
+        const mNext = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+        if (!mNext) continue;
+
+        let nextData = null;
+        try {
+            nextData = JSON.parse(mNext[1]);
+        } catch (e) {
+            continue;
         }
-        const candTitle = item?.titles?.name || '';
-        if (isTitleMatch(meta.title, candTitle)) {
-            matchedItem = item;
-            break;
+
+        const items = [
+            ...(nextData?.props?.pageProps?.movies || []),
+            ...(nextData?.props?.pageProps?.series || [])
+        ];
+
+        for (const item of items) {
+            const rawSlug = item?.url?.slug || '';
+            const isMovieItem = rawSlug.startsWith('movies/') || rawSlug.startsWith('pelicula/');
+            if (meta.type === 'movie' && !isMovieItem) continue;
+            if (meta.type !== 'movie' && isMovieItem) continue;
+
+            if (meta.tmdbId && Number(item.TMDbId) === Number(meta.tmdbId)) {
+                matchedItem = item;
+                break;
+            }
+            const candTitle = item?.titles?.name || '';
+            if (isTitleMatch(meta.title, candTitle) || isTitleMatch(meta.originalTitle, candTitle)) {
+                matchedItem = item;
+                break;
+            }
         }
+        if (matchedItem) break;
     }
 
     if (!matchedItem) return [];
@@ -1054,19 +1090,28 @@ async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana') {
     const candidateServers = [];
 
     for (const [langGroup, list] of Object.entries(videos)) {
-        if (!Array.isArray(list)) continue;
+        if (!Array.isArray(list) || list.length === 0) continue;
         const langKey = langGroup === 'latino' ? 'latino' : (langGroup === 'spanish' ? 'castellano' : 'sub');
-        const langBadge = langKey === 'latino' ? '🇲🇽 Español Latino' : (langKey === 'castellano' ? '🇪🇸 Castellano' : '🇺🇸 Subtitulado');
+        const langBadge = langKey === 'latino'
+            ? '🇲🇽 Audio Español Latino'
+            : (langKey === 'castellano'
+                ? '🇪🇸 Audio Castellano'
+                : (meta.isAnime ? '🇯🇵 Audio Japonés + 🇲🇽 Sub Latino' : '🇺🇸 Audio Original + 🇲🇽 Sub Latino'));
+
+        // Seleccionar hasta 2 servidores resolubles (VidHide, StreamWish, Voe) por cada idioma disponible
+        let addedForLang = 0;
         for (const srv of list) {
+            if (addedForLang >= 2) break;
             const target = srv.result || srv.url;
             if (target && /(?:streamwish|wish|hglink|vidhide|morencius|voe)/i.test(target + ' ' + (srv.cyberlocker || ''))) {
                 candidateServers.push({ url: target, cyberlocker: srv.cyberlocker || 'HLS', langKey, langBadge });
+                addedForLang++;
             }
         }
     }
 
-    const resolved = await Promise.all(candidateServers.slice(0, 3).map(async (srv) => {
-        // Algunos enlaces de Cuevana pasan por un redirector intermedio (player.cuevana.is)
+    const resolved = await Promise.all(candidateServers.slice(0, 6).map(async (srv) => {
+        // Algunos enlaces de Cuevana/Poseidon pasan por un redirector intermedio (player.cuevana-3.mx / player.poseidonhd2.co)
         let embedTarget = srv.url;
         if (!/(?:streamwish|wish|hglink|vidhide|morencius|voe)/i.test(embedTarget)) {
             const interHtml = await httpGet(embedTarget, { headers: { Referer: detailUrl }, timeout: 3500 });
@@ -1077,7 +1122,7 @@ async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana') {
 
         const r = await resolveEmbedToHls(embedTarget, detailUrl);
         if (!r?.url) return null;
-        const flag = srv.langKey === 'latino' ? '🇲🇽' : (srv.langKey === 'castellano' ? '🇪🇸' : '🇺🇸');
+        const flag = srv.langKey === 'latino' ? '🇲🇽' : (srv.langKey === 'castellano' ? '🇪🇸' : (meta.isAnime ? '🇯🇵' : '🇺🇸'));
         const labelTitle = meta.type === 'movie'
             ? `${meta.title} (${meta.year || 'HD'})`
             : `${meta.title} S${String(meta.season).padStart(2, '0')}E${String(meta.episode).padStart(2, '0')}`;
@@ -1296,6 +1341,7 @@ async function scrapeTorrentio(meta) {
                 infoHash: hash,
                 sources: mergedSources,
                 _lang: langInfo.langKey,
+                _prov: 'torrentio',
                 _seeders: seeders
             };
             if (fileIdx !== undefined) streamObj.fileIdx = fileIdx;
@@ -1314,16 +1360,30 @@ async function scrapeTorrentio(meta) {
         return (b._seeders || 0) - (a._seeders || 0);
     });
 
-    return results.slice(0, 18);
+    return results.slice(0, 25);
 }
 
 /**
- * 7. Scraper: YTS (Películas 1080p / 4K nativas por infoHash)
+ * 7. Scraper: YTS (Películas 1080p / 4K nativas por infoHash — Espejos activos yts.lt / accel.li / yts.mx)
  */
 async function scrapeYts(meta) {
-    if (meta.type !== 'movie' || !meta.imdbId) return [];
-    const data = await httpGet(`https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(meta.imdbId)}`, { json: true, timeout: 4000 });
-    const movie = data?.data?.movies?.[0];
+    if (meta.type !== 'movie') return [];
+    const hosts = ['https://yts.lt', 'https://movies-api.accel.li', 'https://yts.mx'];
+    const queries = Array.from(new Set([meta.imdbId, meta.originalTitle, meta.title].filter(Boolean)));
+
+    let movie = null;
+    for (const host of hosts) {
+        for (const q of queries.slice(0, 2)) {
+            const data = await httpGet(`${host}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=5`, { json: true, timeout: 4000 });
+            const movies = data?.data?.movies;
+            if (Array.isArray(movies) && movies.length > 0) {
+                movie = movies.find(m => (meta.imdbId && m.imdb_code === meta.imdbId) || isTitleMatch(meta.originalTitle || meta.title, m.title || '', meta.year, m.year)) || movies[0];
+                if (movie?.torrents) break;
+            }
+        }
+        if (movie?.torrents) break;
+    }
+
     if (!movie?.torrents) return [];
 
     return movie.torrents.map(t => {
@@ -1331,10 +1391,11 @@ async function scrapeYts(meta) {
         if (!hash) return null;
         return {
             name: `🇺🇸 YTS\n${t.quality || '1080p'}`,
-            title: `${movie.title_long || meta.title} (${t.type?.toUpperCase() || 'WEB'})\n🇺🇸 Audio Original (Inglés) • 👤 ${t.seeds || 0} • 💾 ${t.size || ''} • ⚙️ YTS`,
+            title: `${movie.title_long || meta.title} [${(t.quality || '1080p').toUpperCase()} ${(t.type || 'BLURAY').toUpperCase()}]\n🇺🇸 Audio Original (Inglés) • 👤 ${t.seeds || 0} • 💾 ${t.size || ''} • ⚙️ YTS`,
             infoHash: hash,
             sources: STREMIO_TRACKER_SOURCES,
             _lang: 'sub',
+            _prov: 'yts',
             _seeders: t.seeds || 0
         };
     }).filter(Boolean);
@@ -1375,6 +1436,7 @@ async function scrapeNyaa(meta) {
             infoHash: hash,
             sources: STREMIO_TRACKER_SOURCES,
             _lang: langInfo.langKey,
+            _prov: 'nyaa',
             _seeders: seeders
         });
     }
@@ -1382,121 +1444,217 @@ async function scrapeNyaa(meta) {
 }
 
 /**
- * 9. Scraper: ThePirateBay (apibay.org)
+ * 9. Scraper: ThePirateBay (apibay.org) — Busca con título en español y título original (Latino, Dual y HD)
  */
 async function scrapeTpb(meta) {
     const sStr = String(meta.season).padStart(2, '0');
     const eStr = String(meta.episode).padStart(2, '0');
-    const queries = meta.type === 'movie'
-        ? [`${meta.title} ${meta.year} latino`, `${meta.originalTitle} ${meta.year} 1080p`]
-        : [`${meta.title} S${sStr}E${eStr} latino`, `${meta.originalTitle} S${sStr}E${eStr}`];
+    const cleanEs = String(meta.title || '').replace(/[^\w\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+    const cleanOrig = String(meta.originalTitle || meta.title || '').replace(/[^\w\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 
-    const responses = await Promise.all(queries.map(q => httpGet(`https://apibay.org/q.php?q=${encodeURIComponent(q)}&cat=200`, { json: true, timeout: 4000 })));
+    const rawQueries = meta.type === 'movie'
+        ? [
+            `${cleanOrig} ${meta.year} latino`,
+            `${cleanEs} ${meta.year} latino`,
+            `${cleanOrig} ${meta.year} dual`,
+            `${cleanOrig} latino`,
+            `${cleanOrig} ${meta.year}`
+        ]
+        : [
+            `${cleanOrig} S${sStr}E${eStr} latino`,
+            `${cleanEs} S${sStr}E${eStr} latino`,
+            `${cleanOrig} S${sStr}E${eStr} multi`,
+            `${cleanOrig} S${sStr}E${eStr}`
+        ];
+    const queries = Array.from(new Set(rawQueries.filter(Boolean)));
+
+    const responses = await Promise.all(queries.map(q => httpGet(`https://apibay.org/q.php?q=${encodeURIComponent(q)}&cat=200`, { json: true, timeout: 4200 })));
     const seen = new Set();
     const streams = [];
 
     for (const list of responses) {
         if (!Array.isArray(list)) continue;
-        for (const item of list.slice(0, 6)) {
+        for (const item of list.slice(0, 8)) {
             const hash = (item.info_hash || '').toLowerCase();
             if (!hash || hash === '0000000000000000000000000000000000000000' || seen.has(hash)) continue;
             const seeders = parseInt(item.seeders || '0', 10);
             if (seeders < 1) continue;
-            seen.add(hash);
 
             const name = item.name || meta.title;
+            if (meta.type === 'movie' && /(?:s\d{1,2}e\d{1,2}|\bseason\s*\d+|\btemporada\s*\d+)/i.test(name)) continue;
+
+            const cleanItemTitle = name.replace(/\b(19\d{2}|20\d{2})\b.*/, '').replace(/[._-]+/g, ' ').trim();
+            if (!isTitleMatch(meta.title, cleanItemTitle) && !isTitleMatch(meta.originalTitle, cleanItemTitle)) continue;
+
+            seen.add(hash);
+
             const langInfo = classifyTorrentLanguage(name, meta.isAnime);
             const sizeGb = ((parseInt(item.size || '0', 10)) / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
             const qMatch = name.match(/\b(2160p|4k|1080p|720p)\b/i);
-            const quality = qMatch ? qMatch[1].toUpperCase() : 'HD';
+            const quality = qMatch ? qMatch[1].toUpperCase() : '1080P';
 
             streams.push({
                 name: `${langInfo.flag} PirateBay\n${quality}`,
-                title: `${name}\n${langInfo.badge} • 👤 ${seeders} • 💾 ${sizeGb} • ⚙️ TPB`,
+                title: `${name}\n${langInfo.badge} • 👤 ${seeders} • 💾 ${sizeGb} • ⚙️ ThePirateBay`,
                 infoHash: hash,
                 sources: STREMIO_TRACKER_SOURCES,
                 _lang: langInfo.langKey,
+                _prov: 'tpb',
                 _seeders: seeders
             });
         }
     }
-    return streams;
+
+    const langPriority = { latino: 4, castellano: 3, multi: 2, sub: 1 };
+    streams.sort((a, b) => {
+        const pa = langPriority[a._lang] || 1;
+        const pb = langPriority[b._lang] || 1;
+        if (pa !== pb) return pb - pa;
+        return (b._seeders || 0) - (a._seeders || 0);
+    });
+
+    return streams.slice(0, 8);
 }
 
 /**
- * 10. Scraper: Cinecalidad (https://www.cinecalidad.ro) — Torrents Dual Latino + Embeds HLS
+ * 10. Scraper: Cinecalidad (https://www.cinecalidad.ro) — Torrents Dual Latino (/protect/ver.php + data-url) y Embeds HLS
  */
 async function scrapeCinecalidad(meta) {
-    if (meta.type !== 'movie') return [];
     const host = 'https://www.cinecalidad.ro';
-    const html = await httpGet(`${host}/?s=${encodeURIComponent(meta.title)}`, { timeout: 4200 });
-    if (!html) return [];
+    const searchTerms = Array.from(new Set([
+        meta.title,
+        meta.originalTitle,
+        String(meta.title || '').replace(/^(?:the|los|las|el|la)\s+/i, '')
+    ].map(s => String(s || '').replace(/[^\w\s]/gu, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)));
 
     let detailUrl = null;
-    const linkMatches = [...html.matchAll(/<a[^>]+href=["'](https?:\/\/[^"'\s>]*(?:pelicula|movies)\/[^"'\s>]+)["'][^>]*>(.*?)<\/a>/gis)];
-    for (const m of linkMatches) {
-        const href = m[1];
-        const inner = m[2];
-        const altM = inner.match(/alt=["']([^"']+)["']/i);
-        const rawTitle = (altM ? altM[1] : inner.replace(/<[^>]+>/g, '')).replace(/\s*\((?:19|20)\d{2}\).*/, '').trim();
-        if (rawTitle && (isTitleMatch(meta.title, rawTitle) || isTitleMatch(meta.originalTitle, rawTitle))) {
-            detailUrl = href;
-            break;
+
+    for (const term of searchTerms.slice(0, 2)) {
+        const html = await httpGet(`${host}/?s=${encodeURIComponent(term)}`, { timeout: 4500 });
+        if (!html || html.length < 300) continue;
+
+        if (meta.type === 'movie') {
+            // Cinecalidad minifica HTML sin comillas en atributos (href=https://...)
+            const linkMatches = [...html.matchAll(/<a[^>]+href=(["']?)(https?:\/\/[^"'\s>]*(?:pelicula|movies)\/[^"'\s>]+)\1[^>]*>(.*?)<\/a>/gis)];
+            for (const m of linkMatches) {
+                const href = m[2];
+                const inner = m[3];
+                const altM = inner.match(/alt=(["']?)([^"'>]+)\1/i);
+                const srM = inner.match(/<span[^>]*class=["']?sr-only["']?[^>]*>(.*?)<\/span>/is);
+                const rawTitle = (altM ? altM[2] : (srM ? srM[1] : inner.replace(/<[^>]+>/g, '')))
+                    .replace(/\s*\((?:19|20)\d{2}\).*/, '')
+                    .replace(/\[.*?\]/g, '')
+                    .trim();
+                const candYear = (rawTitle + ' ' + href).match(/\b(19\d{2}|20\d{2})\b/)?.[1] || null;
+                if (rawTitle && (isTitleMatch(meta.title, rawTitle, meta.year, candYear) || isTitleMatch(meta.originalTitle, rawTitle, meta.year, candYear))) {
+                    detailUrl = href;
+                    break;
+                }
+            }
+        } else {
+            const articles = [...html.matchAll(/<article[^>]*>(.*?)<\/article>/gis)];
+            for (const artM of articles) {
+                const art = artM[1];
+                const hm = art.match(/href=(["']?)(https?:\/\/[^"'\s>]*\/(?:serie|series|tv)\/[^"'\s>]+)\1/i);
+                if (!hm) continue;
+                const seriesUrl = hm[2];
+                const sm = art.match(/<span[^>]*class=["']?sr-only["']?[^>]*>(.*?)<\/span>/is) || art.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/is);
+                const rawTitle = (sm ? sm[1].replace(/<[^>]+>/g, '') : '').replace(/\s*\((?:19|20)\d{2}\).*/, '').trim();
+                if (rawTitle && (isTitleMatch(meta.title, rawTitle) || isTitleMatch(meta.originalTitle, rawTitle))) {
+                    const sHtml = await httpGet(seriesUrl, { timeout: 4500 });
+                    if (sHtml) {
+                        const epRe = new RegExp(`href=(["']?)(https?:\\/\\/[^"'\\s>]*\\/(?:episodio|episodes)\\/[^"'\\s>]*-${meta.season}x${meta.episode}\\/?)\\1`, 'i');
+                        const epM = sHtml.match(epRe);
+                        if (epM) detailUrl = epM[2];
+                    }
+                    break;
+                }
+            }
         }
+        if (detailUrl) break;
     }
+
     if (!detailUrl) return [];
 
-    const detHtml = await httpGet(detailUrl, { timeout: 4200 });
+    const detHtml = await httpGet(detailUrl, { timeout: 4500 });
     if (!detHtml) return [];
 
     const streams = [];
     const seenHashes = new Set();
+    const labelTitle = meta.type === 'movie'
+        ? `${meta.title} (${meta.year || 'HD'})`
+        : `${meta.title} S${String(meta.season).padStart(2, '0')}E${String(meta.episode).padStart(2, '0')}`;
 
-    // A. Extraer torrents en Base64 desde data-url
-    const dataUrlMatches = [...detHtml.matchAll(/data-url=["']([^"'\s>]+)["'][^>]*>(.*?)<\/a>(?:.*?<span[^>]*>(.*?)<\/span>)?/gis)];
+    const pushCinecalidadTorrent = (btih, rawMagnetOrBadge = '') => {
+        const hash = btih.toLowerCase();
+        if (!hash || seenHashes.has(hash)) return;
+        seenHashes.add(hash);
+        let dec = rawMagnetOrBadge;
+        try { dec = decodeURIComponent(rawMagnetOrBadge); } catch (e) {}
+        const dnM = dec.match(/[?&]dn=([^&"'\s>]+)/i);
+        const relTitle = dnM ? dnM[1].replace(/\+/g, ' ') : labelTitle;
+        const quality = /(?:4k|2160p)/i.test(dec) ? '4K UHD' : '1080p Dual';
+        streams.push({
+            name: `🇲🇽 Cinecalidad\n${quality}`,
+            title: `${relTitle}\n🇲🇽 Audio Español Latino (Dual Audio) • ⚙️ Cinecalidad P2P`,
+            infoHash: hash,
+            sources: STREMIO_TRACKER_SOURCES,
+            _lang: 'latino',
+            _prov: 'cinecalidad',
+            _seeders: 50
+        });
+    };
+
+    // A. Extraer torrents en Base64 desde data-url (con o sin comillas)
+    const dataUrlMatches = [...detHtml.matchAll(/data-url=(["']?)([^"'\s>]+)\1[^>]*>(.*?)<\/a>(?:.*?<span[^>]*>(.*?)<\/span>)?/gis)];
     for (const dm of dataUrlMatches) {
         try {
-            const dec1 = Buffer.from(dm[1], 'base64').toString('utf8').trim();
+            const dec1 = Buffer.from(dm[2], 'base64').toString('utf8').trim();
             let finalUrl = dec1.startsWith('magnet:?') ? dec1 : null;
             if (!finalUrl) {
                 const lm = dec1.match(/\/links\/([A-Za-z0-9+/=]+)/);
                 if (lm) finalUrl = Buffer.from(lm[1], 'base64').toString('utf8').trim();
             }
-            const btih = finalUrl?.match(/xt=urn:btih:([a-fA-F0-9]{40})/i)?.[1]?.toLowerCase();
-            if (btih && !seenHashes.has(btih)) {
-                seenHashes.add(btih);
-                const badgeText = (dm[3] || '') + ' ' + (finalUrl || '');
-                const quality = /(?:4k|2160p)/i.test(badgeText) ? '4K UHD' : '1080p Dual';
-                streams.push({
-                    name: `🇲🇽 Cinecalidad\n${quality}`,
-                    title: `${meta.title} (${meta.year || 'HD'})\n🇲🇽 Audio Español Latino Dual • ⚙️ Cinecalidad P2P`,
-                    infoHash: btih,
-                    sources: STREMIO_TRACKER_SOURCES,
-                    _lang: 'latino',
-                    _seeders: 50
-                });
-            }
+            const btih = finalUrl?.match(/xt=urn:btih:([a-fA-F0-9]{40})/i)?.[1];
+            if (btih) pushCinecalidadTorrent(btih, `${dm[4] || ''} ${finalUrl || ''}`);
         } catch (e) {}
     }
 
-    // B. Extraer magnets directos en el HTML
-    const magnets = [...detHtml.matchAll(/href=["'](magnet:\?xt=urn:btih:([a-fA-F0-9]{40})[^"']*)["']/gi)];
-    for (const mm of magnets) {
-        const hash = mm[2].toLowerCase();
-        if (seenHashes.has(hash)) continue;
-        seenHashes.add(hash);
-        streams.push({
-            name: `🇲🇽 Cinecalidad\n1080p Dual`,
-            title: `${meta.title} (${meta.year || 'HD'})\n🇲🇽 Audio Español Latino Dual • ⚙️ Cinecalidad P2P`,
-            infoHash: hash,
-            sources: STREMIO_TRACKER_SOURCES,
-            _lang: 'latino',
-            _seeders: 50
-        });
+    // B. Extraer torrents protegidos vía /protect/ver.php (ej. ouo.io/qs/...?s=https://www.cinecalidad.ro/protect/ver.php?i=...)
+    const allLinks = [...detHtml.matchAll(/<a[^>]+href=(["']?)([^"'\s>]+)\1[^>]*>(.*?)<\/a>/gis)];
+    const protectUrls = [];
+    for (const lm of allLinks) {
+        const href = lm[2];
+        const text = lm[3].replace(/<[^>]+>/g, '').trim();
+        if (/(?:torrent|bittorrent|protect\/ver\.php)/i.test(text + ' ' + href)) {
+            let pUrl = null;
+            const sMatch = href.match(/[?&]s=(https?:\/\/[^&"'\s>]+)/i);
+            if (sMatch) {
+                try { pUrl = decodeURIComponent(sMatch[1]); } catch (e) { pUrl = sMatch[1]; }
+            } else if (href.includes('/protect/ver.php')) {
+                pUrl = href.startsWith('http') ? href : `${host}${href}`;
+            }
+            if (pUrl && !protectUrls.includes(pUrl)) protectUrls.push(pUrl);
+        }
     }
 
-    // C. Extraer embeds de streaming en Base64 desde data-src
-    const dataSrcMatches = [...detHtml.matchAll(/data-src=["']([A-Za-z0-9+/=]{16,})["']/gi)].map(x => x[1]);
+    if (protectUrls.length > 0) {
+        const protPages = await Promise.all(protectUrls.slice(0, 3).map(u => httpGet(u, { timeout: 4000 })));
+        for (const pHtml of protPages) {
+            if (!pHtml) continue;
+            const mMag = pHtml.match(/(magnet:\?xt=urn:btih:([a-fA-F0-9]{40})[^"'\s<>]*)/i);
+            if (mMag) pushCinecalidadTorrent(mMag[2], mMag[1]);
+        }
+    }
+
+    // C. Extraer magnets directos en el HTML
+    const magnets = [...detHtml.matchAll(/href=(["']?)(magnet:\?xt=urn:btih:([a-fA-F0-9]{40})[^"'\s>]*)\1/gi)];
+    for (const mm of magnets) {
+        pushCinecalidadTorrent(mm[3], mm[2]);
+    }
+
+    // D. Extraer embeds de streaming en Base64 desde data-src (con o sin comillas)
+    const dataSrcMatches = [...detHtml.matchAll(/data-src=(["']?)([A-Za-z0-9+/=]{16,})\1/gi)].map(x => x[2]);
     const embedCandidates = [];
     for (const b64 of dataSrcMatches) {
         try {
@@ -1511,7 +1669,7 @@ async function scrapeCinecalidad(meta) {
         if (!r?.url) return null;
         return {
             name: `🇲🇽 Cinecalidad\n1080p HLS`,
-            title: `${meta.title} (${meta.year || 'HD'})\n⚡ HLS Directo • 🇲🇽 Audio Español Latino`,
+            title: `${labelTitle}\n⚡ HLS Directo • 🇲🇽 Audio Español Latino`,
             url: r.url,
             _lang: 'latino',
             behaviorHints: {
@@ -1888,8 +2046,21 @@ export async function getStremioStreams(type, rawId, configStr = '') {
         allStreams = langFiltered;
     }
 
-    // Ordenar streams: 1° HLS/Directos agrupados por prioridad de idioma (Latino > Castellano > Multi > Sub),
-    // 2° Torrents P2P agrupados por prioridad de idioma y número de seeders
+    // Asignar índice de aparición por proveedor e idioma para que Torrentio (25 enlaces)
+    // no oculte al final los enlaces de Cinecalidad, LaMovie P2P, PirateBay, YTS o Nyaa
+    const provLangCounts = new Map();
+    for (const s of allStreams) {
+        if (!s.url && s._prov) {
+            const pk = `${s._prov}|${s._lang || 'sub'}`;
+            const idx = provLangCounts.get(pk) || 0;
+            s._provRank = idx;
+            provLangCounts.set(pk, idx + 1);
+        }
+    }
+
+    // Ordenar streams:
+    // 1° HLS/Directos agrupados por prioridad de idioma (Latino > Castellano > Multi > Sub)
+    // 2° Torrents P2P agrupados por prioridad de idioma, mostrando primero el Top 3 de cada proveedor (Cinecalidad, LaMovie P2P, PirateBay, YTS, Nyaa, Torrentio) y luego el resto por seeders
     const langRank = { latino: 40, castellano: 30, multi: 20, sub: 10 };
     allStreams.sort((a, b) => {
         const aIsHls = Boolean(a.url) ? 1 : 0;
@@ -1900,6 +2071,12 @@ export async function getStremioStreams(type, rawId, configStr = '') {
         const bLangScore = langRank[b._lang] || 0;
         if (bLangScore !== aLangScore) return bLangScore - aLangScore;
 
+        if (!aIsHls && !bIsHls) {
+            const aTop = (a._provRank ?? 99) < 3 ? 1 : 0;
+            const bTop = (b._provRank ?? 99) < 3 ? 1 : 0;
+            if (bTop !== aTop) return bTop - aTop;
+        }
+
         return (b._seeders || 0) - (a._seeders || 0);
     });
 
@@ -1907,6 +2084,8 @@ export async function getStremioStreams(type, rawId, configStr = '') {
     const cleanStreams = allStreams.map(s => {
         const copy = { ...s };
         delete copy._lang;
+        delete copy._prov;
+        delete copy._provRank;
         delete copy._seeders;
         return copy;
     });

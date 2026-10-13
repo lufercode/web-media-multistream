@@ -398,6 +398,12 @@ class LaMovieProvider implements ProviderInterface
             $lang = $this->formatLanguage($raw_dl_lang);
 
             if (stripos($url, 'magnet:') === 0) {
+                $mag_decoded = rawurldecode(html_entity_decode($url));
+                if (is_latino_audio($mag_decoded . ' ' . $quality)) {
+                    $lang = 'Español Latino';
+                } elseif (preg_match('/\b(castellano|es[\s\.\-_]*es)\b/i', $mag_decoded . ' ' . $quality)) {
+                    $lang = 'Español Castellano';
+                }
                 $results[] = [
                     'provider' => $this->getId(),
                     'provider_name' => 'LaMovie (Torrent)',

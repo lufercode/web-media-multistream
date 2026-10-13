@@ -261,8 +261,8 @@ class TorrentioProvider implements ProviderInterface
         // IMPORTANTE: NUNCA usar \bmulti\b suelto porque coincide con "Multi Subs" / "Multi-Subs"
         $is_multi_audio = (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub|cr[\s\.\-_]*web-?dl[\s\.\-_]*multi|multi[\s\.\-_]+(?:\d{3,4}p[\s\.\-_]+)?cr[\s\.\-_]*web-?dl)\b/i', $cleaned);
         $is_dual_audio = (bool)preg_match('/\b(dual[\s\.\-_]*audio|cr[\s\.\-_]*web-?dl[\s\.\-_]*dual|\bdual\b)\b/i', $cleaned);
-        $is_multi_subs = (bool)preg_match('/\b(multi[\s\.\-_]*subs?|multisub)\b/i', $combined);
-        $is_sub_esp = (bool)preg_match('/\b(sub(?:s|titulos?|titulado|titles?)?[\s\.\-_]*(?:en[\s\.\-_]*)?(?:esp(?:añol|anol)?[\s\.\-_]*)?(?:lat(?:ino|am)?|es|spa)?|(?:español|espanol|latino|spa)[\s\.\-_]*sub(?:s|titulos?)?)\b/iu', $combined);
+        $is_multi_subs = (bool)preg_match('/\b(multi[\s\.\-_]*subs?|multisub|msubs?)\b/i', $combined);
+        $is_sub_esp = (bool)preg_match('/\b(sub(?:s|titulos?|titulado|titles?)?[\s\.\-_]*(?:en[\s\.\-_]*)?(?:esp(?:añol|anol)?|lat(?:ino|am)?|es[\s\.\-_]*mx|es[\s\.\-_]*419|spa|cast(?:ellano)?)|(?:español|espanol|latino|spa)[\s\.\-_]*sub(?:s|titulos?)?)\b/iu', $combined);
 
         $explicit_latino = (bool)preg_match('/\b(latino|latam|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|dual[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419|esp[\s\.\-_]*lat|cinecalidad)\b/i', $cleaned . ' ' . $tracker);
         $explicit_castellano = (bool)preg_match('/\b(castellano|mejortorrent|wolfmax4k)\b/i', $cleaned . ' ' . $tracker);

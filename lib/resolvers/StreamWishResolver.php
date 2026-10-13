@@ -60,8 +60,8 @@ class StreamWishResolver implements ResolverInterface
                     $id = $mId[1];
                 }
             }
-            $embed_url = "{$host}/e/{$id}";
-            $referer = $embed_url;
+            $embed_url = "https://sfastwish.com/e/{$id}";
+            $referer = "https://sfastwish.com/";
             $server_name = 'StreamWish';
         }
 
@@ -70,7 +70,7 @@ class StreamWishResolver implements ResolverInterface
             'timeout' => 4,
             'headers' => [
                 'Referer' => $referer,
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
             ]
         ]);
 
@@ -82,6 +82,10 @@ class StreamWishResolver implements ResolverInterface
                     $unpacked = $this->unpackPacker($packedBlock);
                     if (preg_match('/(https?:\/\/[^\s"\'<>]+\.m3u8[^\s"\'<>]*)/i', $unpacked, $m3)) {
                         $stream_url = $m3[1];
+                        break;
+                    }
+                    if (preg_match('/["\'](\/stream\/[^"\']+\.m3u8[^"\']*)["\']/i', $unpacked, $relM3)) {
+                        $stream_url = rtrim(dirname($embed_url, 2), '/') . $relM3[1];
                         break;
                     }
                 }
