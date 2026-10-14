@@ -226,7 +226,7 @@ function setCors(res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Origin');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type, Content-Disposition');
 }
 
 function parseJsonBody(req) {
@@ -847,9 +847,10 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // GET /stream/:infoHash (o /stream/:infoHash/:filename)
-    if (pathname.startsWith('/stream/')) {
-        const rawStreamPath = pathname.replace('/stream/', '').trim();
+    // GET /stream/:infoHash (o /stream/:infoHash/:filename) o /download/:infoHash
+    if (pathname.startsWith('/stream/') || pathname.startsWith('/download/')) {
+        const isDownloadRoute = pathname.startsWith('/download/') || parsedUrl.searchParams.get('download') === '1';
+        const rawStreamPath = pathname.replace(/^\/(?:stream|download)\//, '').trim();
         const infoHash = (rawStreamPath.split('/')[0] || '').toLowerCase();
         const qFile = parsedUrl.searchParams.get('file') || null;
         const qEp = parsedUrl.searchParams.get('ep') || null;
@@ -905,8 +906,14 @@ const server = http.createServer(async (req, res) => {
         }
 
         const total = file.length;
-        const mimeType = getMimeType(file.name);
+        const mimeType = isDownloadRoute ? 'application/octet-stream' : getMimeType(file.name);
         const range = req.headers.range;
+
+        const safeFilename = path.basename(file.name || 'video.mp4').replace(/[^\w\s.-]/gi, '_');
+        const encodedFilename = encodeURIComponent(file.name || 'video.mp4');
+        const downloadHeaders = isDownloadRoute ? {
+            'Content-Disposition': `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`
+        } : {};
 
         if (range) {
             const parts = range.replace(/bytes=/, '').split('-');
@@ -917,14 +924,15 @@ const server = http.createServer(async (req, res) => {
             const end = partialEnd ? Math.min(total - 1, parseInt(partialEnd, 10)) : total - 1;
             const chunkSize = (end - start) + 1;
 
-            // Deslizar la ventana de descarga de 45 MB a la posición solicitada
+            // Deslizar la ventana de descarga a la posición solicitada
             updateStreamingWindow(entry, start);
 
             res.writeHead(206, {
                 'Content-Range': `bytes ${start}-${end}/${total}`,
                 'Accept-Ranges': 'bytes',
                 'Content-Length': chunkSize,
-                'Content-Type': mimeType
+                'Content-Type': mimeType,
+                ...downloadHeaders
             });
 
             const stream = file.createReadStream({ start, end });
@@ -935,7 +943,7 @@ const server = http.createServer(async (req, res) => {
                 bytesStreamed += chunk.length;
                 entry.lastAccess = Date.now();
                 const currentPos = start + bytesStreamed;
-                // Cada 8 MB reproducidos, avanzar suavemente la ventana deslizante de 45 MB
+                // Cada 8 MB transferidos, avanzar suavemente la ventana deslizante
                 if (currentPos - lastWindowUpdateOffset >= 8 * 1024 * 1024) {
                     lastWindowUpdateOffset = currentPos;
                     updateStreamingWindow(entry, currentPos);
@@ -961,7 +969,8 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, {
                 'Content-Length': total,
                 'Accept-Ranges': 'bytes',
-                'Content-Type': mimeType
+                'Content-Type': mimeType,
+                ...downloadHeaders
             });
 
             const stream = file.createReadStream();
