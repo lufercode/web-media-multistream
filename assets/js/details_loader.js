@@ -1848,11 +1848,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" class="btn btn-outline-light btn-sm px-3 shadow-sm" id="btnHudCopyVlc" title="Copiar URL directa del video para VLC">
                         <i class="fas fa-copy me-1"></i> Copiar link de video
                     </button>
+                    <button type="button" class="btn btn-outline-success btn-sm px-3 shadow-sm" id="btnHudDownload" title="Descargar película directamente a tu PC por streaming continuo">
+                        <i class="fas fa-download me-1"></i> Descargar a mi PC
+                    </button>
                     <button type="button" class="btn btn-outline-info btn-sm px-3 shadow-sm" id="btnHudSkipBuffer" title="Saltar la espera del buffer e iniciar inmediatamente">
                         <i class="fas fa-forward me-1"></i> Reproducir ya en Web
                     </button>
                 </div>
-                <small class="text-muted mt-3"><i class="fas fa-info-circle me-1"></i>Buffer ligero de arranque rápido (1.5 - 3 MB). Se reproduce automáticamente en cuanto esté listo.</small>
+                <small class="text-muted mt-3"><i class="fas fa-info-circle me-1"></i>Pre-buffer dinámico con retención en RAM. Se reproduce automáticamente en cuanto esté listo.</small>
             </div>
         `;
 
@@ -1943,6 +1946,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (btnHudCopy) {
                 btnHudCopy.onclick = () => {
                     copyVideoUrlToClipboard(directStreamUrl);
+                };
+            }
+
+            const btnHudDl = document.getElementById('btnHudDownload');
+            if (btnHudDl) {
+                btnHudDl.onclick = () => {
+                    const dlUrl = directStreamUrl.includes('?') ? (directStreamUrl + '&download=1') : (directStreamUrl + '?download=1');
+                    const a = document.createElement('a');
+                    a.href = dlUrl;
+                    a.setAttribute('download', requestedFileName || (loadData && loadData.name) || title || 'video.mp4');
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    const msg = document.getElementById('torrentStatusMsg');
+                    if (msg) msg.textContent = 'Iniciando descarga por streaming en tu navegador...';
                 };
             }
 
@@ -2134,6 +2152,24 @@ document.addEventListener('DOMContentLoaded', () => {
                                         position: 'right',
                                         html: `<span class="badge bg-warning text-dark fw-bold px-2 py-1" style="font-size: 0.75rem;"><i class="fas fa-magnet me-1"></i><span id="artTorrentStats">${sData.peers} seeds · ${sData.downloadSpeed}</span></span>`,
                                         tooltip: `Semillas: ${sData.peers} · Velocidad: ${sData.downloadSpeed}`
+                                    },
+                                    {
+                                        name: 'download-btn',
+                                        position: 'right',
+                                        html: `<span class="badge bg-success bg-opacity-75 border border-success text-white fw-bold px-2 py-1" style="font-size: 0.72rem; cursor: pointer;" title="Descargar película completa a tu PC vía streaming"><i class="fas fa-download me-1"></i>Descargar</span>`,
+                                        tooltip: 'Descargar archivo en tu PC (flujo continuo)',
+                                        click: function () {
+                                            const dlUrl = streamUrl.includes('?') ? (streamUrl + '&download=1') : (streamUrl + '?download=1');
+                                            const dlLink = document.createElement('a');
+                                            dlLink.href = dlUrl;
+                                            dlLink.setAttribute('download', sData.name || title || 'video.mp4');
+                                            document.body.appendChild(dlLink);
+                                            dlLink.click();
+                                            document.body.removeChild(dlLink);
+                                            if (art.notice) {
+                                                art.notice.show = '<i class="fas fa-download me-1 text-success"></i>Iniciando descarga en tu navegador...';
+                                            }
+                                        }
                                     },
                                     {
                                         name: 'vlc-btn',
