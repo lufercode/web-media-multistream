@@ -1799,3 +1799,211 @@ body.has-minimized-player .modal-backdrop {
         padding: 10px 12px;
     }
 }
+
+/* ==========================================================================
+   Tarjetas de Torrents Unificadas (Torrentio, LaMovie, Cinecalidad, YTS, etc.)
+   ========================================================================== */
+.torrent-card-item {
+    background: linear-gradient(135deg, rgba(23, 27, 38, 0.95) 0%, rgba(15, 18, 26, 0.98) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px 12px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.torrent-card-item:hover {
+    border-color: rgba(255, 193, 7, 0.35);
+    background: linear-gradient(135deg, rgba(28, 33, 46, 0.98) 0%, rgba(18, 22, 32, 1) 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.torrent-release-name {
+    font-size: 0.84rem;
+    line-height: 1.3;
+    letter-spacing: -0.2px;
+    color: #f1f5f9 !important;
+}
+
+/* Badges de Calidad */
+.badge-q-4k {
+    background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%) !important;
+    color: #000 !important;
+    font-weight: 800 !important;
+    border: 1px solid rgba(251, 191, 36, 0.8) !important;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+}
+
+.badge-q-1080 {
+    background: rgba(14, 165, 233, 0.15) !important;
+    color: #38bdf8 !important;
+    border: 1px solid rgba(56, 189, 248, 0.4) !important;
+    font-weight: 700 !important;
+}
+
+.badge-q-720 {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: #34d399 !important;
+    border: 1px solid rgba(52, 211, 153, 0.4) !important;
+    font-weight: 600 !important;
+}
+
+.badge-q-sd,
+.badge-q-hd {
+    background: rgba(148, 163, 184, 0.15) !important;
+    color: #cbd5e1 !important;
+    border: 1px solid rgba(203, 213, 225, 0.25) !important;
+}
+
+/* Badges de Banderas / Idiomas */
+.badge-lang-lat {
+    background: rgba(16, 185, 129, 0.2) !important;
+    color: #6ee7b7 !important;
+    border: 1px solid rgba(16, 185, 129, 0.45) !important;
+    font-weight: 700 !important;
+}
+
+.badge-lang-cast {
+    background: rgba(239, 68, 68, 0.18) !important;
+    color: #fca5a5 !important;
+    border: 1px solid rgba(239, 68, 68, 0.4) !important;
+    font-weight: 700 !important;
+}
+
+.badge-lang-eng {
+    background: rgba(99, 102, 241, 0.18) !important;
+    color: #c7d2fe !important;
+    border: 1px solid rgba(99, 102, 241, 0.4) !important;
+    font-weight: 600 !important;
+}
+
+.badge-lang-jap {
+    background: rgba(236, 72, 153, 0.18) !important;
+    color: #fbcfe8 !important;
+    border: 1px solid rgba(236, 72, 153, 0.4) !important;
+    font-weight: 700 !important;
+}
+
+.badge-lang-other {
+    background: rgba(100, 116, 139, 0.2) !important;
+    color: #e2e8f0 !important;
+    border: 1px solid rgba(148, 163, 184, 0.3) !important;
+}
+
+/* Badges de Tipo de Audio */
+.badge-audio-dual {
+    background: rgba(245, 158, 11, 0.18) !important;
+    color: #fde68a !important;
+    border: 1px solid rgba(245, 158, 11, 0.4) !important;
+    font-weight: 700 !important;
+}
+
+.badge-audio-multi {
+    background: rgba(168, 85, 247, 0.2) !important;
+    color: #e9d5ff !important;
+    border: 1px solid rgba(168, 85, 247, 0.45) !important;
+    font-weight: 700 !important;
+}
+
+.badge-audio-sub {
+    background: rgba(6, 182, 212, 0.18) !important;
+    color: #a5f3fc !important;
+    border: 1px solid rgba(6, 182, 212, 0.4) !important;
+    font-weight: 600 !important;
+}
+
+.badge-sound {
+    background: rgba(30, 41, 59, 0.8) !important;
+    color: #94a3b8 !important;
+    border: 1px solid rgba(148, 163, 184, 0.25) !important;
+    font-size: 0.72rem !important;
+}
+
+.badge-tech {
+    background: rgba(15, 23, 42, 0.7) !important;
+    color: #94a3b8 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    font-size: 0.72rem !important;
+}
+
+/* Badges de Semillas (Seeds) */
+.badge-seeds {
+    font-weight: 600 !important;
+    font-size: 0.74rem !important;
+}
+
+.seeds-great {
+    background: rgba(16, 185, 129, 0.2) !important;
+    color: #4ade80 !important;
+    border: 1px solid rgba(74, 222, 128, 0.5) !important;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.2);
+}
+
+.seeds-healthy {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: #86efac !important;
+    border: 1px solid rgba(134, 239, 172, 0.35) !important;
+}
+
+.seeds-low {
+    background: rgba(245, 158, 11, 0.15) !important;
+    color: #fde047 !important;
+    border: 1px solid rgba(253, 224, 71, 0.35) !important;
+}
+
+.seeds-zero,
+.seeds-p2p {
+    background: rgba(71, 85, 105, 0.25) !important;
+    color: #94a3b8 !important;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+}
+
+/* Badges de Tamaño y Tracker */
+.badge-size {
+    background: rgba(30, 41, 59, 0.85) !important;
+    color: #e2e8f0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    font-size: 0.74rem !important;
+}
+
+.badge-tracker {
+    background: rgba(15, 23, 42, 0.9) !important;
+    color: #94a3b8 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    font-size: 0.72rem !important;
+}
+
+/* Botones de Acción de Tarjeta */
+.btn-torrent-play {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    border: 1px solid rgba(251, 191, 36, 0.4) !important;
+    border-radius: 6px !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    font-size: 0.78rem !important;
+}
+
+.btn-torrent-play:hover {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+    color: #000000 !important;
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.45) !important;
+}
+
+.btn-torrent-magnet {
+    background: rgba(30, 41, 59, 0.85) !important;
+    color: #fbbf24 !important;
+    border: 1px solid rgba(251, 191, 36, 0.3) !important;
+    border-radius: 6px !important;
+    transition: all 0.2s ease !important;
+    font-size: 0.78rem !important;
+}
+
+.btn-torrent-magnet:hover {
+    background: rgba(251, 191, 36, 0.15) !important;
+    border-color: #fbbf24 !important;
+    color: #fef08a !important;
+    transform: translateY(-1px);
+}

@@ -3035,16 +3035,188 @@ document.addEventListener('DOMContentLoaded', () => {
             streamCountText.textContent = `${streamLinksCount} ${streamLinksCount === 1 ? 'servidor' : 'servidores'}`;
         };
 
+        const parseTorrentItemMeta = (src, fallbackTitle) => {
+            const rawUrl = src.url || '';
+            let magnetDn = '';
+            if (rawUrl.startsWith('magnet:?')) {
+                const dnMatch = rawUrl.match(/[?&]dn=([^&]+)/i);
+                if (dnMatch) {
+                    try {
+                        magnetDn = decodeURIComponent(dnMatch[1].replace(/\+/g, ' '));
+                    } catch (e) {
+                        magnetDn = dnMatch[1];
+                    }
+                }
+            }
+
+            let releaseTitle = (src.title || '').trim();
+            if (releaseTitle.includes('\n')) {
+                releaseTitle = releaseTitle.split('\n')[0].trim();
+            }
+            if ((!releaseTitle || releaseTitle === fallbackTitle) && magnetDn) {
+                releaseTitle = magnetDn;
+            }
+            const displayTitle = (releaseTitle && releaseTitle !== fallbackTitle)
+                ? releaseTitle
+                : (magnetDn || src.title || fallbackTitle);
+
+            const fullBlob = `${src.title || ''} ${releaseTitle} ${magnetDn} ${src.quality || ''} ${src.language || ''} ${src.audio_tags || ''} ${src.server || ''} ${src.tracker || ''}`;
+
+            // Calidad
+            let qTag = 'HD';
+            let qClass = 'badge-q-hd';
+            if (/2160p|4k|uhd/i.test(fullBlob)) {
+                qTag = '4K UHD';
+                qClass = 'badge-q-4k';
+            } else if (/1080p|fhd/i.test(fullBlob)) {
+                qTag = '1080p FHD';
+                qClass = 'badge-q-1080';
+            } else if (/720p/i.test(fullBlob)) {
+                qTag = '720p HD';
+                qClass = 'badge-q-720';
+            } else if (/480p|sd/i.test(fullBlob)) {
+                qTag = '480p SD';
+                qClass = 'badge-q-sd';
+            }
+
+            // Codecs / Formato técnico
+            const techPills = [];
+            if (/x265|hevc|h\.?265/i.test(fullBlob)) techPills.push('HEVC');
+            else if (/x264|avc|h\.?264/i.test(fullBlob)) techPills.push('x264');
+            if (/hdr10\+|hdr10|hdr/i.test(fullBlob)) techPills.push('HDR');
+            if (/bluray|bdrip|brrip/i.test(fullBlob)) techPills.push('BluRay');
+            else if (/web-?dl|webrip/i.test(fullBlob)) techPills.push('WEB-DL');
+
+            // Idiomas y banderas
+            const flags = [];
+            const isLatino = src.is_latino === true || /\b(latino|latam|es[\s\.\-_]*mx|es[\s\.\-_]*419|dual[\s\.\-_]*lat)\b/i.test(fullBlob) || (src.language && /latino/i.test(src.language));
+            const isCastellano = !isLatino && (/\b(castellano|españa|spanish|es[\s\.\-_]*es)\b/i.test(fullBlob) || (src.language && /castellano/i.test(src.language)));
+            const isJapanese = /\b(jap|japanese|jpn|nyaa|anime)\b/i.test(fullBlob) || (src.language && /japon/i.test(src.language));
+            const isSubEsp = /\b(sub[\s\.\-_]*esp|subtitulad[oa]|vose|multi[\s\.\-_]*sub)\b/i.test(fullBlob) || (src.language && /sub/i.test(src.language));
+            const isMultiAudio = /\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub)\b/i.test(fullBlob) || src.is_multi_audio === true;
+            const isDualAudio = (/\b(dual[\s\.\-_]*audio|dual)\b/i.test(fullBlob) || src.is_dual === true) && !isMultiAudio;
+
+            if (isLatino) {
+                flags.push({ flag: '🇲🇽', code: 'LAT', name: 'Latino', cls: 'badge-lang-lat' });
+            } else if (isCastellano) {
+                flags.push({ flag: '🇪🇸', code: 'CAST', name: 'Castellano', cls: 'badge-lang-cast' });
+            }
+            if (isJapanese) {
+                flags.push({ flag: '🇯🇵', code: 'JAP', name: 'Japonés', cls: 'badge-lang-jap' });
+            } else if (!isLatino && !isCastellano) {
+                if (/\b(french|français|vf|vff)\b/i.test(fullBlob)) {
+                    flags.push({ flag: '🇫🇷', code: 'FRA', name: 'Francés', cls: 'badge-lang-other' });
+                } else if (/\b(portuguese|português|pt[\s\.\-_]*br|dublado)\b/i.test(fullBlob)) {
+                    flags.push({ flag: '🇧🇷', code: 'POR', name: 'Portugués', cls: 'badge-lang-other' });
+                } else if (/\b(italian|italiano)\b/i.test(fullBlob)) {
+                    flags.push({ flag: '🇮🇹', code: 'ITA', name: 'Italiano', cls: 'badge-lang-other' });
+                } else {
+                    flags.push({ flag: '🇺🇸', code: 'ENG', name: 'Inglés / VO', cls: 'badge-lang-eng' });
+                }
+            }
+
+            const audioPills = [];
+            if (isMultiAudio) audioPills.push({ text: 'MULTI', cls: 'badge-audio-multi' });
+            else if (isDualAudio) audioPills.push({ text: 'DUAL', cls: 'badge-audio-dual' });
+            if (isSubEsp && !isLatino) audioPills.push({ text: 'SUB', cls: 'badge-audio-sub' });
+
+            if (/atmos/i.test(fullBlob)) audioPills.push({ text: 'Atmos', cls: 'badge-sound' });
+            else if (/5\.1|ddp5\.1|ac3[\s\.\-_]*5\.1/i.test(fullBlob)) audioPills.push({ text: '5.1', cls: 'badge-sound' });
+            else if (/7\.1/i.test(fullBlob)) audioPills.push({ text: '7.1', cls: 'badge-sound' });
+            else if (/aac/i.test(fullBlob)) audioPills.push({ text: 'AAC', cls: 'badge-sound' });
+
+            // Semillas
+            const sVal = src.seeds !== undefined ? src.seeds : (src.seeders !== undefined ? src.seeders : null);
+            let seedsObj = null;
+            if (sVal !== null && sVal !== undefined) {
+                const n = parseInt(sVal, 10);
+                if (!isNaN(n)) {
+                    seedsObj = {
+                        count: n,
+                        cls: n >= 20 ? 'seeds-great' : (n >= 5 ? 'seeds-healthy' : (n >= 1 ? 'seeds-low' : 'seeds-zero')),
+                        icon: n >= 20 ? 'fa-bolt' : (n >= 5 ? 'fa-arrow-up' : 'fa-seedling')
+                    };
+                }
+            }
+
+            // Tamaño
+            let size = src.size || '';
+            if (!size) {
+                const xlMatch = rawUrl.match(/[?&]xl=(\d+)/i);
+                if (xlMatch) {
+                    const bytes = parseInt(xlMatch[1], 10);
+                    if (!isNaN(bytes) && bytes > 0) {
+                        const gb = bytes / (1024 * 1024 * 1024);
+                        if (gb >= 1) size = gb.toFixed(1) + ' GB';
+                        else size = (bytes / (1024 * 1024)).toFixed(0) + ' MB';
+                    }
+                }
+            }
+            if (!size) {
+                const m = fullBlob.match(/([0-9.,]+\s*(?:GB|MB|TB|GiB|MiB))/i);
+                if (m) size = m[1];
+            }
+
+            // Tracker
+            let tracker = src.tracker || '';
+            if (!tracker && src.server && src.server.includes('⚙️')) tracker = src.server.replace('⚙️', '').trim();
+            if (!tracker) {
+                const p = src.provider_name || '';
+                if (/lamovie/i.test(p)) tracker = 'LaMovie';
+                else if (/cinecalidad/i.test(p)) tracker = 'Cinecalidad';
+                else if (/yts/i.test(p)) tracker = 'YTS';
+                else if (/nyaa/i.test(p)) tracker = 'NyaaSi';
+                else if (/pirate/i.test(p)) tracker = 'ThePirateBay';
+                else if (/hack/i.test(p)) tracker = 'HackStore';
+                else if (/dontorrent/i.test(p)) tracker = 'DonTorrent';
+                else if (/elitetorrent/i.test(p)) tracker = 'EliteTorrent';
+                else tracker = 'BitTorrent';
+            }
+
+            return {
+                url: rawUrl,
+                displayTitle,
+                qTag,
+                qClass,
+                techPills,
+                flags,
+                audioPills,
+                seedsObj,
+                size,
+                tracker,
+                providerName: src.provider_name || 'Torrent'
+            };
+        };
+
         const renderTorrentGroup = (group) => {
             const collapseId = `${blockId}_torrent_${group.providerId}_${Math.random().toString(36).substring(2, 6)}`;
             const icon = getProviderIcon(group.providerId, 'torrent');
             const count = group.items.length;
 
-            const qualities = [...new Set(group.items.map(i => i.quality).filter(Boolean))];
-            const qltBadges = qualities.slice(0, 3).map(q => `<span class="badge bg-dark border border-warning text-warning fw-normal" style="font-size: 0.72rem;">${q}</span>`).join(' ');
+            const parsedItems = group.items.map(src => ({
+                src,
+                meta: parseTorrentItemMeta(src, itemTitle)
+            }));
 
-            const langs = [...new Set(group.items.map(i => i.language || (i.lang === 'lat' ? 'Latino' : (i.lang === 'cast' ? 'Castellano' : (i.lang === 'sub' ? 'Subtitulado' : null)))).filter(Boolean))];
-            const langBadges = langs.map(l => `<span class="badge bg-secondary bg-opacity-50 text-light fw-normal" style="font-size: 0.72rem;">${l}</span>`).join(' ');
+            // Calidades resumidas para la cabecera
+            const uniqueQualities = [...new Set(parsedItems.map(p => p.meta.qTag))];
+            const qltBadges = uniqueQualities.slice(0, 3).map(q => {
+                const cls = q.includes('4K') ? 'badge-q-4k' : (q.includes('1080') ? 'badge-q-1080' : 'badge-q-720');
+                return `<span class="badge ${cls} fw-bold" style="font-size: 0.72rem;">${q}</span>`;
+            }).join(' ');
+
+            // Banderas resumidas para la cabecera
+            const headerFlags = [];
+            const seenCodes = new Set();
+            parsedItems.forEach(p => {
+                p.meta.flags.forEach(f => {
+                    if (!seenCodes.has(f.code)) {
+                        seenCodes.add(f.code);
+                        headerFlags.push(`<span class="badge ${f.cls}" style="font-size: 0.72rem;">${f.flag} ${f.code}</span>`);
+                    }
+                });
+            });
+            const flagsBadges = headerFlags.slice(0, 3).join(' ');
 
             const cardWrapper = document.createElement('div');
             cardWrapper.className = 'provider-collapse-card pop-in-card';
@@ -3061,7 +3233,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="badge bg-warning text-dark fw-bold flex-shrink-0">${count}</span>
                         <div class="d-none d-sm-flex align-items-center gap-1 flex-wrap">
                             ${qltBadges}
-                            ${langBadges}
+                            ${flagsBadges}
                         </div>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-1">
@@ -3071,103 +3243,104 @@ document.addEventListener('DOMContentLoaded', () => {
                 </button>
                 <div class="collapse" id="${collapseId}">
                     <div class="card card-body bg-black border border-secondary border-opacity-50 p-2 p-md-3 mt-1 rounded-3">
-                        <div class="d-flex flex-column gap-1.5 torrents-slot"></div>
+                        <div class="d-flex flex-column gap-2 torrents-slot"></div>
                     </div>
                 </div>
             `;
 
             const slot = cardWrapper.querySelector('.torrents-slot');
-            group.items.forEach(src => {
-                const url = src.url;
-                const srv = (src.server || src.tracker || 'BitTorrent Magnet').replace(/"/g, '&quot;');
-                const qlt = src.quality || 'HD';
-                const rawLang = src.language || '';
-                const isLatinoAudio = src.is_latino === true || /Audio Español Latino/i.test(rawLang);
-                const hasSpanishSubs = !isLatinoAudio && (rawLang.includes('🇲🇽') || /Sub Esp|Sub Latino/i.test(rawLang));
-                const langBadgeClass = isLatinoAudio
-                    ? 'badge bg-success text-white border border-light border-opacity-25'
-                    : (hasSpanishSubs ? 'badge bg-info text-dark fw-semibold' : 'badge bg-warning text-dark');
-                const lang = rawLang ? `<span class="${langBadgeClass}">${rawLang}</span>` : '';
-                const audioTags = (src.audio_tags && src.audio_tags !== rawLang)
-                    ? `<span class="badge bg-dark border border-info border-opacity-50 text-info fw-normal">${src.audio_tags}</span>`
-                    : '';
-                const trackerBadge = (src.tracker || (src.server && src.server.includes('⚙️')))
-                    ? `<span class="badge bg-dark border border-secondary text-light fw-normal">${src.server && src.server.includes('⚙️') ? src.server : '⚙️ ' + src.tracker}</span>`
-                    : '';
-                const size = src.size ? `<span class="badge bg-secondary">💾 ${src.size}</span>` : '';
-                const seedCount = src.seeds !== undefined ? src.seeds : src.seeders;
-                const seeds = (seedCount !== undefined && seedCount !== null && seedCount > 0)
-                    ? `<span class="badge bg-dark border border-success text-success">👤 ${seedCount}</span>`
-                    : '';
-                const releaseTitle = (src.title && src.title !== itemTitle) ? src.title : '';
+            parsedItems.forEach(({ src, meta }) => {
+                const url = meta.url;
+                const srv = (src.server || src.tracker || meta.tracker || 'BitTorrent Magnet').replace(/"/g, '&quot;');
+                const safeThumb = (thumbnail || '').replace(/"/g, '&quot;');
 
                 const itemBox = document.createElement('div');
-                itemBox.className = 'torrent-item-row d-flex flex-column flex-md-row align-items-stretch align-items-md-center justify-content-between gap-2 bg-dark bg-opacity-75 border border-secondary border-opacity-50 rounded p-2 pop-in-card w-100';
+                itemBox.className = 'torrent-card-item pop-in-card w-100';
+
+                const flagsHtml = meta.flags.map(f => `<span class="badge ${f.cls}"><span class="me-1">${f.flag}</span>${f.code}</span>`).join(' ');
+                const audioPillsHtml = meta.audioPills.map(a => `<span class="badge ${a.cls}">${a.text}</span>`).join(' ');
+                const techHtml = meta.techPills.map(t => `<span class="badge badge-tech">${t}</span>`).join(' ');
+                
+                let seedsHtml = '';
+                if (meta.seedsObj) {
+                    seedsHtml = `<span class="badge badge-seeds ${meta.seedsObj.cls}" title="${meta.seedsObj.count} semillas activas"><i class="fas ${meta.seedsObj.icon} me-1"></i>${meta.seedsObj.count} seeds</span>`;
+                } else {
+                    seedsHtml = `<span class="badge badge-seeds seeds-p2p" title="Conexión P2P / DHT"><i class="fas fa-network-wired me-1"></i>P2P</span>`;
+                }
+
+                let sizeHtml = '';
+                if (meta.size) {
+                    sizeHtml = `<span class="badge badge-size"><i class="fas fa-database me-1 text-warning"></i>${meta.size}</span>`;
+                }
+
+                const trackerHtml = `<span class="badge badge-tracker ms-auto d-none d-md-inline-flex"><i class="fas fa-satellite-dish me-1 text-info"></i>${meta.tracker}</span>`;
 
                 if (url && url.startsWith('magnet:?')) {
-                    const infoCol = document.createElement('div');
-                    infoCol.className = 'd-flex flex-column gap-1 flex-grow-1';
-                    infoCol.style.minWidth = '0';
-                    infoCol.innerHTML = `
-                        ${releaseTitle ? `<div class="text-light fw-semibold small text-break" style="line-height:1.25; font-size:0.82rem;">${releaseTitle}</div>` : ''}
-                        <div class="d-flex flex-wrap align-items-center gap-1">
-                            <span class="badge bg-black border border-warning text-warning">${qlt}</span>
-                            ${lang}
-                            ${audioTags}
-                            ${seeds}
-                            ${size}
-                            ${trackerBadge}
+                    itemBox.innerHTML = `
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap flex-sm-nowrap">
+                            <div class="torrent-title-wrapper flex-grow-1" style="min-width: 0;">
+                                <div class="torrent-release-name text-white fw-semibold text-truncate" title="${meta.displayTitle}">
+                                    ${meta.displayTitle}
+                                </div>
+                            </div>
+                            <div class="torrent-actions-wrapper d-flex align-items-center gap-1.5 flex-shrink-0 ms-auto">
+                                <button type="button" class="btn btn-sm btn-torrent-play shadow-sm d-inline-flex align-items-center gap-1 px-2.5 py-1" title="Reproducir directamente en ArtPlayer">
+                                    <i class="fas fa-play-circle fs-6"></i>
+                                    <span>Reproducir</span>
+                                </button>
+                                <a href="${url}" class="btn btn-sm btn-torrent-magnet shadow-sm d-inline-flex align-items-center justify-content-center px-2 py-1" title="Abrir en cliente torrent (qBittorrent / VLC)">
+                                    <i class="fas fa-magnet"></i>
+                                </a>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center flex-wrap gap-1.5 torrent-badges-row">
+                            <span class="badge ${meta.qClass}">${meta.qTag}</span>
+                            ${flagsHtml}
+                            ${audioPillsHtml}
+                            ${seedsHtml}
+                            ${sizeHtml}
+                            ${techHtml}
+                            ${trackerHtml}
                         </div>
                     `;
-                    itemBox.appendChild(infoCol);
 
-                    const actionsCol = document.createElement('div');
-                    actionsCol.className = 'd-flex align-items-center gap-1.5 flex-shrink-0';
+                    const btnPlay = itemBox.querySelector('.btn-torrent-play');
+                    if (btnPlay) {
+                        btnPlay.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            openTorrentStreamModal(url, safeTitle, srv, src.provider_name || 'Torrent', safeThumb, episodeMeta);
+                        });
+                    }
 
-                    // Botón principal: Ver en ArtPlayer con streaming secuencial
-                    const btnPlay = document.createElement('button');
-                    btnPlay.type = 'button';
-                    btnPlay.className = 'btn btn-sm btn-warning text-dark fw-bold stream-torrent-play-btn d-inline-flex align-items-center gap-1 py-1 px-2.5 shadow-sm';
-                    btnPlay.title = 'Reproducir directamente en el navegador online';
-                    btnPlay.innerHTML = `
-                        <i class="fas fa-play-circle flex-shrink-0"></i>
-                        <span>Reproducir</span>
-                    `;
-                    btnPlay.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openTorrentStreamModal(url, safeTitle, srv, src.provider_name || 'Torrent', safeThumb, episodeMeta);
-                    });
-                    actionsCol.appendChild(btnPlay);
-
-                    // Botón secundario: Enlace externo para qBittorrent o VLC
-                    const aExt = document.createElement('a');
-                    aExt.href = url;
-                    aExt.className = 'btn btn-sm btn-outline-secondary text-warning py-1 px-2 flex-shrink-0';
-                    aExt.title = 'Abrir en cliente torrent externo (qBittorrent / Stremio)';
-                    aExt.innerHTML = '<i class="fas fa-magnet"></i>';
-                    aExt.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                    });
-                    actionsCol.appendChild(aExt);
-
-                    itemBox.appendChild(actionsCol);
+                    const aExt = itemBox.querySelector('.btn-torrent-magnet');
+                    if (aExt) {
+                        aExt.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                        });
+                    }
                 } else {
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.className = 'btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center flex-wrap gap-1 py-1 px-2 flex-grow-1';
-                    a.title = 'Descargar torrent';
-                    a.innerHTML = `
-                        <i class="fas fa-download me-1 flex-shrink-0"></i>
-                        <strong class="me-1">${srv}</strong>
-                        <span class="badge bg-dark border border-warning text-warning ms-1">${qlt}</span>
-                        ${size}
-                        ${lang}
-                        ${seeds}
+                    itemBox.innerHTML = `
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap flex-sm-nowrap">
+                            <div class="torrent-title-wrapper flex-grow-1" style="min-width: 0;">
+                                <div class="torrent-release-name text-white fw-semibold text-truncate" title="${meta.displayTitle}">
+                                    ${meta.displayTitle}
+                                </div>
+                            </div>
+                            <div class="torrent-actions-wrapper d-flex align-items-center gap-1.5 flex-shrink-0 ms-auto">
+                                <a href="${url}" target="_blank" class="btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center gap-1 px-2.5 py-1">
+                                    <i class="fas fa-download"></i>
+                                    <span>Descargar</span>
+                                </a>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center flex-wrap gap-1.5 torrent-badges-row">
+                            <span class="badge ${meta.qClass}">${meta.qTag}</span>
+                            ${flagsHtml}
+                            ${audioPillsHtml}
+                            ${sizeHtml}
+                            ${trackerHtml}
+                        </div>
                     `;
-                    a.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                    });
-                    itemBox.appendChild(a);
                 }
 
                 slot.appendChild(itemBox);
