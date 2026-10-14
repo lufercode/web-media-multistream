@@ -1581,38 +1581,98 @@ body.has-minimized-player .modal-backdrop {
 }
 
 /* ==========================================================================
-   Optimizaciones responsivas móviles (iPhone 17 base / 393px, móviles <576px)
+   Optimizaciones responsivas móviles (Android, iPhone, móviles <576px)
    ========================================================================== */
 @media (max-width: 576px) {
     .details-hero-card {
-        margin-bottom: 1.25rem !important;
+        margin-bottom: 1rem !important;
         border-radius: 10px;
     }
 
+    /* Distribución horizontal compacta del póster e información en móviles */
+    .details-hero-card .row {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: flex-start !important;
+    }
+
     .details-hero-card .details-poster-col {
-        padding: 1rem 1rem 0.5rem 1rem !important;
+        flex: 0 0 100px !important;
+        max-width: 100px !important;
+        padding: 0.6rem 0.35rem 0.6rem 0.6rem !important;
+        display: block !important;
     }
 
     .details-hero-card .details-poster-img {
-        max-height: 250px !important;
-        width: auto !important;
-        margin: 0 auto;
-        display: block;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
+        width: 100% !important;
+        max-height: 148px !important;
+        object-fit: cover !important;
+        margin: 0 !important;
+        border-radius: 6px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6) !important;
     }
 
     .details-hero-card .details-info-col {
-        padding: 0.85rem 1rem 1rem 1rem !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        padding: 0.6rem 0.75rem 0.6rem 0.35rem !important;
     }
 
+    .details-hero-card h2.details-hero-title,
     .details-hero-card h2 {
-        font-size: 1.3rem !important;
-        line-height: 1.25;
+        font-size: 1.08rem !important;
+        line-height: 1.25 !important;
+        margin-bottom: 0.2rem !important;
+    }
+
+    .details-hero-badge {
+        font-size: 0.66rem !important;
+        padding: 0.18rem 0.38rem !important;
     }
 
     .details-fav-btn {
-        font-size: 0.82rem !important;
-        padding: 0.35rem 0.85rem !important;
+        font-size: 0.74rem !important;
+        padding: 0.22rem 0.65rem !important;
+        margin-bottom: 0.25rem !important;
+    }
+
+    .details-meta-text {
+        font-size: 0.72rem !important;
+        margin-bottom: 0.25rem !important;
+    }
+
+    .details-synopsis-label {
+        font-size: 0.76rem !important;
+        margin-bottom: 0.1rem !important;
+    }
+
+    /* Sinopsis compacta con clamp de 3 líneas para no saturar verticalmente */
+    .details-synopsis-text {
+        font-size: 0.76rem !important;
+        line-height: 1.35 !important;
+        margin-bottom: 0.15rem !important;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        transition: all 0.25s ease;
+        cursor: pointer;
+    }
+
+    .details-synopsis-text.synopsis-expanded {
+        display: block !important;
+        -webkit-line-clamp: unset !important;
+        overflow: visible !important;
+    }
+
+    .details-synopsis-more-btn {
+        font-size: 0.74rem !important;
+        padding: 0.1rem 0 !important;
+    }
+
+    .details-multi-source-note {
+        display: none !important; /* Ocultar texto secundario para ganar altura */
     }
 
     /* Ajustes de tarjetas de episodio en móvil */
@@ -1663,7 +1723,7 @@ body.has-minimized-player .modal-backdrop {
         padding: 0.35rem 0.65rem !important;
     }
 
-    /* Modal de video ajustado para pantallas compactas */
+    /* Modal de video fluido para pantallas compactas */
     #videoPlayerModal .modal-dialog {
         margin: 0.35rem !important;
     }
@@ -1675,29 +1735,40 @@ body.has-minimized-player .modal-backdrop {
     #videoPlayerModal #playerModalContentTitle {
         font-size: 0.88rem !important;
     }
-
-    #videoPlayerModal .modal-body {
-        min-height: 230px !important;
-    }
 }
 
-/* Ajustes adicionales ultra-compactos para pantallas <= 400px (iPhone SE, etc.) */
-@media (max-width: 400px) {
-    .details-hero-card h2 {
-        font-size: 1.18rem !important;
+/* Ajustes adicionales ultra-compactos para pantallas <= 380px (iPhone SE, móviles pequeños) */
+@media (max-width: 380px) {
+    .details-hero-card .details-poster-col {
+        flex: 0 0 85px !important;
+        max-width: 85px !important;
+        padding: 0.5rem 0.25rem 0.5rem 0.5rem !important;
     }
 
-    .details-poster-img {
-        max-height: 220px !important;
+    .details-hero-card .details-poster-img {
+        max-height: 125px !important;
+    }
+
+    .details-hero-card h2.details-hero-title,
+    .details-hero-card h2 {
+        font-size: 0.96rem !important;
     }
 
     .continue-thumb-box {
-        width: 56px !important;
-        height: 34px !important;
+        width: 54px !important;
+        height: 32px !important;
     }
 
     .episode-card strong {
-        font-size: 0.85rem !important;
+        font-size: 0.82rem !important;
+    }
+
+    .btn-play-label {
+        display: none !important;
+    }
+
+    .btn-torrent-play {
+        padding: 0.25rem 0.45rem !important;
     }
 }
 
@@ -2006,4 +2077,189 @@ body.has-minimized-player .modal-backdrop {
     border-color: #fbbf24 !important;
     color: #fef08a !important;
     transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   Prevención de desbordamiento horizontal universal
+   ========================================================================== */
+html, body {
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
+/* ==========================================================================
+   Contenedor Responsivo del Reproductor (Modal Iframe y ArtPlayer)
+   ========================================================================== */
+.player-modal-body {
+    position: relative;
+    width: 100%;
+    min-height: 240px;
+    background: #000;
+}
+
+.player-media-frame {
+    width: 100%;
+    height: 520px;
+    border: 0;
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .player-media-frame {
+        height: 56.25vw !important; /* Relación estándar 16:9 fluida */
+        min-height: 220px !important;
+        max-height: 380px !important;
+    }
+}
+
+/* ==========================================================================
+   Tarjetas de Torrent en Móviles Verticales (Sleek, Compacto, Sin Saturar)
+   ========================================================================== */
+@media (max-width: 576px) {
+    .torrent-card-item {
+        padding: 0.5rem 0.65rem !important;
+        margin-bottom: 0.45rem !important;
+        border-radius: 8px !important;
+    }
+
+    .torrent-release-name {
+        font-size: 0.82rem !important;
+    }
+
+    .btn-torrent-play {
+        padding: 0.25rem 0.6rem !important;
+        font-size: 0.75rem !important;
+    }
+
+    .btn-torrent-magnet {
+        padding: 0.25rem 0.5rem !important;
+        font-size: 0.75rem !important;
+    }
+
+    /* Ocultar etiquetas técnicas secundarias en móvil para mantener 1 sola fila limpia */
+    .torrent-card-item .badge-tech,
+    .torrent-card-item .badge-sound,
+    .torrent-card-item .badge-tracker {
+        display: none !important;
+    }
+
+    .torrent-badges-row {
+        gap: 0.25rem !important;
+        margin-top: 0.2rem !important;
+    }
+
+    .torrent-badges-row .badge {
+        font-size: 0.68rem !important;
+        padding: 0.18rem 0.38rem !important;
+    }
+}
+
+/* ==========================================================================
+   Móviles en Horizontal (Landscape - Pantallas bajas <= 520px)
+   ========================================================================== */
+@media (max-height: 520px) and (orientation: landscape) {
+    #videoPlayerModal {
+        padding: 0 !important;
+    }
+
+    #videoPlayerModal .modal-dialog {
+        max-width: 100vw !important;
+        width: 100vw !important;
+        height: 100dvh !important;
+        margin: 0 !important;
+    }
+
+    #videoPlayerModal .modal-content {
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        border-radius: 0 !important;
+        border: none !important;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #videoPlayerModal .modal-header {
+        padding: 0.2rem 0.65rem !important;
+        min-height: 32px !important;
+        height: 32px !important;
+        flex-shrink: 0;
+    }
+
+    #videoPlayerModal #playerModalContentTitle {
+        font-size: 0.82rem !important;
+    }
+
+    #videoPlayerModal .player-modal-body {
+        flex: 1 1 auto !important;
+        height: calc(100dvh - 32px) !important;
+        min-height: 0 !important;
+    }
+
+    #videoPlayerModal .player-media-frame {
+        height: 100% !important;
+        min-height: 0 !important;
+    }
+
+    #playerAdTipBar {
+        display: none !important;
+    }
+
+    .details-hero-card .details-poster-col {
+        max-width: 120px !important;
+    }
+
+    .details-hero-card .details-poster-img {
+        max-height: 160px !important;
+    }
+}
+
+/* ==========================================================================
+   Smart TVs, Pantallas 4K y Navegación por Control Remoto (D-Pad)
+   ========================================================================== */
+:focus-visible {
+    outline: 3px solid #f59e0b !important;
+    outline-offset: 3px !important;
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.75) !important;
+}
+
+@media (min-width: 1400px) {
+    .container {
+        max-width: 1380px !important;
+    }
+
+    .details-hero-card h2.details-hero-title {
+        font-size: 2.1rem;
+    }
+
+    .details-hero-card .details-poster-img {
+        max-height: 420px;
+        border-radius: 12px;
+    }
+
+    .torrent-card-item {
+        padding: 0.9rem 1.25rem !important;
+    }
+
+    .torrent-release-name {
+        font-size: 1.05rem !important;
+    }
+
+    .btn-torrent-play {
+        padding: 0.45rem 1.15rem !important;
+        font-size: 0.92rem !important;
+    }
+
+    .player-media-frame {
+        height: 620px !important;
+    }
+}
+
+@media (min-width: 1920px) {
+    .container {
+        max-width: 1600px !important;
+    }
+
+    .player-media-frame {
+        height: 720px !important;
+    }
 }

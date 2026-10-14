@@ -110,7 +110,8 @@ foreach ($details['genres'] ?? [] as $g) {
                     <?php endif; ?>
 
                     <h6 class="text-info fw-bold mb-1 mb-md-2 details-synopsis-label">Sinopsis:</h6>
-                    <p class="text-light details-synopsis-text lh-base mb-2 mb-md-3"><?= nl2br(htmlspecialchars($overview)) ?></p>
+                    <p class="text-light details-synopsis-text lh-base mb-1 mb-md-3" id="detailsSynopsis"><?= nl2br(htmlspecialchars($overview)) ?></p>
+                    <span class="details-synopsis-more-btn d-inline-block d-md-none text-info fw-semibold mb-2" id="btnToggleSynopsis" style="cursor: pointer; font-size: 0.78rem;">Ver más <i class="fas fa-chevron-down ms-0.5"></i></span>
                 </div>
 
                 <div class="mt-2 pt-2 pt-md-3 border-top border-secondary text-secondary small details-multi-source-note">

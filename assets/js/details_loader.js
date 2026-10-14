@@ -150,9 +150,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <button type="button" class="btn-close btn-close-white ms-1" id="btnClosePlayerModal" data-bs-dismiss="modal" aria-label="Cerrar" title="Cerrar reproductor"></button>
                         </div>
                     </div>
-                    <div class="modal-body p-0 bg-black" style="min-height: 480px; position: relative;">
-                        <iframe id="playerIframe" src="" style="width: 100%; height: 520px; border: 0;" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
-                        <div id="artplayerContainer" style="width: 100%; height: 520px; display: none;"></div>
+                    <div class="modal-body p-0 bg-black player-modal-body" id="playerModalBody">
+                        <iframe id="playerIframe" class="player-media-frame" src="" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+                        <div id="artplayerContainer" class="player-media-frame" style="display: none;"></div>
                     </div>
                     <div id="playerAdTipBar" class="py-1 px-3 bg-dark bg-opacity-75 border-top border-secondary d-flex align-items-center justify-content-between text-secondary" style="font-size: 0.76rem;">
                         <span class="d-flex align-items-center text-truncate me-2">
@@ -447,6 +447,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 50);
             }
             wasPlayerEverMinimized = false;
+        });
+    }
+
+    // Control de Sinopsis compacta en móviles (Ver más / Ver menos)
+    const synopsisEl = document.getElementById('detailsSynopsis');
+    const toggleSynopsisBtn = document.getElementById('btnToggleSynopsis');
+    if (synopsisEl && toggleSynopsisBtn) {
+        const toggleSynopsis = (e) => {
+            if (e) e.preventDefault();
+            const isExpanded = synopsisEl.classList.toggle('synopsis-expanded');
+            toggleSynopsisBtn.innerHTML = isExpanded 
+                ? 'Ver menos <i class="fas fa-chevron-up ms-0.5"></i>' 
+                : 'Ver más <i class="fas fa-chevron-down ms-0.5"></i>';
+        };
+        toggleSynopsisBtn.addEventListener('click', toggleSynopsis);
+        synopsisEl.addEventListener('click', () => {
+            if (window.innerWidth <= 576) toggleSynopsis();
         });
     }
 
@@ -3277,23 +3294,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (url && url.startsWith('magnet:?')) {
                     itemBox.innerHTML = `
-                        <div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap flex-sm-nowrap">
+                        <div class="torrent-header-row d-flex align-items-center justify-content-between gap-1.5 gap-sm-2 mb-1">
                             <div class="torrent-title-wrapper flex-grow-1" style="min-width: 0;">
-                                <div class="torrent-release-name text-white fw-semibold text-truncate" title="${meta.displayTitle}">
+                                <span class="torrent-release-name text-white fw-semibold text-truncate d-block" title="${meta.displayTitle}">
                                     ${meta.displayTitle}
-                                </div>
+                                </span>
                             </div>
-                            <div class="torrent-actions-wrapper d-flex align-items-center gap-1.5 flex-shrink-0 ms-auto">
+                            <div class="torrent-actions-wrapper d-flex align-items-center gap-1.5 flex-shrink-0">
                                 <button type="button" class="btn btn-sm btn-torrent-play shadow-sm d-inline-flex align-items-center gap-1 px-2.5 py-1" title="Reproducir directamente en ArtPlayer">
                                     <i class="fas fa-play-circle fs-6"></i>
-                                    <span>Reproducir</span>
+                                    <span class="btn-play-label">Reproducir</span>
                                 </button>
                                 <a href="${url}" class="btn btn-sm btn-torrent-magnet shadow-sm d-inline-flex align-items-center justify-content-center px-2 py-1" title="Abrir en cliente torrent (qBittorrent / VLC)">
                                     <i class="fas fa-magnet"></i>
                                 </a>
                             </div>
                         </div>
-                        <div class="d-flex align-items-center flex-wrap gap-1.5 torrent-badges-row">
+                        <div class="d-flex align-items-center flex-wrap gap-1 torrent-badges-row">
                             <span class="badge ${meta.qClass}">${meta.qTag}</span>
                             ${flagsHtml}
                             ${audioPillsHtml}
@@ -3320,20 +3337,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } else {
                     itemBox.innerHTML = `
-                        <div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap flex-sm-nowrap">
+                        <div class="torrent-header-row d-flex align-items-center justify-content-between gap-1.5 gap-sm-2 mb-1">
                             <div class="torrent-title-wrapper flex-grow-1" style="min-width: 0;">
-                                <div class="torrent-release-name text-white fw-semibold text-truncate" title="${meta.displayTitle}">
+                                <span class="torrent-release-name text-white fw-semibold text-truncate d-block" title="${meta.displayTitle}">
                                     ${meta.displayTitle}
-                                </div>
+                                </span>
                             </div>
-                            <div class="torrent-actions-wrapper d-flex align-items-center gap-1.5 flex-shrink-0 ms-auto">
-                                <a href="${url}" target="_blank" class="btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center gap-1 px-2.5 py-1">
+                            <div class="torrent-actions-wrapper d-flex align-items-center gap-1.5 flex-shrink-0">
+                                <a href="${url}" target="_blank" class="btn btn-sm btn-outline-warning shadow-sm d-inline-flex align-items-center gap-1 px-2.5 py-1" title="Descargar archivo torrent">
                                     <i class="fas fa-download"></i>
-                                    <span>Descargar</span>
+                                    <span class="btn-play-label">Descargar</span>
                                 </a>
                             </div>
                         </div>
-                        <div class="d-flex align-items-center flex-wrap gap-1.5 torrent-badges-row">
+                        <div class="d-flex align-items-center flex-wrap gap-1 torrent-badges-row">
                             <span class="badge ${meta.qClass}">${meta.qTag}</span>
                             ${flagsHtml}
                             ${audioPillsHtml}
