@@ -1809,6 +1809,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const triggerTorrentDownload = (streamUrl, fileName) => {
+        if (!streamUrl) return;
+        // 1. Usar la ruta explícita /download/ en vez de /stream/ y adjuntar download=1
+        let dlUrl = streamUrl.replace('/stream/', '/download/');
+        if (!dlUrl.includes('download=1')) {
+            dlUrl += (dlUrl.includes('?') ? '&' : '?') + 'download=1';
+        }
+
+        // 2. Usar un iframe invisible para forzar la descarga sin abrir pestañas ni interrumpir la reproducción actual
+        let dlFrame = document.getElementById('_hiddenTorrentDownloadFrame');
+        if (!dlFrame) {
+            dlFrame = document.createElement('iframe');
+            dlFrame.id = '_hiddenTorrentDownloadFrame';
+            dlFrame.style.display = 'none';
+            dlFrame.style.width = '0';
+            dlFrame.style.height = '0';
+            dlFrame.style.border = '0';
+            document.body.appendChild(dlFrame);
+        }
+        dlFrame.src = dlUrl;
+    };
+
     const playWithLocalStreamer = async (magnetUrl, title, server, provLabel, thumbnail, episodeMeta) => {
         const artContainer = document.getElementById('artplayerContainer');
         const badgesEl = document.getElementById('playerModalBadges');
@@ -1952,13 +1974,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const btnHudDl = document.getElementById('btnHudDownload');
             if (btnHudDl) {
                 btnHudDl.onclick = () => {
-                    const dlUrl = directStreamUrl.includes('?') ? (directStreamUrl + '&download=1') : (directStreamUrl + '?download=1');
-                    const a = document.createElement('a');
-                    a.href = dlUrl;
-                    a.setAttribute('download', requestedFileName || (loadData && loadData.name) || title || 'video.mp4');
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
+                    triggerTorrentDownload(directStreamUrl, requestedFileName || (loadData && loadData.name) || title);
                     const msg = document.getElementById('torrentStatusMsg');
                     if (msg) msg.textContent = 'Iniciando descarga por streaming en tu navegador...';
                 };
@@ -2159,13 +2175,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         html: `<span class="badge bg-success bg-opacity-75 border border-success text-white fw-bold px-2 py-1" style="font-size: 0.72rem; cursor: pointer;" title="Descargar película completa a tu PC vía streaming"><i class="fas fa-download me-1"></i>Descargar</span>`,
                                         tooltip: 'Descargar archivo en tu PC (flujo continuo)',
                                         click: function () {
-                                            const dlUrl = streamUrl.includes('?') ? (streamUrl + '&download=1') : (streamUrl + '?download=1');
-                                            const dlLink = document.createElement('a');
-                                            dlLink.href = dlUrl;
-                                            dlLink.setAttribute('download', sData.name || title || 'video.mp4');
-                                            document.body.appendChild(dlLink);
-                                            dlLink.click();
-                                            document.body.removeChild(dlLink);
+                                            triggerTorrentDownload(streamUrl, sData.name || title);
                                             if (art.notice) {
                                                 art.notice.show = '<i class="fas fa-download me-1 text-success"></i>Iniciando descarga en tu navegador...';
                                             }
