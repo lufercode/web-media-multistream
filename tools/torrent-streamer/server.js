@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebTorrent from 'webtorrent';
+import MemoryChunkStore from 'memory-chunk-store';
 import { buildManifest, getStremioStreams, getStremiosCatalog } from './stremio_addon.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,6 +11,120 @@ const __dirname = path.dirname(__filename);
 
 const PORT = parseInt(process.env.PORT || '8889', 10);
 const HOST = process.env.HOST || '0.0.0.0';
+
+// =========================================================================
+// GESTOR DE MEMORIA RAM EN VENTANA DESLIZANTE (Zero-Disk LRU Memory Chunk Store)
+// =========================================================================
+// Evita el uso del disco (/tmp) en Render para no provocar ENOSPC (disco lleno)
+// y mantiene la memoria dentro de un límite estricto de ~220 MB en RAM.
+const MAX_RAM_BUFFER_BYTES = 220 * 1024 * 1024; // 220 MB límite máximo de RAM para fragmentos de video
+const LOOKAHEAD_SECONDS = 60;                   // 60s de adelanto dinámico según bitrate
+const BACKBUFFER_SECONDS = 30;                  // 30s de retención previa para rebobinado instantáneo
+const INITIAL_BUFFER_SECONDS = 25;              // 25s de pre-buffer requerido antes de ready: true
+const ESTIMATED_MOVIE_SECONDS = 6000;           // 100 minutos duración estimada base para cálculo de bitrate
+
+class LruMemoryChunkStore extends MemoryChunkStore {
+    constructor(chunkLength, opts = {}) {
+        super(chunkLength, opts);
+        this.torrent = opts.torrent || null;
+        if (opts.torrent) {
+            opts.torrent._lruStore = this;
+        }
+        this.maxBytes = opts.maxBytes || MAX_RAM_BUFFER_BYTES;
+        this.currentBytes = 0;
+        this.pinnedChunks = new Set();
+        this.windowStart = 0;
+        this.windowEnd = 0;
+        this.lastUsed = new Map();
+        this.chunkSizes = new Map();
+    }
+
+    pin(startPiece, endPiece) {
+        for (let i = startPiece; i <= endPiece; i++) {
+            this.pinnedChunks.add(i);
+        }
+    }
+
+    setWindow(startPiece, endPiece) {
+        this.windowStart = startPiece;
+        this.windowEnd = endPiece;
+    }
+
+    put(index, buf, cb = () => {}) {
+        if (this.closed) return queueMicrotask(() => cb(new Error('Storage is closed')));
+
+        const isLastChunk = (index === this.lastChunkIndex);
+        if (isLastChunk && buf.length !== this.lastChunkLength) {
+            return queueMicrotask(() => cb(new Error('Last chunk length must be ' + this.lastChunkLength)));
+        }
+        if (!isLastChunk && buf.length !== this.chunkLength) {
+            return queueMicrotask(() => cb(new Error('Chunk length must be ' + this.chunkLength)));
+        }
+
+        const prevSize = this.chunkSizes.get(index) || 0;
+        this.chunks[index] = buf;
+        this.chunkSizes.set(index, buf.length);
+        this.lastUsed.set(index, Date.now());
+        this.currentBytes += (buf.length - prevSize);
+
+        if (this.currentBytes > this.maxBytes) {
+            this._evictOldChunks();
+        }
+
+        queueMicrotask(() => cb(null));
+    }
+
+    get(index, opts, cb = () => {}) {
+        if (typeof opts === 'function') return this.get(index, null, opts);
+        this.lastUsed.set(index, Date.now());
+        return super.get(index, opts, cb);
+    }
+
+    _evictOldChunks() {
+        const candidates = [];
+        for (const [idx, size] of this.chunkSizes.entries()) {
+            if (this.pinnedChunks.has(idx)) continue;
+            const isInsideWindow = (idx >= this.windowStart && idx <= this.windowEnd);
+            const isBehindWindow = (idx < this.windowStart);
+            const lastTs = this.lastUsed.get(idx) || 0;
+            candidates.push({ idx, size, isInsideWindow, isBehindWindow, lastTs });
+        }
+
+        // Orden: 1) Piezas ya vistas hacia atrás, 2) Piezas fuera de ventana, 3) Más antiguas
+        candidates.sort((a, b) => {
+            if (a.isBehindWindow !== b.isBehindWindow) {
+                return a.isBehindWindow ? -1 : 1;
+            }
+            if (a.isInsideWindow !== b.isInsideWindow) {
+                return a.isInsideWindow ? 1 : -1;
+            }
+            return a.lastTs - b.lastTs;
+        });
+
+        for (const cand of candidates) {
+            if (this.currentBytes <= this.maxBytes * 0.85) break;
+            if (cand.isInsideWindow && this.currentBytes <= this.maxBytes) break;
+
+            const idx = cand.idx;
+            const size = cand.size;
+            this.chunks[idx] = undefined;
+            this.chunkSizes.delete(idx);
+            this.lastUsed.delete(idx);
+            this.currentBytes -= size;
+
+            if (this.torrent) {
+                try {
+                    if (typeof this.torrent._markUnverified === 'function' && this.torrent.pieces) {
+                        this.torrent._markUnverified(idx);
+                    }
+                    if (typeof this.torrent.deselect === 'function') {
+                        this.torrent.deselect(idx, idx, false);
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+}
 
 // Carpeta de almacenamiento temporal (compatible con entornos locales y cloud / Render / Docker)
 function getCacheDir() {
@@ -144,7 +259,12 @@ function clearAllSelections(torrent) {
     if (!torrent) return;
     try {
         if (torrent.pieces && torrent.pieces.length > 0) {
-            torrent.deselect(0, torrent.pieces.length - 1, false);
+            if (typeof torrent._deselect === 'function') {
+                torrent._deselect(0, torrent.pieces.length - 1, false);
+                torrent._deselect(0, torrent.pieces.length - 1, true);
+            } else if (typeof torrent.deselect === 'function') {
+                torrent.deselect(0, torrent.pieces.length - 1, false);
+            }
         }
     } catch (e) {}
     if (Array.isArray(torrent.files)) {
@@ -157,12 +277,12 @@ function clearAllSelections(torrent) {
     }
 }
 
-// Ventana deslizante inteligente (Sliding Window):
-// En lugar de descargar los 1.8 GB - 50 GB enteros de golpe (lo que llena los 512 MB de /tmp en Render y satura el 0.1 CPU),
-// selecciona únicamente:
-// 1) Cabecera inicial (10 MB) + Cola final (4 MB para índice MKV Cues / MP4 moov)
-// 2) Una ventana deslizante de 45 MB por delante del punto de lectura actual del reproductor.
-// Cuando esa ventana de 45 MB se llena, WebTorrent pausa la descarga (0 KB/s y ~1% CPU) hasta que el reproductor avanza.
+// Ventana deslizante dinámica (Dynamic Time-Based Streaming Window):
+// - 60 segundos de adelanto (lookahead) según el bitrate estimado del video.
+// - 30 segundos de retención hacia atrás (back-buffer) para rebobinado instantáneo.
+// - Piezas iniciales (10 MB cabecera moov/ebml) y finales (4 MB índice cues) ancladas.
+// - Fuera de este rango, las piezas quedan deseleccionadas y el almacén LRU en RAM
+//   desaloja piezas antiguas para mantener el consumo total de RAM bajo 220 MB.
 function updateStreamingWindow(entry, byteOffset = 0) {
     if (!entry || !entry.torrent || !entry.file) return;
     const torrent = entry.torrent;
@@ -181,31 +301,53 @@ function updateStreamingWindow(entry, byteOffset = 0) {
         Math.max(startPiece, startPiece + Math.floor(Math.max(0, byteOffset) / pieceLength))
     );
 
-    // No reconstruir selecciones si el cursor no se ha movido al menos 2 piezas desde la última actualización
     if (entry.lastWindowPiece === currentPiece) {
         return;
     }
     entry.lastWindowPiece = currentPiece;
 
-    const headPieces = Math.max(4, Math.ceil((10 * 1024 * 1024) / pieceLength));   // ~10 MB iniciales
-    const tailPieces = Math.max(2, Math.ceil((4 * 1024 * 1024) / pieceLength));    // ~4 MB finales (índice MKV/MP4)
-    const lookaheadPieces = Math.max(10, Math.ceil((45 * 1024 * 1024) / pieceLength)); // ~45 MB por delante del reproductor
-    const criticalPieces = Math.max(3, Math.ceil((6 * 1024 * 1024) / pieceLength));    // ~6 MB urgentes inmediatos
+    // Cálculo dinámico de bitrate en base al tamaño total del archivo (~100 min)
+    const estBitrate = Math.max(250 * 1024, Math.floor(file.length / ESTIMATED_MOVIE_SECONDS));
+
+    // Lookahead dinámico de 60 segundos (mínimo 35 MB, máximo 180 MB)
+    const lookaheadBytes = Math.min(180 * 1024 * 1024, Math.max(35 * 1024 * 1024, Math.round(estBitrate * LOOKAHEAD_SECONDS)));
+    // Back-buffer dinámico de 30 segundos (mínimo 15 MB, máximo 50 MB)
+    const backBytes = Math.min(50 * 1024 * 1024, Math.max(15 * 1024 * 1024, Math.round(estBitrate * BACKBUFFER_SECONDS)));
+
+    const headPieces = Math.max(4, Math.ceil((10 * 1024 * 1024) / pieceLength));   // ~10 MB cabecera
+    const tailPieces = Math.max(2, Math.ceil((4 * 1024 * 1024) / pieceLength));    // ~4 MB cola
+    const lookaheadPieces = Math.max(6, Math.ceil(lookaheadBytes / pieceLength));  // 60s adelante
+    const backPieces = Math.max(3, Math.ceil(backBytes / pieceLength));            // 30s atrás
+    const criticalPieces = Math.max(3, Math.ceil((8 * 1024 * 1024) / pieceLength)); // ~8 MB urgentes
+
+    const winStart = Math.max(startPiece, currentPiece - backPieces);
+    const winEnd = Math.min(endPiece, currentPiece + lookaheadPieces);
+    const critEnd = Math.min(endPiece, currentPiece + criticalPieces);
 
     clearAllSelections(torrent);
 
     try {
-        // 1. Mantener cabecera e índice final seleccionados
-        torrent.select(startPiece, Math.min(endPiece, startPiece + headPieces), false);
-        torrent.select(Math.max(startPiece, endPiece - tailPieces), endPiece, false);
+        // 1. Cabecera inicial de video
+        const headEnd = Math.min(endPiece, startPiece + headPieces);
+        torrent.select(startPiece, headEnd, false);
 
-        // 2. Seleccionar ventana deslizante de 45 MB desde la posición actual del video
-        const winEnd = Math.min(endPiece, currentPiece + lookaheadPieces);
-        torrent.select(currentPiece, winEnd, 1);
+        // 2. Cola final (índice MKV Cues o MP4 moov)
+        const tailStart = Math.max(startPiece, endPiece - tailPieces);
+        torrent.select(tailStart, endPiece, false);
 
-        // 3. Marcar como críticas las piezas inmediatas que el reproductor necesita ya mismo
-        const critEnd = Math.min(endPiece, currentPiece + criticalPieces);
+        // 3. Ventana activa: 30s atrás + 60s adelante
+        torrent.select(winStart, winEnd, 1);
+
+        // 4. Piezas críticas inmediatas para el reproductor
         torrent.critical(currentPiece, critEnd);
+
+        // 5. Configurar anclajes y rango activo en el almacén de RAM
+        const memStore = entry.memStore || torrent._lruStore || (torrent.store && torrent.store.store);
+        if (memStore && typeof memStore.pin === 'function') {
+            memStore.pin(startPiece, headEnd);
+            memStore.pin(tailStart, endPiece);
+            memStore.setWindow(winStart, winEnd);
+        }
     } catch (e) {
         try { file.select(); } catch (e2) {}
     }
@@ -256,10 +398,14 @@ function destroyTorrentEntry(hash, entry) {
     activeTorrents.delete(hash);
     if (entry.torrent) {
         try {
-            entry.torrent.destroy({ destroyStore: true });
+            entry.torrent.destroy();
         } catch (e) {
             try { entry.torrent.destroy(); } catch (e2) {}
         }
+    }
+    if (entry.memStore) {
+        try { entry.memStore.destroy(); } catch (e) {}
+        entry.memStore = null;
     }
 }
 
@@ -338,17 +484,20 @@ function ensureTorrentLoaded(infoHashOrMagnet, opts = {}) {
     }
 
     const cleanMagnet = magnet.replace(/&(?:fileIdx|so|ep)=[^&]*/gi, '');
-    console.log(`[Streamer] Inicializando torrent: ${infoHash || cleanMagnet.substring(0, 50)} (ep=${requestedEpCode || '-'}, idx=${requestedFileIdx ?? '-'}, file=${requestedDn || '-'})`);
+    console.log(`[Streamer] Inicializando torrent (RAM LRU): ${infoHash || cleanMagnet.substring(0, 50)} (ep=${requestedEpCode || '-'}, idx=${requestedFileIdx ?? '-'}, file=${requestedDn || '-'})`);
 
     const existingInClient = infoHash ? client.torrents.find(t => t.infoHash && t.infoHash.toLowerCase() === infoHash) : null;
     const torrent = existingInClient || client.add(cleanMagnet, {
-        path: CACHE_DIR,
+        store: LruMemoryChunkStore,
+        storeOpts: { maxBytes: MAX_RAM_BUFFER_BYTES },
+        deselect: true,
         announce: DEFAULT_TRACKERS
     });
 
     const resolvedHash = (torrent.infoHash || infoHash).toLowerCase();
     const entry = {
         torrent,
+        memStore: null,
         file: null,
         subtitles: [],
         requestedFileIdx,
@@ -363,16 +512,18 @@ function ensureTorrentLoaded(infoHashOrMagnet, opts = {}) {
     const onTorrentReady = () => {
         if (entry.file) return;
 
+        entry.memStore = torrent._lruStore || (torrent.store && torrent.store.store) || null;
+
         // 1. Limpiar todas las selecciones automáticas de WebTorrent para NO descargar otros episodios ni el archivo entero de golpe
         clearAllSelections(torrent);
 
-        // 2. Seleccionar el episodio/archivo objetivo y activar ventana deslizante ligera (45 MB)
+        // 2. Seleccionar el episodio/archivo objetivo y activar ventana dinámica de 60s
         const mainVideo = pickTargetFile(torrent, entry.requestedFileIdx, entry.requestedEpCode, entry.requestedDn);
         if (mainVideo) {
             entry.file = mainVideo;
             entry.lastWindowPiece = -1;
             updateStreamingWindow(entry, 0);
-            console.log(`[Streamer] Video seleccionado (Sliding Window 45MB): ${mainVideo.name} (${formatBytes(mainVideo.length)})`);
+            console.log(`[Streamer] Video seleccionado (Dynamic 60s Window in RAM): ${mainVideo.name} (${formatBytes(mainVideo.length)})`);
         }
 
         // 3. Indexar subtítulos (.srt, .vtt) SIN seleccionarlos todavía (se seleccionan bajo demanda solo si el usuario los pide)
@@ -431,6 +582,7 @@ const server = http.createServer(async (req, res) => {
 
     // GET /health o /ping
     if (pathname === '/health' || pathname === '/ping') {
+        const mem = process.memoryUsage();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             status: 'ok',
@@ -438,7 +590,9 @@ const server = http.createServer(async (req, res) => {
             torrentsCount: activeTorrents.size,
             clientDownloadSpeed: client.downloadSpeed,
             clientUploadSpeed: client.uploadSpeed,
-            memoryMB: Math.round(process.memoryUsage().rss / (1024 * 1024))
+            memoryMB: Math.round(mem.rss / (1024 * 1024)),
+            heapUsedMB: Math.round(mem.heapUsed / (1024 * 1024)),
+            maxRamLimitMB: Math.round(MAX_RAM_BUFFER_BYTES / (1024 * 1024))
         }));
         return;
     }
@@ -642,12 +796,23 @@ const server = http.createServer(async (req, res) => {
 
         const downloadedBytes = (f && typeof f.downloaded === 'number') ? f.downloaded : (t.downloaded || 0);
         const totalBytes = f ? f.length : (t.length || 1);
-        const initialBufferNeeded = Math.min(3.5 * 1024 * 1024, Math.max(1.5 * 1024 * 1024, totalBytes * 0.003));
         const fileProgress = (f && typeof f.progress === 'number') ? f.progress : (t.progress || 0);
 
-        const isReadyToPlay = (entry.file !== null) && (
+        // Bitrate estimado del video en bytes/segundo (~100 minutos base)
+        const estBitrate = Math.max(250 * 1024, Math.floor(totalBytes / ESTIMATED_MOVIE_SECONDS));
+        // Pre-buffer de 25 segundos para reproducción fluida sin interrupciones (mínimo 6 MB, máximo 60 MB)
+        const initialBufferNeeded = Math.min(60 * 1024 * 1024, Math.max(6 * 1024 * 1024, Math.round(estBitrate * INITIAL_BUFFER_SECONDS)));
+
+        const memStore = entry.memStore || t._lruStore || (t.store && t.store.store);
+        const ramUsedBytes = memStore ? memStore.currentBytes : (t.downloaded || 0);
+
+        // Asegurar que la cabecera del contenedor (moov/ebml) esté lista
+        const startPiece = f ? f._startPiece : 0;
+        const headReady = (t.bitfield && typeof t.bitfield.get === 'function') ? t.bitfield.get(startPiece) : true;
+
+        const isReadyToPlay = (entry.file !== null) && headReady && (
             downloadedBytes >= initialBufferNeeded ||
-            (downloadedBytes >= 1.2 * 1024 * 1024 && t.downloadSpeed > 200 * 1024)
+            (downloadedBytes >= initialBufferNeeded * 0.5 && t.downloadSpeed > 350 * 1024)
         );
 
         const suffix = buildStreamQuerySuffix(entry);
@@ -660,6 +825,10 @@ const server = http.createServer(async (req, res) => {
             totalSize: formatBytes(totalBytes),
             downloadedSize: formatBytes(downloadedBytes),
             bufferTargetSize: formatBytes(initialBufferNeeded),
+            bufferTargetSeconds: INITIAL_BUFFER_SECONDS,
+            lookaheadSeconds: LOOKAHEAD_SECONDS,
+            backbufferSeconds: BACKBUFFER_SECONDS,
+            ramBufferMB: Math.round(ramUsedBytes / (1024 * 1024)),
             progressPct: Math.round(fileProgress * 1000) / 10,
             initialBufferPct: Math.min(100, Math.round((downloadedBytes / initialBufferNeeded) * 100)),
             downloadSpeed: formatBytes(t.downloadSpeed) + '/s',
