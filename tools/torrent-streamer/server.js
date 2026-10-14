@@ -169,16 +169,16 @@ const DEFAULT_TRACKERS = [
     'udp://open.demonii.com:1337/announce'
 ];
 
-// Configuración optimizada para Render Free Tier (0.1 vCPU / 512 MB RAM):
-// - maxConns: 18 (evita saturar el event loop y memoria con decenas de sockets simultáneos)
-// - utp: false (usa TCP nativo del kernel Linux en lugar de uTP por UDP en JS, ahorrando ~40% de CPU)
-// - downloadLimit: 2.8 MB/s (~22.4 Mbps, más del doble de lo que requiere 1080p, evitando que el cálculo SHA-1 de piezas sature el 0.1 CPU)
-// - uploadLimit: 64 KB/s (mínimo gasto en subida)
-const MAX_DOWNLOAD_RATE = Math.floor(2.8 * 1024 * 1024); // 2936012 bytes/s (entero exacto requerido por speed-limiter)
-const MAX_UPLOAD_RATE = 64 * 1024; // 65536 bytes/s
+// Configuración optimizada para streaming y descarga rápida (Render Free Tier 512 MB RAM con Zero-Disk LRU):
+// - maxConns: 24 (conecta a más semillas de alta velocidad simultáneas)
+// - utp: false (usa TCP nativo del kernel Linux, ahorrando ~40% de CPU)
+// - downloadLimit: 15.0 MB/s (~125 Mbps, descarga ultra-rápida aprovechando conexiones de alta velocidad como 500 Mbps)
+// - uploadLimit: 128 KB/s
+const MAX_DOWNLOAD_RATE = Math.floor(15.0 * 1024 * 1024); // 15728640 bytes/s (~125 Mbps)
+const MAX_UPLOAD_RATE = 128 * 1024; // 131072 bytes/s
 
 const client = new WebTorrent({
-    maxConns: 18,
+    maxConns: 24,
     utp: false,
     downloadLimit: MAX_DOWNLOAD_RATE,
     uploadLimit: MAX_UPLOAD_RATE,
