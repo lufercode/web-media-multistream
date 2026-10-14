@@ -175,16 +175,23 @@ if ($action === 'load') {
 
     if ($response && ($http_code === 200 || $http_code === 201)) {
         $data = json_decode($response, true);
-        if (is_array($data) && !empty($data['infoHash'])) {
-            $hash = strtolower($data['infoHash']);
-            // Si es remoto, la URL de stream va directa al host remoto para no pasar gigabytes por InfinityFree
-            $data['streamUrl'] = $IS_REMOTE 
-                ? "{$DAEMON_BASE}/stream/{$hash}" 
-                : "api/torrent_stream.php?action=stream&infoHash={$hash}";
-            $data['isRemote'] = $IS_REMOTE;
-            $data['daemonBase'] = $DAEMON_BASE;
-            echo json_encode($data, JSON_UNESCAPED_SLASHES);
-            exit;
+        if (is_array($data)) {
+            if (empty($data['infoHash'])) {
+                if (preg_match('/xt=urn(?::|%3a)btih(?::|%3a)([a-zA-Z0-9]+)/i', $magnet, $mMatch)) {
+                    $data['infoHash'] = strtolower($mMatch[1]);
+                }
+            }
+            if (!empty($data['infoHash'])) {
+                $hash = strtolower($data['infoHash']);
+                // Si es remoto, la URL de stream va directa al host remoto para no pasar gigabytes por InfinityFree
+                $data['streamUrl'] = $IS_REMOTE 
+                    ? "{$DAEMON_BASE}/stream/{$hash}" 
+                    : "api/torrent_stream.php?action=stream&infoHash={$hash}";
+                $data['isRemote'] = $IS_REMOTE;
+                $data['daemonBase'] = $DAEMON_BASE;
+                echo json_encode($data, JSON_UNESCAPED_SLASHES);
+                exit;
+            }
         }
         echo $response;
     } else {

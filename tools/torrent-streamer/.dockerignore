@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+cache
+torrent_cache
+.git
+.gitignore
+.env
+

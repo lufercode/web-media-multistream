@@ -1919,11 +1919,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (!loadData || loadData.status !== 'success' || !loadData.infoHash) {
+            // Fallback robusto: si loadData.infoHash vino vacío, extraerlo del propio magnetUrl
+            let resolvedInfoHash = (loadData && loadData.infoHash) ? String(loadData.infoHash).trim().toLowerCase() : '';
+            if (!resolvedInfoHash && typeof magnetUrl === 'string') {
+                const magnetHashMatch = magnetUrl.match(/xt=urn(?::|%3a)btih(?::|%3a)([a-zA-Z0-9]+)/i);
+                if (magnetHashMatch) {
+                    resolvedInfoHash = magnetHashMatch[1].toLowerCase();
+                }
+            }
+
+            if (!loadData || loadData.status !== 'success' || !resolvedInfoHash) {
                 throw new Error(loadData?.error || 'No se pudo inicializar el torrent.');
             }
 
-            const infoHash = loadData.infoHash;
+            const infoHash = resolvedInfoHash;
+            loadData.infoHash = infoHash;
             window._activeTorrentStreamHash = infoHash;
             window._activeTorrentRemoteBase = remoteBase;
 

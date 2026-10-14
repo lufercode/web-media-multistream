@@ -426,16 +426,21 @@ function buildStreamQuerySuffix(entry) {
     return qs ? `?${qs}` : '';
 }
 
-function ensureTorrentLoaded(infoHashOrMagnet, opts = {}) {
+async function ensureTorrentLoaded(infoHashOrMagnet, opts = {}) {
     let infoHash = '';
     let magnet = '';
+    let rawInput = String(infoHashOrMagnet || '').trim();
 
-    if (infoHashOrMagnet.startsWith('magnet:?')) {
-        magnet = infoHashOrMagnet;
-        const match = magnet.match(/xt=urn:btih:([a-zA-Z0-9]+)/i);
+    try {
+        rawInput = decodeURIComponent(rawInput);
+    } catch (e) {}
+
+    if (rawInput.startsWith('magnet:?')) {
+        magnet = rawInput;
+        const match = magnet.match(/xt=urn(?::|%3a)btih(?::|%3a)([a-zA-Z0-9]+)/i);
         if (match) infoHash = match[1].toLowerCase();
     } else {
-        infoHash = String(infoHashOrMagnet).trim().toLowerCase();
+        infoHash = rawInput.toLowerCase();
         magnet = `magnet:?xt=urn:btih:${infoHash}`;
     }
 
@@ -494,9 +499,21 @@ function ensureTorrentLoaded(infoHashOrMagnet, opts = {}) {
         announce: DEFAULT_TRACKERS
     });
 
+    // Esperar a que WebTorrent resuelva el infoHash si aún no está disponible
+    if (!torrent.infoHash) {
+        await new Promise((resolve) => {
+            const timer = setTimeout(resolve, 2500);
+            torrent.once('infoHash', () => {
+                clearTimeout(timer);
+                resolve();
+            });
+        });
+    }
+
     const resolvedHash = (torrent.infoHash || infoHash).toLowerCase();
     const entry = {
         torrent,
+        infoHash: resolvedHash,
         memStore: null,
         file: null,
         subtitles: [],
@@ -507,7 +524,9 @@ function ensureTorrentLoaded(infoHashOrMagnet, opts = {}) {
         addedAt: Date.now(),
         lastAccess: Date.now()
     };
-    activeTorrents.set(resolvedHash, entry);
+    if (resolvedHash) {
+        activeTorrents.set(resolvedHash, entry);
+    }
 
     const onTorrentReady = () => {
         if (entry.file) return;
@@ -687,12 +706,12 @@ const server = http.createServer(async (req, res) => {
         const requestedDn = dnMatch ? decodeURIComponent(dnMatch[1].replace(/\+/g, ' ')) : null;
 
         try {
-            const entry = ensureTorrentLoaded(magnet, {
+            const entry = await ensureTorrentLoaded(magnet, {
                 requestedFileIdx,
                 requestedEpCode,
                 requestedDn
             });
-            const resolvedHash = (entry.torrent.infoHash || '').toLowerCase();
+            const resolvedHash = (entry.infoHash || entry.torrent.infoHash || '').toLowerCase();
             const suffix = buildStreamQuerySuffix(entry);
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -776,7 +795,7 @@ const server = http.createServer(async (req, res) => {
                 const qIdxRaw = parsedUrl.searchParams.get('fileIdx');
                 const qIdx = qIdxRaw !== null ? parseInt(qIdxRaw, 10) : null;
                 console.log(`[Streamer] Auto-recuperando torrent en /status/${infoHash} tras reinicio...`);
-                entry = ensureTorrentLoaded(infoHash, {
+                entry = await ensureTorrentLoaded(infoHash, {
                     requestedDn: qFile,
                     requestedEpCode: qEp,
                     requestedFileIdx: qIdx
@@ -862,7 +881,7 @@ const server = http.createServer(async (req, res) => {
         // Si Render se reinició o el usuario abrió el enlace en VLC minutos después, auto-recuperar el torrent al vuelo
         if (!entry && /^[a-f0-9]{40}$/i.test(infoHash)) {
             console.log(`[Streamer] Auto-recuperando torrent en /stream/${infoHash} (file=${qFile || '-'}, ep=${qEp || '-'})...`);
-            entry = ensureTorrentLoaded(infoHash, {
+            entry = await ensureTorrentLoaded(infoHash, {
                 requestedDn: qFile,
                 requestedEpCode: qEp,
                 requestedFileIdx: qIdx
