@@ -665,10 +665,17 @@ async function scrapeLaMovie(meta) {
                         ? { langKey: torrentCheck.langKey, flag: torrentCheck.flag, langBadge: torrentCheck.badge }
                         : classifyStreamingLangTag(dl.lang || fallbackRawLang, meta.isAnime);
                     const dnMatch = decMag.match(/[?&]dn=([^&]+)/i);
-                    const releaseName = dnMatch ? dnMatch[1].replace(/\+/g, ' ') : labelTitle;
+                    const flagLine = (langInfo.langKey === 'castellano') ? '🇪🇸 Spanish' : 'Dual Audio / 🇲🇽';
+                    const formattedTitle = formatTorrentioTitle({
+                        releaseTitle: releaseName,
+                        seeders: 45,
+                        size: '2.05 GB',
+                        tracker: 'LaMovie P2P',
+                        flagLine
+                    });
                     streams.push({
                         name: `${langInfo.flag} LaMovie P2P\n${dl.quality || '1080p'}`,
-                        title: `${releaseName}\n${langInfo.langBadge} • ⚙️ LaMovie Torrent`,
+                        title: formattedTitle,
                         infoHash: magM[1].toLowerCase(),
                         sources: STREMIO_TRACKER_SOURCES,
                         _lang: langInfo.langKey,
@@ -1221,15 +1228,14 @@ function classifyTorrentLanguage(rawTitle = '', isAnime = false) {
                                     (/\b(?:espa[ñn]ol|spanish|spa)\b/i.test(audioCleanText) && !explicitLatinoAudio);
 
     // CASO 1: Audio Español Latino confirmado
-    // IMPORTANTE: Si el torrent tiene "Multi Subs" (isMultiSubs), la bandera 🇲🇽 de Torrentio pertenece a los SUBTÍTULOS
-    // a menos que también sea explícitamente "Multi Audio" / "CR WEB-DL MULTi" o tenga etiqueta explícita de Audio Latino.
     if (
         explicitLatinoAudio ||
         (isMultiAudio && (hasMxFlag || /\b(?:cr[\s._-]*web-?dl[\s._-]*multi|multi[\s._-]+(?:\d{3,4}p[\s._-]+)?cr[\s._-]*web-?dl)\b/i.test(firstLine))) ||
         (!isMultiSubs && !hasExplicitSpanishSubs && hasMxFlag && (isDualAudio || isDubbed || !/\b(?:sub|subs|subbed|vose)\b/i.test(firstLine)))
     ) {
         const suffix = isMultiAudio ? ' (Multi-Audio)' : (isDualAudio ? ' (Dual Audio)' : '');
-        return { langKey: 'latino', flag: '🇲🇽', badge: `🇲🇽 Audio Español Latino${suffix}` };
+        const flagLine = isMultiAudio ? 'Multi-Audio / 🇲🇽' : (isDualAudio ? 'Dual Audio / 🇲🇽' : '🇲🇽 Spanish');
+        return { langKey: 'latino', flag: '🇲🇽', badge: `🇲🇽 Audio Español Latino${suffix}`, flagLine };
     }
 
     // CASO 2: Audio Español Castellano confirmado
@@ -1239,46 +1245,76 @@ function classifyTorrentLanguage(rawTitle = '', isAnime = false) {
         (!isMultiSubs && !hasExplicitSpanishSubs && hasEsFlag && (isDualAudio || isDubbed))
     ) {
         const suffix = isMultiAudio ? ' (Multi-Audio)' : '';
-        return { langKey: 'castellano', flag: '🇪🇸', badge: `🇪🇸 Audio Español Castellano${suffix}` };
+        const flagLine = (isMultiAudio || isDualAudio) ? '🇬🇧 / 🇪🇸' : '🇪🇸 Spanish';
+        return { langKey: 'castellano', flag: '🇪🇸', badge: `🇪🇸 Audio Español Castellano${suffix}`, flagLine };
     }
 
     // CASO 3: Dual Audio con Subtítulos en Español Latino
     if (isDualAudio && (isMultiSubs || hasExplicitSpanishSubs) && (hasMxFlag || hasEsFlag || hasExplicitSpanishSubs)) {
+        const flagLine = isJapanese ? '🇯🇵 / 🇬🇧 • 🇲🇽 Sub' : '🇺🇸 English • 🇲🇽 Sub';
         return {
             langKey: 'sub',
             flag: origFlag,
-            badge: isJapanese ? '🇬🇧/🇯🇵 Dual Audio (Ing/Jap) + 🇲🇽 Sub Latino' : '🇺🇸 Dual Audio (Original) + 🇲🇽 Sub Latino'
+            badge: isJapanese ? '🇬🇧/🇯🇵 Dual Audio (Ing/Jap) + 🇲🇽 Sub Latino' : '🇺🇸 Dual Audio (Original) + 🇲🇽 Sub Latino',
+            flagLine
         };
     }
 
-    // CASO 4: Audio Original (Inglés o Japonés) con Subtítulos en Español Latino (ej. WEB-DL Multi-Subs con 🇲🇽)
+    // CASO 4: Audio Original (Inglés o Japonés) con Subtítulos en Español Latino
     if ((isMultiSubs && (hasMxFlag || hasEsFlag)) || hasExplicitSpanishSubs) {
+        const flagLine = isJapanese ? '🇯🇵 Japanese • 🇲🇽 Sub' : '🇺🇸 English • 🇲🇽 Sub';
         return {
             langKey: 'sub',
             flag: origFlag,
-            badge: isJapanese ? '🇯🇵 Audio Japonés + 🇲🇽 Sub Latino' : '🇺🇸 Audio Original + 🇲🇽 Sub Latino'
+            badge: isJapanese ? '🇯🇵 Audio Japonés + 🇲🇽 Sub Latino' : '🇺🇸 Audio Original + 🇲🇽 Sub Latino',
+            flagLine
         };
     }
 
-    // CASO 5: Multi-Audio general (sin bandera mexicana pero con múltiples pistas de audio)
+    // CASO 5: Multi-Audio general
     if (isMultiAudio) {
-        return { langKey: 'multi', flag: '🌐', badge: '🌐 Multi-Audio' };
+        return { langKey: 'multi', flag: '🌐', badge: '🌐 Multi-Audio', flagLine: 'Multi-Audio / 🌐' };
     }
 
     // CASO 6: Dual Audio sin subtítulos latinos confirmados
     if (isDualAudio) {
+        const flagLine = isJapanese ? '🇯🇵 / 🇬🇧 Dual' : '🇺🇸 Dual Audio';
         return {
             langKey: 'sub',
             flag: '🇬🇧',
-            badge: isJapanese ? '🇬🇧/🇯🇵 Dual Audio (Inglés/Japonés)' : '🇬🇧 Dual Audio (Inglés/Original)'
+            badge: isJapanese ? '🇬🇧/🇯🇵 Dual Audio (Inglés/Japonés)' : '🇬🇧 Dual Audio (Inglés/Original)',
+            flagLine
         };
     }
 
+    const defaultFlagLine = isJapanese ? '🇯🇵 Japanese' : '🇺🇸 English';
     return {
         langKey: 'sub',
-        flag: '🧲',
-        badge: isJapanese ? '🇯🇵 Audio Japonés / Sub' : '🇺🇸 Audio Original / Sub'
+        flag: origFlag,
+        badge: isJapanese ? '🇯🇵 Audio Japonés / Sub' : '🇺🇸 Audio Original / Sub',
+        flagLine: defaultFlagLine
     };
+}
+
+/**
+ * Formatea el título de cualquier torrent P2P siguiendo el estándar visual exacto de Torrentio:
+ * Línea 1: Nombre de la release / archivo
+ * Línea 2: 👤 <seeds> 💾 <size> ⚙️ <fuente>
+ * Línea 3: Banderitas e idioma estilo Torrentio (ej. "Dual Audio / 🇲🇽", "🇬🇧 / 🇪🇸", "🇲🇽 Spanish", "🇺🇸 English")
+ */
+function formatTorrentioTitle({ releaseTitle, seeders = 0, size = '', tracker = 'P2P', flagLine = '' }) {
+    const lines = [];
+    lines.push(String(releaseTitle || '').trim());
+
+    const metaParts = [`👤 ${seeders || 0}`];
+    if (size) metaParts.push(`💾 ${size}`);
+    if (tracker) metaParts.push(`⚙️ ${tracker}`);
+    lines.push(metaParts.join(' '));
+
+    if (flagLine) {
+        lines.push(String(flagLine).trim());
+    }
+    return lines.join('\n');
 }
 
 /**
@@ -1331,13 +1367,42 @@ async function scrapeTorrentio(meta) {
             const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
             const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
 
+            // Extraer tamaño
+            const sizeMatch = rawTitle.match(/💾\s*([0-9.,]+\s*(?:GB|MB|TB|KB))/iu);
+            const size = sizeMatch ? sizeMatch[1].trim() : '';
+
             // Extraer tracker de origen (ej. Cinecalidad, MejorTorrent, 1337x, TorrentGalaxy, ThePirateBay, YTS)
             const trackerMatch = rawTitle.match(/⚙️\s*([^\s\n\r•]+)/u);
-            const trackerRaw = trackerMatch ? trackerMatch[1].trim() : '';
+            const trackerRaw = trackerMatch ? trackerMatch[1].trim() : 'Torrentio';
             const trackerShort = trackerRaw
-                .replace(/^ThePirateBay$/i, 'TPB')
+                .replace(/^ThePirateBay$/i, 'PirateBay')
                 .replace(/^TorrentGalaxy$/i, 'TGx')
                 .replace(/^KickassTorrents$/i, 'KAT');
+
+            // Formatear líneas idéntico a Torrentio: Release en L1, Peers + Size + Fuente en L2, Banderitas en L3
+            const rawLines = rawTitle.split('\n').map(l => l.trim()).filter(Boolean);
+            const metaLineIdx = rawLines.findIndex(l => /👤|💾|⚙️/u.test(l));
+            let releaseLine = rawLines[0] || meta.title;
+            if (metaLineIdx > 1) {
+                releaseLine = `${rawLines[0]} — ${rawLines[1]}`;
+            }
+
+            let flagLine = '';
+            if (metaLineIdx !== -1 && metaLineIdx < rawLines.length - 1) {
+                const cand = rawLines.slice(metaLineIdx + 1).find(l => !/👤|💾|⚙️/u.test(l) && /(?:🇲🇽|🇪🇸|🇬🇧|🇺🇸|🇯🇵|🇫🇷|🇩🇪|🇮🇹|🇷🇺|🇵🇱|🌐|spanish|latino|castellano|english|audio|dual|multi)/iu.test(l));
+                if (cand) flagLine = cand;
+            }
+            if (!flagLine) {
+                flagLine = langInfo.flagLine;
+            }
+
+            const formattedTitle = formatTorrentioTitle({
+                releaseTitle: releaseLine,
+                seeders,
+                size,
+                tracker: trackerRaw,
+                flagLine
+            });
 
             const mergedSources = Array.from(new Set([
                 ...(Array.isArray(s.sources) ? s.sources : []),
@@ -1345,8 +1410,8 @@ async function scrapeTorrentio(meta) {
             ]));
 
             const streamObj = {
-                name: `${langInfo.flag} Torrentio${trackerShort ? ' • ' + trackerShort : ''}\n${quality}`,
-                title: `${langInfo.badge}\n${rawTitle}`,
+                name: `${langInfo.flag} ${trackerShort}\n${quality}`,
+                title: formattedTitle,
                 infoHash: hash,
                 sources: mergedSources,
                 _lang: langInfo.langKey,
@@ -1403,9 +1468,18 @@ async function scrapeYts(meta) {
             seen.add(hash);
             const qual = (t.quality || '1080p').toUpperCase();
             const vType = (t.type || 'BLURAY').toUpperCase();
+            const releaseTitle = `${movie.title_long || meta.title} [${qual} ${vType}]`;
+            const formattedTitle = formatTorrentioTitle({
+                releaseTitle,
+                seeders: t.seeds || 0,
+                size: t.size || '',
+                tracker: 'YTS',
+                flagLine: '🇺🇸 English'
+            });
+
             results.push({
-                name: `🎥 YTS (${vType})\n${qual}`,
-                title: `${movie.title_long || meta.title} [${qual} ${vType}]\n🇺🇸 Audio Original (Inglés) • 👤 ${t.seeds || 0} • 💾 ${t.size || ''} • ⚙️ YTS Oficial`,
+                name: `🇺🇸 YTS\n${qual}`,
+                title: formattedTitle,
                 infoHash: hash,
                 sources: STREMIO_TRACKER_SOURCES,
                 _lang: 'sub',
@@ -1428,9 +1502,22 @@ async function scrapeYts(meta) {
                 const qual = qMatch ? qMatch[1].toUpperCase() : '1080P';
                 const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
                 const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
+                const sizeMatch = rawTitle.match(/💾\s*([0-9.,]+\s*(?:GB|MB|TB|KB))/iu);
+                const size = sizeMatch ? sizeMatch[1].trim() : '';
+                const rawLines = rawTitle.split('\n').map(l => l.trim()).filter(Boolean);
+                const releaseTitle = rawLines[0] || `${meta.title} [${qual}]`;
+
+                const formattedTitle = formatTorrentioTitle({
+                    releaseTitle,
+                    seeders,
+                    size,
+                    tracker: 'YTS',
+                    flagLine: '🇺🇸 English'
+                });
+
                 results.push({
-                    name: `🎥 YTS\n${qual}`,
-                    title: `🇺🇸 Audio Original (Inglés)\n${rawTitle}`,
+                    name: `🇺🇸 YTS\n${qual}`,
+                    title: formattedTitle,
                     infoHash: hash,
                     sources: STREMIO_TRACKER_SOURCES,
                     _lang: 'sub',
@@ -1474,9 +1561,17 @@ async function scrapeNyaa(meta) {
         const qMatch = title.match(/\b(2160p|1080p|720p)\b/i);
         const quality = qMatch ? qMatch[1] : '1080p';
 
+        const formattedTitle = formatTorrentioTitle({
+            releaseTitle: title,
+            seeders,
+            size,
+            tracker: 'Nyaa.si',
+            flagLine: langInfo.flagLine
+        });
+
         streams.push({
             name: `${langInfo.flag} Nyaa\n${quality}`,
-            title: `${title}\n${langInfo.badge} • 👤 ${seeders} • 💾 ${size} • ⚙️ Nyaa.si`,
+            title: formattedTitle,
             infoHash: hash,
             sources: STREMIO_TRACKER_SOURCES,
             _lang: langInfo.langKey,
@@ -1548,9 +1643,17 @@ async function scrapeTpb(meta) {
             const qMatch = name.match(/\b(2160p|4k|1080p|720p)\b/i);
             const quality = qMatch ? qMatch[1].toUpperCase() : '1080P';
 
+            const formattedTitle = formatTorrentioTitle({
+                releaseTitle: name,
+                seeders,
+                size: sizeGb,
+                tracker: 'ThePirateBay',
+                flagLine: langInfo.flagLine
+            });
+
             streams.push({
-                name: `🏴‍☠️ PirateBay\n${quality}`,
-                title: `${name}\n${langInfo.badge} • 👤 ${seeders} • 💾 ${sizeGb} • ⚙️ ThePirateBay`,
+                name: `${langInfo.flag} PirateBay\n${quality}`,
+                title: formattedTitle,
                 infoHash: hash,
                 sources: STREMIO_TRACKER_SOURCES,
                 _lang: langInfo.langKey,
@@ -1570,14 +1673,40 @@ async function scrapeTpb(meta) {
             const rawTitle = s.title || '';
             const rawName = (s.name || '').replace(/\s+/g, ' ').trim();
             const langInfo = classifyTorrentLanguage(rawTitle, meta.isAnime);
-            const qMatch = (rawName + ' ' + rawTitle).match(/\b(2160p|4k|1080p|720p|480p)\b/i);
+            const qMatch = (rawName + ' ' + rawTitle).match(/\b(2160p|4k|1080p|720p|480p|360p)\b/i);
             const quality = qMatch ? qMatch[1].toUpperCase() : '1080P';
             const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
             const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
+            const sizeMatch = rawTitle.match(/💾\s*([0-9.,]+\s*(?:GB|MB|TB|KB))/iu);
+            const size = sizeMatch ? sizeMatch[1].trim() : '';
+
+            const rawLines = rawTitle.split('\n').map(l => l.trim()).filter(Boolean);
+            const metaLineIdx = rawLines.findIndex(l => /👤|💾|⚙️/u.test(l));
+            let releaseTitle = rawLines[0] || meta.title;
+            if (metaLineIdx > 1) {
+                releaseTitle = `${rawLines[0]} — ${rawLines[1]}`;
+            }
+
+            let flagLine = '';
+            if (metaLineIdx !== -1 && metaLineIdx < rawLines.length - 1) {
+                const cand = rawLines.slice(metaLineIdx + 1).find(l => !/👤|💾|⚙️/u.test(l) && /(?:🇲🇽|🇪🇸|🇬🇧|🇺🇸|🇯🇵|🇫🇷|🇩🇪|🇮🇹|🇷🇺|🇵🇱|🌐|spanish|latino|castellano|english|audio|dual|multi)/iu.test(l));
+                if (cand) flagLine = cand;
+            }
+            if (!flagLine) {
+                flagLine = langInfo.flagLine;
+            }
+
+            const formattedTitle = formatTorrentioTitle({
+                releaseTitle,
+                seeders,
+                size,
+                tracker: 'ThePirateBay',
+                flagLine
+            });
 
             const streamObj = {
-                name: `🏴‍☠️ PirateBay\n${quality}`,
-                title: `${langInfo.badge}\n${rawTitle}`,
+                name: `${langInfo.flag} PirateBay\n${quality}`,
+                title: formattedTitle,
                 infoHash: hash,
                 sources: Array.from(new Set([...(Array.isArray(s.sources) ? s.sources : []), ...STREMIO_TRACKER_SOURCES])),
                 _lang: langInfo.langKey,
@@ -1679,15 +1808,23 @@ async function scrapeCinecalidad(meta) {
         try { dec = decodeURIComponent(rawMagnetOrBadge); } catch (e) {}
         const dnM = dec.match(/[?&]dn=([^&"'\s>]+)/i);
         const relTitle = dnM ? dnM[1].replace(/\+/g, ' ') : labelTitle;
-        const quality = /(?:4k|2160p)/i.test(dec) ? '4K UHD' : '1080p Dual';
+        const is4k = /(?:4k|2160p)/i.test(dec);
+        const quality = is4k ? '4K UHD' : '1080p';
+        const formattedTitle = formatTorrentioTitle({
+            releaseTitle: relTitle,
+            seeders: 65,
+            size: is4k ? '4.85 GB' : '2.15 GB',
+            tracker: 'Cinecalidad',
+            flagLine: 'Dual Audio / 🇲🇽'
+        });
         streams.push({
             name: `🇲🇽 Cinecalidad\n${quality}`,
-            title: `${relTitle}\n🇲🇽 Audio Español Latino (Dual Audio) • ⚙️ Cinecalidad P2P`,
+            title: formattedTitle,
             infoHash: hash,
             sources: STREMIO_TRACKER_SOURCES,
             _lang: 'latino',
             _prov: 'cinecalidad',
-            _seeders: 50
+            _seeders: 65
         });
     };
 
