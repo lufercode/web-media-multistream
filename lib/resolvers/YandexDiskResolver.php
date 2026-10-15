@@ -39,10 +39,11 @@ class YandexDiskResolver implements ResolverInterface
             : 'HD / 1080p';
 
         return [
-            'server'     => 'Movie+ Cloud FastStream',
-            'embed_url'  => $proxyStreamUrl,
-            'stream_url' => $directUrl,
-            'quality'    => $quality
+            'server'       => 'Movie+ Cloud FastStream',
+            'embed_url'    => $proxyStreamUrl,
+            'stream_url'   => $proxyStreamUrl,
+            'download_url' => $directUrl,
+            'quality'      => $quality
         ];
     }
 }

@@ -177,3 +177,4 @@ class MoviePlusProvider implements ProviderInterface
         return $results;
     }
 }
+

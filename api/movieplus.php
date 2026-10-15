@@ -222,6 +222,12 @@ try {
             break;
 
         case 'stream':
+            @set_time_limit(0);
+            ignore_user_abort(false);
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
+
             // Streaming de video con soporte de HTTP Range y Content-Disposition inline
             $url = trim((string)($_GET['url'] ?? ''));
             if ($url === '') {
@@ -244,7 +250,8 @@ try {
             }
 
             $reqHeaders = [
-                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept: */*'
             ];
             if (isset($_SERVER['HTTP_RANGE'])) {
                 $reqHeaders[] = 'Range: ' . $_SERVER['HTTP_RANGE'];
@@ -258,10 +265,35 @@ try {
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($ch, CURLOPT_BUFFERSIZE, 128 * 1024);
 
-            curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) {
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+
+            $isRedirect = false;
+            curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$isRedirect) {
                 $len = strlen($header);
                 $trimmed = trim($header);
                 if ($trimmed === '') return $len;
+
+                if (stripos($trimmed, 'HTTP/') === 0) {
+                    if (preg_match('#HTTP/\S+\s+(\d{3})#i', $trimmed, $m)) {
+                        $code = (int)$m[1];
+                        if ($code >= 300 && $code < 400) {
+                            $isRedirect = true;
+                            return $len;
+                        } else {
+                            $isRedirect = false;
+                            http_response_code($code);
+                        }
+                    }
+                    header($trimmed);
+                    return $len;
+                }
+
+                // Si estamos en un salto de redirección (301/302), no reenviar sus cabeceras al cliente
+                if ($isRedirect) {
+                    return $len;
+                }
 
                 // Forzar disposition inline para reproducción en navegador
                 if (stripos($trimmed, 'Content-Disposition:') === 0) {
@@ -269,16 +301,17 @@ try {
                     return $len;
                 }
 
-                if (stripos($trimmed, 'HTTP/') === 0) {
-                    if (preg_match('#HTTP/\S+\s+(\d{3})#i', $trimmed, $m)) {
-                        http_response_code((int)$m[1]);
+                if (stripos($trimmed, 'Content-Type:') === 0) {
+                    // Si el CDN reporta video/x-matroska u octet-stream, reportar video/mp4 para máxima compatibilidad con navegadores
+                    if (stripos($trimmed, 'video/x-matroska') !== false || stripos($trimmed, 'octet-stream') !== false) {
+                        header('Content-Type: video/mp4');
+                    } else {
+                        header($trimmed);
                     }
-                    header($trimmed);
                     return $len;
                 }
 
-                if (stripos($trimmed, 'Content-Type:') === 0 ||
-                    stripos($trimmed, 'Content-Length:') === 0 ||
+                if (stripos($trimmed, 'Content-Length:') === 0 ||
                     stripos($trimmed, 'Content-Range:') === 0 ||
                     stripos($trimmed, 'Accept-Ranges:') === 0 ||
                     stripos($trimmed, 'Access-Control-Allow-Origin:') === 0) {
@@ -322,3 +355,4 @@ try {
         'error'   => $e->getMessage()
     ], JSON_UNESCAPED_UNICODE);
 }
+
