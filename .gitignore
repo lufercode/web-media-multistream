@@ -51,6 +51,11 @@ data/torrent_cache/*
 !data/torrent_cache/.gitkeep
 temp_cache/
 
+# Base de datos y caché de Movie+ (generadas automáticamente)
+data/movieplus/catalog.db*
+data/movieplus/cache/*
+!data/movieplus/cache/.gitkeep
+
 # Dependencias Node.js
 node_modules/
 **/node_modules/

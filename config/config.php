@@ -37,6 +37,10 @@ $PROVIDERS_CONFIG = [
         'enabled' => true,
         'name' => 'CDN Propio (Rakun)'
     ],
+    'movieplus' => [
+        'enabled' => true,
+        'name' => 'Movie+ (Cloud CDN - Latino y Castellano)'
+    ],
     'lamovie' => [
         'enabled' => true,
         'name' => 'LaMovie (Películas, Series y Anime HD)'

@@ -9,6 +9,7 @@ require_once __DIR__ . '/FastreamResolver.php';
 require_once __DIR__ . '/RetroTVEResolver.php';
 require_once __DIR__ . '/OkRuResolver.php';
 require_once __DIR__ . '/GnulaResolver.php';
+require_once __DIR__ . '/YandexDiskResolver.php';
 
 class ResolverManager
 {
@@ -23,6 +24,7 @@ class ResolverManager
     private function registerDefaultResolvers(): void
     {
         $this->resolvers = [
+            new YandexDiskResolver(),
             new CinecalidadResolver(),
             new CuevanaResolver(),
             new GnulaResolver(),

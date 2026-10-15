@@ -2578,6 +2578,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (id.includes('thepiratebay') || id.includes('piratebay') || id.includes('tpb')) return 'fas fa-ship text-warning';
             return 'fas fa-magnet text-warning';
         }
+        if (id.includes('movieplus')) return 'fas fa-cloud text-info';
         if (id.includes('lamovie')) return 'fas fa-play-circle text-danger';
         if (id.includes('cuevana')) return 'fas fa-play-circle text-primary';
         if (id.includes('poseidon')) return 'fas fa-water text-info';
@@ -2826,6 +2827,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isAnimeContent = linksContainer?.dataset?.isAnime === '1';
         let rawProviders = (window._cachedProvidersList && window._cachedProvidersList.length > 0) ? window._cachedProvidersList : [
             { id: 'local_cdn', name: 'CDN Propio', type: 'direct' },
+            { id: 'movieplus', name: 'Movie+ (Cloud CDN)', type: 'streaming' },
             { id: 'lamovie', name: 'LaMovie', type: 'mixed' },
             { id: 'serieskao', name: 'SeriesKao', type: 'mixed' },
             { id: 'pelisplus', name: 'PelisPlus HD', type: 'mixed' },
@@ -3370,7 +3372,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Ordenar proveedores por prioridad y velocidad esperada
         const priorityOrder = [
-            'local_cdn', 'lamovie', 'serieskao', 'pelisplus', 'latanime', 'animeflv', 'jkanime', 'torrentio',
+            'local_cdn', 'movieplus', 'lamovie', 'serieskao', 'pelisplus', 'latanime', 'animeflv', 'jkanime', 'torrentio',
             'cuevana', 'poseidonhd', 'cinecalidad', 'pelispedia', 'pelisforte',
             'allpeliculas', 'hacktorrent', 'gnula', 'anime', 'tioanime',
             'thepiratebay', 'yts', 'nyaa', 'retrotve'

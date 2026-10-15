@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/providers/ProviderInterface.php';
 require_once __DIR__ . '/providers/LocalCDNProvider.php';
+require_once __DIR__ . '/providers/MoviePlusProvider.php';
 require_once __DIR__ . '/providers/CuevanaProvider.php';
 require_once __DIR__ . '/providers/PelisPlusProvider.php';
 require_once __DIR__ . '/providers/CinecalidadProvider.php';
@@ -39,6 +40,7 @@ class ProviderManager
     {
         $this->providers = [
             new LocalCDNProvider(),
+            new MoviePlusProvider(),
             new LaMovieProvider(),
             new SeriesKaoProvider(),
             new PelisPlusProvider(),
