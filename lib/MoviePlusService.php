@@ -84,8 +84,11 @@ class MoviePlusService
 
         self::$db = new PDO('sqlite:' . $dbPath);
         self::$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        self::$db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        self::$db->exec('PRAGMA journal_mode = WAL;');
+        try {
+            self::$db->exec('PRAGMA journal_mode = WAL;');
+        } catch (\Throwable $e) {
+            try { self::$db->exec('PRAGMA journal_mode = DELETE;'); } catch (\Throwable $e2) {}
+        }
         self::$db->exec('PRAGMA synchronous = NORMAL;');
         self::$db->exec('PRAGMA cache_size = -8000;');
 

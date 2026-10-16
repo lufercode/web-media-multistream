@@ -17,6 +17,23 @@ define('WATCHED_PROGRESS_FILE', ROOT_DIR . '/data/watched_progress.json'); // Co
 define('PROGRESS_DIR', ROOT_DIR . '/data/progress');
 define('WATCHLIST_DIR', ROOT_DIR . '/data/watchlist');
 
+// Auto-creación de carpetas de datos y caché si no existen en el servidor
+$__init_dirs = [
+    ROOT_DIR . '/data',
+    CACHE_DIR,
+    PROGRESS_DIR,
+    WATCHLIST_DIR,
+    ROOT_DIR . '/data/torrent_cache',
+    ROOT_DIR . '/data/movieplus',
+    ROOT_DIR . '/data/movieplus/cache',
+];
+foreach ($__init_dirs as $__d) {
+    if (!is_dir($__d)) {
+        @mkdir($__d, 0777, true);
+    }
+}
+unset($__init_dirs, $__d);
+
 // Autenticación con Google (Google Identity Services - OAuth 2.0 Web)
 // Client ID de Google Cloud Console (web-media-multistream)
 define('GOOGLE_CLIENT_ID', '474518961918-0r1n29n2gegd6clc3etvidmp21t4c4kh.apps.googleusercontent.com');

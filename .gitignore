@@ -34,6 +34,7 @@ error_log
 
 # Scripts temporales de pruebas y experimentos
 scratch/
+package_infinityfree.ps1
 
 # Caché dinámica generada por el servidor (se conserva la carpeta con .gitkeep)
 data/cache/*
