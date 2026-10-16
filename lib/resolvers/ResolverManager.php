@@ -46,6 +46,9 @@ class ResolverManager
         $resolved_server = 'Online Stream';
         $resolved_quality = 'HD';
         $stream_url = null;
+        $download_url = null;
+        $filename = null;
+        $is_mkv = false;
 
         // Intentar resolver hasta 2 niveles de anidación (ej. Wrapper -> Embed -> Direct Stream)
         for ($i = 0; $i < 2; $i++) {
@@ -58,6 +61,9 @@ class ResolverManager
                         if (!empty($res['server'])) $resolved_server = $res['server'];
                         if (!empty($res['quality'])) $resolved_quality = $res['quality'];
                         if (!empty($res['stream_url'])) $stream_url = $res['stream_url'];
+                        if (!empty($res['download_url'])) $download_url = $res['download_url'];
+                        if (!empty($res['filename'])) $filename = $res['filename'];
+                        if (isset($res['is_mkv'])) $is_mkv = (bool)$res['is_mkv'];
                         $matched = true;
                         break;
                     }
@@ -68,10 +74,13 @@ class ResolverManager
 
         return [
             'original_url' => $url,
-            'embed_url' => $current_url,
-            'stream_url' => $stream_url,
-            'server' => $resolved_server,
-            'quality' => $resolved_quality
+            'embed_url'    => $current_url,
+            'stream_url'   => $stream_url,
+            'download_url' => $download_url,
+            'filename'     => $filename,
+            'is_mkv'       => $is_mkv,
+            'server'       => $resolved_server,
+            'quality'      => $resolved_quality
         ];
     }
 }

@@ -978,6 +978,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const resData = await res.json();
             const cleanUrl = resData?.data?.embed_url || url;
             const streamUrl = resData?.data?.stream_url;
+            const downloadUrl = resData?.data?.download_url || streamUrl || cleanUrl;
+            const videoFilename = resData?.data?.filename || '';
+            const isMkv = Boolean(resData?.data?.is_mkv || (videoFilename && videoFilename.toLowerCase().endsWith('.mkv')));
             const resolvedServer = resData?.data?.server || server;
 
             if (badgesEl) {
@@ -990,7 +993,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (extLinkBtn) {
-                extLinkBtn.href = streamUrl || cleanUrl;
+                extLinkBtn.href = downloadUrl || streamUrl || cleanUrl;
             }
 
             const updateRealResolutionBadge = (w, h) => {
@@ -1013,6 +1016,76 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`%c✨ [Stream Directo] Reproduciendo con Artplayer Pro (Estilo FastStream): ${streamUrl}`, 'color: #2ecc71; font-weight: bold;');
                 const isM3u8 = streamUrl.includes('.m3u8');
 
+                const renderCodecUnsupportedOverlay = (artInstance) => {
+                    if (!artContainer) return;
+                    console.warn('[ArtPlayer] Códec no soportado por el navegador (MKV / AC-3 / HEVC). Mostrando panel de opciones externas.');
+                    
+                    const existingOverlay = artContainer.querySelector('.art-unsupported-codec-overlay');
+                    if (existingOverlay) existingOverlay.remove();
+
+                    const directTargetUrl = downloadUrl || streamUrl;
+                    const vlcUrl = directTargetUrl.startsWith('http') ? `vlc://${directTargetUrl}` : directTargetUrl;
+                    const intentUrl = `intent:${directTargetUrl}#Intent;type=video/*;action=android.intent.action.VIEW;end;`;
+                    const safeName = videoFilename || title || 'Video de Alta Calidad';
+
+                    const overlay = document.createElement('div');
+                    overlay.className = 'art-unsupported-codec-overlay d-flex flex-column align-items-center justify-content-center text-center p-3 p-md-4';
+                    overlay.style.cssText = 'position: absolute; inset: 0; background: rgba(10, 14, 23, 0.94); z-index: 999; backdrop-filter: blur(12px); color: #fff; overflow-y: auto;';
+                    overlay.innerHTML = `
+                        <div style="max-width: 520px; width: 100%; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 18px; padding: 26px 20px; box-shadow: 0 25px 50px rgba(0,0,0,0.7);">
+                            <div class="mb-3">
+                                <span class="badge bg-warning text-dark px-3 py-2 fw-bold" style="font-size: 0.8rem; border-radius: 20px;">
+                                    <i class="fas fa-compact-disc me-1"></i> Códec Avanzado (MKV / AC-3 / HEVC)
+                                </span>
+                            </div>
+                            <h5 class="fw-bold text-white mb-2 text-truncate" title="${safeName}" style="font-size: 1.1rem;">
+                                ${safeName}
+                            </h5>
+                            <p class="text-secondary small mb-4" style="line-height: 1.5; font-size: 0.85rem;">
+                                Este video contiene audio o video codificado en <strong>MKV / Dolby Digital AC-3 / HEVC</strong>, los cuales no disponen de decodificador nativo en navegadores web estándar. ¡Puedes reproducirlo al instante en tu app favorita o descargarlo!
+                            </p>
+                            
+                            <div class="d-grid gap-2 mb-3">
+                                <a href="${vlcUrl}" class="btn btn-warning fw-bold text-dark py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm" style="border-radius: 12px; font-size: 0.9rem;" title="Abrir en VLC Media Player">
+                                    <i class="fas fa-play-circle fa-lg"></i> Reproducir en VLC Player
+                                </a>
+                                <a href="${intentUrl}" class="btn btn-info text-white fw-bold py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm d-md-none" style="border-radius: 12px; font-size: 0.9rem;" title="Abrir en reproductor de Android (MX Player, Nova, VLC)">
+                                    <i class="fab fa-android fa-lg"></i> Abrir en App de Video (Android/TV)
+                                </a>
+                                <a href="${directTargetUrl}" download="${safeName}" target="_blank" rel="noopener noreferrer" class="btn btn-primary fw-bold py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm" style="border-radius: 12px; font-size: 0.9rem;">
+                                    <i class="fas fa-download"></i> Descarga Directa de Alta Velocidad
+                                </a>
+                                <button type="button" class="btn btn-outline-light py-2 d-flex align-items-center justify-content-center gap-2 copy-external-stream-link" style="border-radius: 12px; font-size: 0.88rem;">
+                                    <i class="fas fa-copy"></i> Copiar Enlace Directo
+                                </button>
+                            </div>
+
+                            <div class="text-muted" style="font-size: 0.72rem;">
+                                <i class="fas fa-lightbulb text-warning me-1"></i> Puedes pegar el enlace en VLC, Smart TV, Kodi o Infuse para verlo en máxima fidelidad con sonido 5.1.
+                            </div>
+                        </div>
+                    `;
+
+                    const copyBtn = overlay.querySelector('.copy-external-stream-link');
+                    if (copyBtn) {
+                        copyBtn.addEventListener('click', () => {
+                            if (navigator.clipboard) {
+                                navigator.clipboard.writeText(directTargetUrl).then(() => {
+                                    copyBtn.innerHTML = '<i class="fas fa-check text-success"></i> ¡Enlace copiado!';
+                                    setTimeout(() => {
+                                        copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copiar Enlace Directo';
+                                    }, 2500);
+                                });
+                            }
+                        });
+                    }
+
+                    artContainer.appendChild(overlay);
+                    if (artInstance && artInstance.loading) {
+                        artInstance.loading.show = false;
+                    }
+                };
+
                 loadArtplayerScript(() => {
                     loadHlsScript(() => {
                         if (iframe) {
@@ -1028,8 +1101,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const art = new Artplayer({
                             container: '#artplayerContainer',
                             url: streamUrl,
-                            type: isM3u8 ? 'm3u8' : 'auto',
+                            type: isM3u8 ? 'm3u8' : (isMkv ? 'mkv' : 'auto'),
                             customType: {
+                                mkv: function (video, mkvUrl, artInstance) {
+                                    video.crossOrigin = 'anonymous';
+                                    video.src = mkvUrl;
+                                },
                                 m3u8: function (video, m3u8Url, artInstance) {
                                     if (window.Hls && Hls.isSupported()) {
                                         if (artInstance.hls) artInstance.hls.destroy();
@@ -1548,6 +1625,27 @@ document.addEventListener('DOMContentLoaded', () => {
                                 art.resize();
                             }
                         });
+
+                        // Captura de errores de reproducción / códecs no soportados en navegador
+                        art.on('video:error', () => {
+                            renderCodecUnsupportedOverlay(art);
+                        });
+
+                        art.on('error', () => {
+                            renderCodecUnsupportedOverlay(art);
+                        });
+
+                        setTimeout(() => {
+                            const v = art.template?.$video;
+                            if (v) {
+                                v.addEventListener('error', () => {
+                                    renderCodecUnsupportedOverlay(art);
+                                });
+                                if (v.error) {
+                                    renderCodecUnsupportedOverlay(art);
+                                }
+                            }
+                        }, 400);
 
                     }, () => {
                         artContainer.style.display = 'none';

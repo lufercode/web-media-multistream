@@ -34,6 +34,8 @@ class YandexDiskResolver implements ResolverInterface
         }
 
         $directUrl = $info['download_url'];
+        $filename = $info['filename'] ?? '';
+        $isMkv = str_ends_with(strtolower($filename), '.mkv');
         $quality = !empty($info['size_human']) && $info['size_human'] !== 'N/A'
             ? 'HD (' . $info['size_human'] . ')'
             : 'HD / 1080p';
@@ -43,6 +45,8 @@ class YandexDiskResolver implements ResolverInterface
             'embed_url'    => $proxyStreamUrl,
             'stream_url'   => $proxyStreamUrl,
             'download_url' => $directUrl,
+            'filename'     => $filename,
+            'is_mkv'       => $isMkv,
             'quality'      => $quality
         ];
     }
