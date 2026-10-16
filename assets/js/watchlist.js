@@ -156,6 +156,9 @@ const WatchlistManager = {
 
         track.innerHTML = html;
         this.bindEvents(track);
+        if (typeof window.initCarousels === 'function') {
+            window.initCarousels();
+        }
     },
 
     bindEvents(rootElement = document) {

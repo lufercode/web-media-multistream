@@ -152,7 +152,8 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
                     <img src="https://image.tmdb.org/t/p/w500{$posterPath}" 
                          class="card-img-top media-poster" 
                          alt="{$title}" 
-                         loading="lazy">
+                         loading="lazy"
+                         decoding="async">
                 </a>
                 
                 {$rating_badge}
@@ -301,6 +302,73 @@ function get_content_details(int|string $id, string $type): array
         }
     }
     return $data;
+}
+
+/**
+ * Obtiene contenido similar y recomendado (películas o series) para enriquecer la navegación.
+ * Combina endpoints de 'recommendations' y 'similar' de TMDB, asegurando posters válidos y deduplicación.
+ * Cuenta con almacenamiento en caché para una respuesta ultrarrápida.
+ *
+ * @param int|string $id ID de TMDB.
+ * @param 'movie'|'tv' $type Tipo de contenido.
+ * @param int $limit Cantidad máxima de títulos a devolver (por defecto 18).
+ * @return array<array<string, mixed>> Lista de títulos recomendados.
+ */
+function get_similar_content(int|string $id, string $type, int $limit = 18): array
+{
+    $id = (int)$id;
+    if ($id <= 0 || ($type !== 'movie' && $type !== 'tv')) {
+        return [];
+    }
+
+    $cache_file = CACHE_DIR . "/similar_{$type}_{$id}.json";
+    if (file_exists($cache_file) && (time() - filemtime($cache_file) < 86400)) {
+        $cached = json_decode((string)@file_get_contents($cache_file), true);
+        if (is_array($cached) && !empty($cached)) {
+            return array_slice($cached, 0, $limit);
+        }
+    }
+
+    $candidates = [];
+    $seen_ids = [$id => true];
+
+    // 1. Obtener recomendaciones basadas en patrones de visualización de usuarios
+    $rec_data = get_tmdb_data("{$type}/{$id}/recommendations");
+    if (!empty($rec_data['results']) && is_array($rec_data['results'])) {
+        foreach ($rec_data['results'] as $item) {
+            $item_id = (int)($item['id'] ?? 0);
+            if ($item_id > 0 && !isset($seen_ids[$item_id]) && !empty($item['poster_path'])) {
+                $seen_ids[$item_id] = true;
+                $candidates[] = $item;
+            }
+        }
+    }
+
+    // 2. Si hay menos del límite o menos de 8 elementos, complementar con 'similar'
+    if (count($candidates) < $limit) {
+        $sim_data = get_tmdb_data("{$type}/{$id}/similar");
+        if (!empty($sim_data['results']) && is_array($sim_data['results'])) {
+            foreach ($sim_data['results'] as $item) {
+                $item_id = (int)($item['id'] ?? 0);
+                if ($item_id > 0 && !isset($seen_ids[$item_id]) && !empty($item['poster_path'])) {
+                    $seen_ids[$item_id] = true;
+                    $candidates[] = $item;
+                    if (count($candidates) >= ($limit + 4)) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!empty($candidates)) {
+        if (!file_exists(CACHE_DIR)) {
+            @mkdir(CACHE_DIR, 0755, true);
+        }
+        @file_put_contents($cache_file, json_encode($candidates));
+    }
+
+    return array_slice($candidates, 0, $limit);
 }
 
 ?>

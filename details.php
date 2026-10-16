@@ -49,14 +49,27 @@ foreach ($details['genres'] ?? [] as $g) {
         break;
     }
 }
+
+// Obtener títulos similares y recomendados para enriquecer la navegación
+$similar_content = get_similar_content($id, $type, 18);
 ?>
 
 <div class="container my-2 my-md-4 px-2 px-sm-3 text-white">
-    <!-- Breadcrumb / Volver -->
-    <div class="mb-2 mb-md-3">
-        <a href="index.php" class="btn btn-outline-secondary btn-sm py-1 px-2.5">
-            <i class="fas fa-arrow-left me-1"></i> Volver al Catálogo
+    <!-- Barra Superior de Navegación Rápida -->
+    <div class="d-flex align-items-center justify-content-between mb-2 mb-md-3 flex-wrap gap-2">
+        <a href="index.php" class="btn btn-outline-secondary btn-sm py-1 px-3 rounded-pill d-inline-flex align-items-center">
+            <i class="fas fa-arrow-left me-1.5"></i> Volver al Catálogo
         </a>
+        <div class="d-flex align-items-center gap-2">
+            <a href="#enlaces-container" class="btn btn-outline-warning btn-sm py-1 px-3 rounded-pill d-inline-flex align-items-center">
+                <i class="fas fa-play me-1.5"></i> Servidores
+            </a>
+            <?php if (!empty($similar_content)): ?>
+                <a href="#section-similar-titles" class="btn btn-outline-info btn-sm py-1 px-3 rounded-pill d-inline-flex align-items-center">
+                    <i class="bi bi-stars me-1.5"></i> Similares
+                </a>
+            <?php endif; ?>
+        </div>
     </div>
 
     <!-- Ficha de Detalles con Fondo Cinematográfico -->
@@ -135,6 +148,26 @@ foreach ($details['genres'] ?? [] as $g) {
             </div>
         </div>
     </div>
+
+    <!-- Títulos Similares y Recomendados -->
+    <?php if (!empty($similar_content)): ?>
+        <?php
+        $similar_cards_html = '';
+        foreach ($similar_content as $sim_item) {
+            $similar_cards_html .= render_content_card($sim_item, $type, true);
+        }
+        ?>
+        <?php if (!empty(trim($similar_cards_html))): ?>
+            <div class="similar-content-wrapper mt-4 mt-md-5 pt-3 border-top border-secondary-subtle">
+                <?= render_carousel_row(
+                    $type === 'movie' ? 'Películas Similares y Recomendadas' : 'Series Similares y Recomendadas',
+                    'similar-titles',
+                    $similar_cards_html,
+                    'Sugerencias'
+                ) ?>
+            </div>
+        <?php endif; ?>
+    <?php endif; ?>
 </div>
 
 <script>
