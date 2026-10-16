@@ -322,6 +322,15 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                         <div class="row g-2">
                             <div class="col-12 col-sm-6 col-md-4">
                                 <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
+                                    <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="movieplus" checked>
+                                    <div class="text-truncate">
+                                        <div class="fw-semibold text-white">☁️ Movie+</div>
+                                        <div class="text-secondary" style="font-size:0.68rem;">Cloud CDN (Yandex / Mega / Latino / 1080p)</div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-black bg-opacity-50 w-100" style="cursor:pointer; font-size:0.78rem;">
                                     <input type="checkbox" class="form-check-input mt-0 stremio-prov-chk stremio-prov-hls" value="lamovie" checked>
                                     <div class="text-truncate">
                                         <div class="fw-semibold text-white">⚡ LaMovie / AllCalidad</div>

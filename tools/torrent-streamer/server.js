@@ -673,7 +673,7 @@ const server = http.createServer(async (req, res) => {
 
         try {
             console.log(`[Stremio Addon] Buscando streams para ${stremioType}/${stremioId} (config=${configParam})...`);
-            const result = await getStremioStreams(stremioType, stremioId, configParam);
+            const result = await getStremioStreams(stremioType, stremioId, configParam, baseUrl);
             res.writeHead(200, {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Cache-Control': 'public, max-age=300'
@@ -683,6 +683,68 @@ const server = http.createServer(async (req, res) => {
             console.error('[Stremio Addon] Error:', err);
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ streams: [] }));
+        }
+        return;
+    }
+
+    // =========================================================================
+    // MOVIE+ CLOUD CDN STREAMING PROXY (HTTP 206 Partial Content / Range)
+    // =========================================================================
+    if (pathname === '/movieplus-stream' && req.method === 'GET') {
+        const targetUrl = parsedUrl.searchParams.get('url');
+        if (!targetUrl) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('Error: url param required');
+            return;
+        }
+
+        try {
+            const clientReqHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': '*/*'
+            };
+            if (req.headers['range']) {
+                clientReqHeaders['Range'] = req.headers['range'];
+            }
+
+            const upstreamRes = await fetch(targetUrl, {
+                headers: clientReqHeaders,
+                redirect: 'follow'
+            });
+
+            const respHeaders = {
+                'Access-Control-Allow-Origin': '*',
+                'Accept-Ranges': 'bytes',
+                'Content-Disposition': 'inline'
+            };
+
+            const ct = upstreamRes.headers.get('content-type');
+            if (ct) {
+                respHeaders['Content-Type'] = ct.includes('matroska') || ct.includes('octet-stream') ? 'video/mp4' : ct;
+            } else {
+                respHeaders['Content-Type'] = 'video/mp4';
+            }
+
+            const cl = upstreamRes.headers.get('content-length');
+            if (cl) respHeaders['Content-Length'] = cl;
+
+            const cr = upstreamRes.headers.get('content-range');
+            if (cr) respHeaders['Content-Range'] = cr;
+
+            res.writeHead(upstreamRes.status, respHeaders);
+
+            if (upstreamRes.body) {
+                const { Readable } = await import('stream');
+                Readable.fromWeb(upstreamRes.body).pipe(res);
+            } else {
+                res.end();
+            }
+        } catch (err) {
+            console.error('[MoviePlus Stream Proxy] Error:', err);
+            if (!res.headersSent) {
+                res.writeHead(502, { 'Content-Type': 'text/plain' });
+                res.end('Error streaming from upstream: ' + err.message);
+            }
         }
         return;
     }

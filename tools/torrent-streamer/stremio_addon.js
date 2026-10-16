@@ -4,6 +4,7 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY || 'aaccf8f89c76c5a7ac753e3a8402de
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 export const ALL_STREMIO_PROVIDERS = [
+    { id: 'movieplus', name: 'Movie+ (Cloud CDN / Yandex / Mega)', category: 'streaming', default: true },
     { id: 'lamovie', name: 'LaMovie / AllCalidad (HLS Directo)', category: 'streaming', default: true },
     { id: 'latanime', name: 'LatAnime (Anime Español Latino)', category: 'streaming', default: true },
     { id: 'jkanime', name: 'JKAnime (Anime Latino/Sub — HLS Directo)', category: 'streaming', default: true },
@@ -136,7 +137,7 @@ export function buildManifest(configStr = '', baseUrl = '') {
 
     return {
         id: 'org.streammedia.multistream.latino',
-        version: '2.6.0',
+        version: '2.7.0',
         name: 'StreamMedia Latino & Multi-Scraper',
         description: `Addon Multi-Fuente (${activeNames.join(', ')}). Idiomas: ${langLabels.join(', ')}. Combina Streaming HLS Directo (.m3u8) y Torrents P2P nativos para Películas, Series y Anime.`,
         logo: 'https://cdn-icons-png.flaticon.com/512/2503/2503508.png',
@@ -1179,6 +1180,359 @@ async function scrapeLocalCdn(meta) {
         }
     }
     return [];
+}
+
+// =========================================================================
+// MOVIE+ CLOUD CDN INTEGRATION (AES-256 Decryption + Yandex CDN + Firestore)
+// =========================================================================
+
+const MOVIEPLUS_AES_GCM_KEY = Buffer.from([0x47, 0x40, 0x68, 0x66, 0x4d, 0x74, 0x5e, 0x65, 0x73, 0x65, 0x5e, 0x79, 0x6d, 0x43, 0x6e, 0x78, 0x5c, 0x59, 0x69, 0x5b, 0x5d, 0x6d, 0x62, 0x74, 0x59, 0x74, 0x7f, 0x69, 0x51, 0x2e, 0x2b, 0x08]);
+const MOVIEPLUS_AES_ECB_KEY = Buffer.from('android_idfkvn8 w4y*(NC$G*(G($*G', 'utf8');
+
+function decryptMoviePlusEcb(b64) {
+    try {
+        const raw = Buffer.from(b64, 'base64');
+        if (raw.length < 16) return b64;
+        const decipher = crypto.createDecipheriv('aes-256-ecb', MOVIEPLUS_AES_ECB_KEY, null);
+        decipher.setAutoPadding(true);
+        let dec = decipher.update(raw, null, 'utf8');
+        dec += decipher.final('utf8');
+        return dec.trim();
+    } catch {
+        return b64;
+    }
+}
+
+function decryptMoviePlusGcm(b64) {
+    try {
+        const raw = Buffer.from(b64, 'base64');
+        if (raw.length < 28) return b64;
+        const iv = raw.subarray(0, 12);
+        const tag = raw.subarray(raw.length - 16);
+        const ct = raw.subarray(12, raw.length - 16);
+        const decipher = crypto.createDecipheriv('aes-256-gcm', MOVIEPLUS_AES_GCM_KEY, iv);
+        decipher.setAuthTag(tag);
+        let dec = decipher.update(ct, null, 'utf8');
+        dec += decipher.final('utf8');
+        return dec.trim();
+    } catch {
+        return b64;
+    }
+}
+
+function decryptMoviePlusUrl(cipher) {
+    if (!cipher || typeof cipher !== 'string') return '';
+    if (cipher.startsWith('http://') || cipher.startsWith('https://')) return cipher;
+    if (cipher.startsWith('Movp!::')) {
+        const gcm = decryptMoviePlusGcm(cipher.slice(7));
+        if (gcm.startsWith('http')) return gcm;
+    }
+    const dec = decryptMoviePlusEcb(cipher);
+    if (dec.startsWith('Movp!::')) {
+        const gcm = decryptMoviePlusGcm(dec.slice(7));
+        if (gcm.startsWith('http')) return gcm;
+    }
+    if (dec.length > 20 && dec.endsWith('=') && !dec.startsWith('http')) {
+        const second = decryptMoviePlusEcb(dec);
+        if (second.startsWith('http')) return second;
+    }
+    return dec;
+}
+
+function normalizeTitleForMoviePlus(str) {
+    if (!str) return '';
+    return str.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function parseMoviePlusLanguage(rawStr) {
+    const u = String(rawStr || '').toUpperCase();
+    if (/\b(DUALC)\b/.test(u)) return { langKey: 'castellano', flag: '🇪🇸', badge: 'Audio Dual (Castellano/Inglés)' };
+    if (/\b(TRIAL)\b/.test(u)) return { langKey: 'multi', flag: '🌐', badge: 'Triple Audio (Latino + Castellano + Inglés)' };
+    if (/\b(DUAL)\b/.test(u)) return { langKey: 'latino', flag: '🇲🇽', badge: 'Audio Dual (Latino + Inglés)' };
+    if (/\b(CASTELLANO|CAST|ESP)\b/.test(u)) return { langKey: 'castellano', flag: '🇪🇸', badge: 'Español Castellano' };
+    if (/\b(SUBTITULADO|SUB|VOSE)\b/.test(u)) return { langKey: 'sub', flag: '💬', badge: 'Subtitulado al Español' };
+    if (/\b(LATINO|LAT)\b/.test(u)) return { langKey: 'latino', flag: '🇲🇽', badge: 'Español Latino' };
+    if (/\b(INGLES|ENG|ENGLISH)\b/.test(u)) return { langKey: 'sub', flag: '🇬🇧', badge: 'Audio Inglés (Original)' };
+    if (/\b(JAPONES|JAPON|JPN|JAP)\b/.test(u)) return { langKey: 'sub', flag: '🇯🇵', badge: 'Audio Japonés (Original)' };
+    return { langKey: 'latino', flag: '🇲🇽', badge: 'Español Latino' };
+}
+
+function cleanMoviePlusQuality(raw) {
+    const cleaned = String(raw || '')
+        .replace(/\b(DUALC|TRIAL|DUAL|CASTELLANO|CAST|ESP|SUBTITULADO|SUB|VOSE|LATINO|LAT|INGLES|ENG|JAPONES|JPN|JAP)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return cleaned || 'HD';
+}
+
+// Caché de resolución de enlaces Yandex Disk
+const yandexDownloadCache = new Map();
+
+async function resolveYandexDownloadUrl(yandexUrl) {
+    if (!yandexUrl || !yandexUrl.includes('yadi.sk')) return null;
+    const cached = getCached(yandexDownloadCache, yandexUrl, 30 * 60 * 1000);
+    if (cached) return cached;
+
+    try {
+        const apiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(yandexUrl)}`;
+        const res = await httpGet(apiUrl, { json: true, timeout: 4500 });
+        if (res?.href) {
+            setCached(yandexDownloadCache, yandexUrl, res.href);
+            return res.href;
+        }
+    } catch {
+        // Silencioso
+    }
+    return null;
+}
+
+// Carga en memoria del catálogo local de Movie+ (<40 MB heap, inicialización asíncrona)
+let moviePlusCatalogLoaded = false;
+let moviePlusLoadingPromise = null;
+const moviePlusMoviesById = new Map();
+const moviePlusMoviesByTitle = new Map();
+
+async function initMoviePlusCatalog() {
+    if (moviePlusCatalogLoaded) return;
+    if (moviePlusLoadingPromise) return moviePlusLoadingPromise;
+
+    moviePlusLoadingPromise = (async () => {
+        try {
+            const { fileURLToPath } = await import('url');
+            const { dirname, resolve } = await import('path');
+            const fs = await import('fs');
+            const zlib = await import('zlib');
+
+            const here = dirname(fileURLToPath(import.meta.url));
+            const candidatePaths = [
+                resolve(here, 'catalog_cache.json.gz'),
+                resolve(here, '../../data/movieplus/catalog_cache.json.gz'),
+                resolve(process.cwd(), 'data/movieplus/catalog_cache.json.gz'),
+                resolve(process.cwd(), 'catalog_cache.json.gz')
+            ];
+
+            let gzBuffer = null;
+            for (const p of candidatePaths) {
+                if (fs.existsSync(p)) {
+                    try {
+                        gzBuffer = fs.readFileSync(p);
+                        break;
+                    } catch {}
+                }
+            }
+
+            // Descarga de respaldo si no existe archivo local
+            if (!gzBuffer) {
+                const downloadUrls = [
+                    'https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/list/items_up_r1792047394384.json.gz',
+                    'https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/items_up.json.gz'
+                ];
+                for (const dUrl of downloadUrls) {
+                    try {
+                        const r = await fetch(dUrl, { headers: { 'User-Agent': UA } });
+                        if (r.ok) {
+                            gzBuffer = Buffer.from(await r.arrayBuffer());
+                            break;
+                        }
+                    } catch {}
+                }
+            }
+
+            if (gzBuffer) {
+                const decompressed = zlib.gunzipSync(gzBuffer);
+                const catalog = JSON.parse(decompressed);
+                if (Array.isArray(catalog?.movies)) {
+                    for (const m of catalog.movies) {
+                        if (!m?.id) continue;
+                        const idNum = Number(m.id);
+                        const normTitle = normalizeTitleForMoviePlus((m.nameFile || '') + ' ' + (m.othersNames || ''));
+                        const itemObj = {
+                            id: idNum,
+                            title: m.nameFile || '',
+                            date: m.date || '',
+                            urls: Array.isArray(m.urls) ? m.urls : []
+                        };
+                        moviePlusMoviesById.set(idNum, itemObj);
+                        if (normTitle && !moviePlusMoviesByTitle.has(normTitle)) {
+                            moviePlusMoviesByTitle.set(normTitle, itemObj);
+                        }
+                    }
+                }
+                moviePlusCatalogLoaded = true;
+                console.log(`[Movie+ Addon] Catálogo en memoria listo: ${moviePlusMoviesById.size} películas indexadas.`);
+            }
+        } catch (err) {
+            console.warn('[Movie+ Addon] Advertencia al cargar catálogo en memoria:', err.message);
+        } finally {
+            moviePlusLoadingPromise = null;
+        }
+    })();
+
+    return moviePlusLoadingPromise;
+}
+
+// Scraper principal de Movie+ para Stremio
+async function scrapeMoviePlus(meta, baseUrl = '') {
+    if (!meta.tmdbId && !meta.title) return [];
+    const streams = [];
+    const effectiveBaseUrl = (baseUrl || '').replace(/\/+$/, '');
+
+    try {
+        if (meta.type === 'movie') {
+            await initMoviePlusCatalog();
+            let movie = null;
+            if (meta.tmdbId) {
+                movie = moviePlusMoviesById.get(Number(meta.tmdbId));
+            }
+            if (!movie && meta.title) {
+                const norm = normalizeTitleForMoviePlus(meta.title);
+                movie = moviePlusMoviesByTitle.get(norm);
+                if (!movie && meta.originalTitle) {
+                    movie = moviePlusMoviesByTitle.get(normalizeTitleForMoviePlus(meta.originalTitle));
+                }
+            }
+
+            if (!movie || !Array.isArray(movie.urls) || movie.urls.length === 0) {
+                return [];
+            }
+
+            const rawUrls = movie.urls.slice(0, 6);
+            for (const entry of rawUrls) {
+                if (typeof entry !== 'string') continue;
+                const parts = entry.split(',_,');
+                let rawQuality = '1080p HD';
+                let sizeStr = '';
+                let cipher = entry;
+
+                if (parts.length >= 3) {
+                    rawQuality = parts[0].trim();
+                    sizeStr = parts[1].trim() && parts[1].trim() !== 'N/A' ? ` • 💾 ${parts[1].trim()}` : '';
+                    cipher = parts[2].trim();
+                }
+
+                const decryptedUrl = decryptMoviePlusUrl(cipher);
+                if (!decryptedUrl || !decryptedUrl.startsWith('http')) continue;
+
+                let directDownloadUrl = decryptedUrl;
+                let serverLabel = 'Directo';
+
+                if (decryptedUrl.includes('yadi.sk')) {
+                    serverLabel = 'Yandex CDN';
+                    const resolved = await resolveYandexDownloadUrl(decryptedUrl);
+                    if (resolved) {
+                        directDownloadUrl = resolved;
+                    }
+                } else if (decryptedUrl.includes('mega.nz')) {
+                    serverLabel = 'Mega.nz';
+                }
+
+                const langInfo = parseMoviePlusLanguage(rawQuality);
+                const cleanQ = cleanMoviePlusQuality(rawQuality);
+
+                const streamUrl = effectiveBaseUrl
+                    ? `${effectiveBaseUrl}/movieplus-stream?url=${encodeURIComponent(directDownloadUrl)}`
+                    : directDownloadUrl;
+
+                streams.push({
+                    name: `${langInfo.flag} Movie+\n${cleanQ}`,
+                    title: `${meta.title} (${meta.year || 'HD'})\n⚡ Cloud CDN (${serverLabel}) • ${langInfo.badge}${sizeStr}`,
+                    url: streamUrl,
+                    _lang: langInfo.langKey,
+                    _prov: 'movieplus',
+                    behaviorHints: {
+                        notWebReady: false,
+                        bingeGroup: `streammedia-movieplus-${langInfo.langKey}`,
+                        proxyHeaders: {
+                            request: {
+                                'User-Agent': UA,
+                                'Accept': '*/*'
+                            }
+                        }
+                    }
+                });
+            }
+        } else if (meta.type === 'series') {
+            if (!meta.tmdbId) return [];
+
+            const apiKey = 'AIzaSyBgn47se6RS2ezDtTf4Jz58W2f8PhYO_4g';
+            const firestoreUrl = `https://firestore.googleapis.com/v1/projects/dev-movieplus/databases/(default)/documents/tv/${meta.tmdbId}?key=${apiKey}`;
+            const firestoreDoc = await httpGet(firestoreUrl, { json: true, timeout: 4500 });
+            const fields = firestoreDoc?.fields;
+            if (!fields) return [];
+
+            const seasonRegex = new RegExp(`\\b(?:Temporada|Season)\\s*0?${meta.season}\\b`, 'i');
+            const targetSeasonKeys = Object.keys(fields).filter(k => seasonRegex.test(k));
+            if (targetSeasonKeys.length === 0) return [];
+
+            const epRegex = new RegExp(`(?:S\\d{1,2}E0?${meta.episode}|E0?${meta.episode}|Cap[ií]tulo\\s*0?${meta.episode})\\b`, 'i');
+
+            for (const sKey of targetSeasonKeys) {
+                const values = fields[sKey]?.arrayValue?.values || [];
+                for (const val of values) {
+                    const str = val?.stringValue;
+                    if (!str || !epRegex.test(str)) continue;
+
+                    const cleanStr = str.replace(/^["'\s]+|["'\s]+$/g, '');
+                    const parts = cleanStr.split('_SPLIT_');
+                    if (parts.length < 2) continue;
+
+                    const epTitle = parts[0].trim();
+                    const cipher = parts[1].trim();
+                    const bytes = parts[2] ? parseFloat(parts[2]) : 0;
+                    let sizeStr = '';
+                    if (bytes > 0) {
+                        const gb = bytes / (1024 * 1024 * 1024);
+                        sizeStr = gb >= 1 ? ` • 💾 ${gb.toFixed(2)} GB` : ` • 💾 ${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+                    }
+
+                    const decryptedUrl = decryptMoviePlusUrl(cipher);
+                    if (!decryptedUrl || !decryptedUrl.startsWith('http')) continue;
+
+                    let directDownloadUrl = decryptedUrl;
+                    let serverLabel = 'Directo';
+
+                    if (decryptedUrl.includes('yadi.sk')) {
+                        serverLabel = 'Yandex CDN';
+                        const resolved = await resolveYandexDownloadUrl(decryptedUrl);
+                        if (resolved) {
+                            directDownloadUrl = resolved;
+                        }
+                    }
+
+                    const langInfo = parseMoviePlusLanguage(epTitle);
+                    const streamUrl = effectiveBaseUrl
+                        ? `${effectiveBaseUrl}/movieplus-stream?url=${encodeURIComponent(directDownloadUrl)}`
+                        : directDownloadUrl;
+
+                    streams.push({
+                        name: `${langInfo.flag} Movie+\n1080p HD`,
+                        title: `${meta.title} S${String(meta.season).padStart(2, '0')}E${String(meta.episode).padStart(2, '0')}\n⚡ Cloud CDN (${serverLabel}) • ${langInfo.badge}${sizeStr}`,
+                        url: streamUrl,
+                        _lang: langInfo.langKey,
+                        _prov: 'movieplus',
+                        behaviorHints: {
+                            notWebReady: false,
+                            bingeGroup: `streammedia-movieplus-${langInfo.langKey}`,
+                            proxyHeaders: {
+                                request: {
+                                    'User-Agent': UA,
+                                    'Accept': '*/*'
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('[Movie+ Addon] Error scrapeMoviePlus:', err.message);
+    }
+
+    return streams;
 }
 
 /**
@@ -2227,7 +2581,7 @@ export async function getStremiosCatalog(catalogId, type, skip = 0) {
 /**
  * Ejecuta todos los scrapers seleccionados en paralelo con límite de tiempo y devuelve el array `streams` de Stremio.
  */
-export async function getStremioStreams(type, rawId, configStr = '') {
+export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '') {
     const cacheKey = `${configStr || 'default'}|${type}|${rawId}`;
     const cached = getCached(streamCache, cacheKey, 5 * 60 * 1000);
     if (cached) return cached;
@@ -2240,6 +2594,7 @@ export async function getStremioStreams(type, rawId, configStr = '') {
 
     const tasks = [];
 
+    if (cfg.providers.has('movieplus')) tasks.push(scrapeMoviePlus(meta, baseUrl));
     if (cfg.providers.has('local_cdn')) tasks.push(scrapeLocalCdn(meta));
     if (cfg.providers.has('lamovie')) tasks.push(scrapeLaMovie(meta));
     if (cfg.providers.has('latanime')) tasks.push(scrapeLatAnime(meta));
