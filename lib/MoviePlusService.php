@@ -216,6 +216,113 @@ class MoviePlusService
     }
 
     /**
+     * Consulta GitHub y descarga la versión más reciente del catálogo si existe una nueva
+     */
+    public static function checkAndDownloadLatestCatalog(bool $force = false): array
+    {
+        $versionFile = dirname(self::getDbPath()) . '/version.json';
+        $currentInfo = file_exists($versionFile) ? json_decode((string)@file_get_contents($versionFile), true) : [];
+        $lastChecked = $currentInfo['last_checked'] ?? 0;
+        $currentTimestamp = (int)($currentInfo['snapshot_timestamp'] ?? 0);
+
+        // Si no es forzado y revisamos hace menos de 24 horas, no consultar GitHub
+        if (!$force && (time() - $lastChecked < 86400)) {
+            return [
+                'updated'   => false,
+                'message'   => 'El catálogo ya está actualizado (última verificación hace menos de 24h)',
+                'current'   => $currentInfo
+            ];
+        }
+
+        $apiUrl = 'https://api.github.com/repos/dev-mplus01/mplus01T/contents/db/list';
+        $ctx = stream_context_create([
+            'http' => [
+                'header'  => "User-Agent: Web2-FTP-MoviePlusUpdater/1.0\r\nAccept: application/json\r\n",
+                'timeout' => 12
+            ]
+        ]);
+        $json = @file_get_contents($apiUrl, false, $ctx);
+        $latestFile = null;
+        $maxTs = 0;
+
+        if ($json !== false) {
+            $files = json_decode($json, true);
+            if (is_array($files)) {
+                foreach ($files as $f) {
+                    if (preg_match('/items_up_r(\d+)\.json\.gz/i', $f['name'] ?? '', $m)) {
+                        $ts = (int)$m[1];
+                        if ($ts > $maxTs) {
+                            $maxTs = $ts;
+                            $latestFile = $f;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Si la API de GitHub falló (por rate-limit sin token), usar mirror directo
+        if (!$latestFile) {
+            $latestFile = [
+                'name'         => 'items_up.json.gz',
+                'download_url' => 'https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/items_up.json.gz'
+            ];
+            $maxTs = time();
+        }
+
+        $currentInfo['last_checked'] = time();
+
+        if ($maxTs <= $currentTimestamp && !$force) {
+            @file_put_contents($versionFile, json_encode($currentInfo, JSON_PRETTY_PRINT));
+            return [
+                'updated' => false,
+                'message' => 'El catálogo ya cuenta con la versión más reciente (' . ($currentInfo['file_name'] ?? 'actual') . ')',
+                'current' => $currentInfo
+            ];
+        }
+
+        // Descargar nuevo snapshot
+        $gzContent = @file_get_contents($latestFile['download_url'], false, stream_context_create([
+            'http' => ['header' => "User-Agent: Mozilla/5.0\r\n", 'timeout' => 30]
+        ]));
+
+        if (!$gzContent || strlen($gzContent) < 1000) {
+            @file_put_contents($versionFile, json_encode($currentInfo, JSON_PRETTY_PRINT));
+            return [
+                'updated' => false,
+                'message' => 'No se pudo descargar la nueva versión desde el repositorio',
+                'current' => $currentInfo
+            ];
+        }
+
+        $gzPath = self::getGzCatalogPath();
+        @file_put_contents($gzPath, $gzContent);
+
+        // Reconstruir índice SQLite
+        self::buildIndexFromGz();
+
+        $db = self::getDb();
+        $cntM = (int)($db->query('SELECT COUNT(*) as cnt FROM movies')->fetch()['cnt'] ?? 0);
+        $cntS = (int)($db->query('SELECT COUNT(*) as cnt FROM series')->fetch()['cnt'] ?? 0);
+
+        $newInfo = [
+            'file_name'          => $latestFile['name'],
+            'snapshot_timestamp' => $maxTs,
+            'snapshot_date'      => date('Y-m-d H:i:s', (int)substr((string)$maxTs, 0, 10)),
+            'last_checked'       => time(),
+            'movies_count'       => $cntM,
+            'series_count'       => $cntS,
+            'file_size_mb'       => round(strlen($gzContent) / (1024 * 1024), 2)
+        ];
+        @file_put_contents($versionFile, json_encode($newInfo, JSON_PRETTY_PRINT));
+
+        return [
+            'updated' => true,
+            'message' => "Catálogo actualizado con éxito a {$latestFile['name']} ({$cntM} películas, {$cntS} series)",
+            'version' => $newInfo
+        ];
+    }
+
+    /**
      * Búsqueda instantánea de película por TMDB ID (< 0.5ms)
      */
     public static function getMovieByTmdbId(int $tmdbId): ?array

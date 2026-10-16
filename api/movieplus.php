@@ -35,6 +35,8 @@ try {
 
             $gzPath = MoviePlusService::getGzCatalogPath();
             $dbPath = MoviePlusService::getDbPath();
+            $versionFile = dirname($dbPath) . '/version.json';
+            $versionInfo = file_exists($versionFile) ? json_decode((string)@file_get_contents($versionFile), true) : null;
 
             echo json_encode([
                 'success'       => true,
@@ -44,6 +46,7 @@ try {
                 'db_size_mb'    => file_exists($dbPath) ? round(filesize($dbPath) / (1024 * 1024), 2) : 0,
                 'gz_size_mb'    => file_exists($gzPath) ? round(filesize($gzPath) / (1024 * 1024), 2) : 0,
                 'cache_updated' => file_exists($gzPath) ? date('Y-m-d H:i:s', filemtime($gzPath)) : null,
+                'version_info'  => $versionInfo,
                 'genres'        => MoviePlusService::GENRES,
             ], JSON_UNESCAPED_UNICODE);
             break;
@@ -331,17 +334,9 @@ try {
             exit;
 
         case 'refresh':
-            $success = MoviePlusService::buildIndexFromGz();
-            $db = MoviePlusService::getDb();
-            $cntM = (int)($db->query('SELECT COUNT(*) as cnt FROM movies')->fetch()['cnt'] ?? 0);
-            $cntS = (int)($db->query('SELECT COUNT(*) as cnt FROM series')->fetch()['cnt'] ?? 0);
-
-            echo json_encode([
-                'success' => $success,
-                'message' => $success ? 'Catálogo e índice SQLite actualizados correctamente' : 'Fallo al actualizar catálogo',
-                'movies'  => $cntM,
-                'series'  => $cntS
-            ], JSON_UNESCAPED_UNICODE);
+            $force = isset($_GET['force']) && $_GET['force'] === '1';
+            $res = MoviePlusService::checkAndDownloadLatestCatalog($force);
+            echo json_encode(array_merge(['success' => true], $res), JSON_UNESCAPED_UNICODE);
             break;
 
         default:
