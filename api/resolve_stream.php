@@ -16,8 +16,12 @@ if (!$url) {
 $manager = new ResolverManager();
 $result = $manager->resolve($url);
 
+$isAvailable = $result['is_available'] ?? true;
+
 echo json_encode([
-    'status' => 'success',
+    'status' => $isAvailable ? 'success' : 'unavailable',
+    'available' => $isAvailable,
+    'error' => $result['error'] ?? null,
     'data' => $result
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 

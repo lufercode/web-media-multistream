@@ -63,6 +63,18 @@ class VidHideResolver implements ResolverInterface
             ]
         ]);
 
+        $is_dead = (!$html || stripos($html, 'file was deleted') !== false || stripos($html, 'file not found') !== false || stripos($html, '404 not found') !== false || stripos($html, 'video has been removed') !== false);
+        if ($is_dead) {
+            return [
+                'server' => 'VidHide',
+                'embed_url' => $embed_url,
+                'stream_url' => null,
+                'quality' => '1080p Full HD',
+                'is_available' => false,
+                'error' => 'El video fue eliminado de VidHide'
+            ];
+        }
+
         if ($html) {
             // 1. Búsqueda directa de stream m3u8 en el HTML
             if (preg_match('/["\'](https?:\/\/[^"\']+\.m3u8[^"\']*)["\']/i', $html, $m)) {
@@ -83,7 +95,8 @@ class VidHideResolver implements ResolverInterface
             'server' => 'VidHide',
             'embed_url' => $embed_url,
             'stream_url' => $stream_url,
-            'quality' => '1080p Full HD'
+            'quality' => '1080p Full HD',
+            'is_available' => true
         ];
     }
 }

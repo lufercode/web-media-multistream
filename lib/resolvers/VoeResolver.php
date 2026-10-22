@@ -31,6 +31,18 @@ class VoeResolver implements ResolverInterface
         $html = http_get($url, ['timeout' => 4]);
         $stream_url = null;
 
+        $is_dead = (!$html || stripos($html, '404 not found') !== false || stripos($html, 'file was deleted') !== false || stripos($html, 'file not found') !== false || stripos($html, 'page you are looking for') !== false);
+        if ($is_dead) {
+            return [
+                'server' => 'Voe',
+                'embed_url' => $url,
+                'stream_url' => null,
+                'quality' => '1080p',
+                'is_available' => false,
+                'error' => 'El video fue eliminado de Voe (Error 404 / Eliminado)'
+            ];
+        }
+
         if ($html) {
             // Seguir redirección por JS de Voe (ej: window.location.href = 'https://megankiddifference.com/e/...')
             if (preg_match('/window\.location\.href\s*=\s*[\'"](https?:\/\/[^\'"]+)[\'"]/i', $html, $mRedir)) {
@@ -62,7 +74,8 @@ class VoeResolver implements ResolverInterface
             'server' => 'Voe',
             'embed_url' => $url,
             'stream_url' => $stream_url,
-            'quality' => '1080p'
+            'quality' => '1080p',
+            'is_available' => true
         ];
     }
 

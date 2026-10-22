@@ -948,5 +948,107 @@ function clean_expired_cache(bool $force = false): int {
     return $deleted_count;
 }
 
+/**
+ * Lista de dominios y hosts de streaming conocidos como caídos, dados de baja o inaccesibles.
+ */
+function is_dead_stream_domain(string $url): bool {
+    $u = strtolower($url);
+    $dead_patterns = [
+        'fembed', 'feurl', 'fembed-hd', 'femax20', 'fcdn.stream',
+        'goodstream.one', 'animeav1.uns.bio', 'uptobox.com', 'uptostream.com',
+        'streamz.ws', 'player.cuevana-3.mx', 'player.poseidonhd2.co',
+        'supervideo.tv', 'embed69.org/vidurl/error', 'streamtape.com/v/error'
+    ];
+    foreach ($dead_patterns as $p) {
+        if (strpos($u, $p) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Normaliza y estandariza la información de idioma para fuentes de streaming.
+ * Retorna: ['label' => string, 'code' => string, 'flag' => string]
+ */
+function normalize_stream_language(string $lang_str = ''): array {
+    $raw = mb_strtolower(trim($lang_str), 'UTF-8');
+
+    // Dual / Multi Audio
+    if (preg_match('/(?:dual|multi[\s\-_]*audio|multi[\s\-_]*dub|tri[\s\-_]*audio)/i', $raw)) {
+        return ['label' => 'Audio Dual / Multi', 'code' => 'dual', 'flag' => '✨'];
+    }
+
+    // Español Latino
+    if (preg_match('/(?:latino|latam|es[\s\-_]*mx|es[\s\-_]*419|mexico|colombia|lat)/i', $raw) || $raw === '1' || $raw === 'lat') {
+        return ['label' => 'Español Latino', 'code' => 'lat', 'flag' => '🇲🇽'];
+    }
+
+    // Español Castellano
+    if (preg_match('/(?:castellano|españa|spain|spanish|es[\s\-_]*es|cast|esp)/i', $raw) || $raw === '2') {
+        return ['label' => 'Español Castellano', 'code' => 'cast', 'flag' => '🇪🇸'];
+    }
+
+    // Subtitulado / Japonés Sub / VOSE
+    if (preg_match('/(?:subtitulad|sub|vose|japon[eé]s|jap|vo|sub[\s\-_]*esp)/i', $raw) || $raw === '3') {
+        $flag = (strpos($raw, 'jap') !== false) ? '🇯🇵' : '💬';
+        return ['label' => 'Subtitulado (VOSE)', 'code' => 'sub', 'flag' => $flag];
+    }
+
+    // Inglés
+    if (preg_match('/(?:ingl[eé]s|english|eng|en)/i', $raw)) {
+        return ['label' => 'Inglés (Original)', 'code' => 'eng', 'flag' => '🇺🇸'];
+    }
+
+    // Por defecto si no se especifica, asumir Latino si es servidor general en español
+    return ['label' => !empty($lang_str) ? ucfirst($lang_str) : 'Español Latino', 'code' => 'lat', 'flag' => '🇲🇽'];
+}
+
+/**
+ * Limpia, valida y sanitiza una fuente de streaming o descarga.
+ * Descarta servidores muertos o inválidos, fuerza HTTPS y normaliza el idioma.
+ */
+function sanitize_stream_source(array $item): ?array {
+    $url = trim($item['url'] ?? '');
+    if (empty($url) || strlen($url) < 8) {
+        return null;
+    }
+
+    // 1. Filtrar dominios muertos conocidos
+    if (is_dead_stream_domain($url)) {
+        return null;
+    }
+
+    // 2. Forzar HTTPS para evitar bloqueo de Mixed Content en navegadores modernos
+    if (strpos($url, 'http://') === 0 && strpos($url, 'http://localhost') === false && strpos($url, 'http://127.0.0.1') === false) {
+        $url = 'https://' . substr($url, 7);
+    }
+    $item['url'] = $url;
+
+    // 3. Normalizar idioma si es streaming o direct
+    if (($item['type'] ?? '') === 'streaming' || ($item['type'] ?? '') === 'direct') {
+        $normLang = normalize_stream_language($item['language'] ?? '');
+        $item['language'] = $normLang['label'];
+        $item['lang_code'] = $normLang['code'];
+        $item['lang_flag'] = $normLang['flag'];
+    }
+
+    return $item;
+}
+
+/**
+ * Filtra y sanitiza una lista de fuentes descartando elementos no disponibles o corruptos.
+ */
+function sanitize_and_filter_stream_links(array $items): array {
+    $clean = [];
+    foreach ($items as $it) {
+        $sanitized = sanitize_stream_source($it);
+        if ($sanitized !== null) {
+            $clean[] = $sanitized;
+        }
+    }
+    return $clean;
+}
+
 
 

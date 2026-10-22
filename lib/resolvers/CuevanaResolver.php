@@ -74,13 +74,15 @@ class CuevanaResolver implements ResolverInterface
             ]
         ]);
 
-        if (!$html) {
+        if (!$html || trim($html) === 'ERROR' || strlen($html) < 30) {
             $serverName = stripos($url, 'poseidon') !== false ? 'Poseidon Player' : 'Cuevana Player';
             return [
                 'server' => $serverName,
-                'embed_url' => $url,
+                'embed_url' => null,
                 'stream_url' => null,
-                'quality' => 'HD'
+                'quality' => 'HD',
+                'is_available' => false,
+                'error' => 'El reproductor de Cuevana/Poseidon no responde o está inactivo'
             ];
         }
 
@@ -100,16 +102,19 @@ class CuevanaResolver implements ResolverInterface
                 'server' => $server,
                 'embed_url' => $real_embed,
                 'stream_url' => null,
-                'quality' => 'HD'
+                'quality' => 'HD',
+                'is_available' => true
             ];
         }
 
         $serverName = stripos($url, 'poseidon') !== false ? 'Poseidon Player' : 'Cuevana Player';
         return [
             'server' => $serverName,
-            'embed_url' => $url,
+            'embed_url' => null,
             'stream_url' => null,
-            'quality' => 'HD'
+            'quality' => 'HD',
+            'is_available' => false,
+            'error' => 'No se pudo resolver el reproductor de video'
         ];
     }
 }

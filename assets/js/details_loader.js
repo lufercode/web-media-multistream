@@ -135,6 +135,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <button type="button" id="btnNextEpisodeModal" class="btn btn-sm btn-outline-success py-1 px-2 d-none align-items-center" title="Reproducir siguiente episodio">
                                 <i class="fas fa-step-forward me-1"></i> <span id="btnNextEpisodeText" class="d-none d-sm-inline">Siguiente</span>
                             </button>
+                            <button type="button" id="btnNextServerModal" class="btn btn-sm btn-outline-info py-1 px-2 d-none align-items-center" title="Probar con el siguiente servidor disponible">
+                                <i class="fas fa-forward me-1"></i> <span id="btnNextServerText" class="d-none d-sm-inline">Otro Servidor</span>
+                            </button>
                             <a id="btnExternalLink" href="#" target="_blank" class="btn btn-sm btn-outline-secondary text-light py-1 px-2 d-inline-flex align-items-center" title="Abrir en pestaña externa">
                                 <i class="fas fa-external-link-alt"></i>
                             </a>
@@ -150,9 +153,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             <button type="button" class="btn-close btn-close-white ms-1" id="btnClosePlayerModal" data-bs-dismiss="modal" aria-label="Cerrar" title="Cerrar reproductor"></button>
                         </div>
                     </div>
-                    <div class="modal-body p-0 bg-black player-modal-body" id="playerModalBody">
-                        <iframe id="playerIframe" class="player-media-frame" src="" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+                    <div class="modal-body p-0 bg-black player-modal-body position-relative" id="playerModalBody">
+                        <iframe id="playerIframe" class="player-media-frame" src="" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" referrerpolicy="no-referrer"></iframe>
                         <div id="artplayerContainer" class="player-media-frame" style="display: none;"></div>
+                        <div id="playerBlockedBanner" class="stream-blocked-banner p-2 px-3 bg-danger bg-opacity-25 border-top border-danger text-light d-none align-items-center justify-content-between" style="font-size: 0.8rem;">
+                            <div class="d-flex align-items-center gap-2 text-truncate me-2">
+                                <i class="fas fa-shield-alt text-warning flex-shrink-0"></i>
+                                <span class="text-truncate">¿El reproductor no carga o fue bloqueado por tu navegador?</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                <button type="button" class="btn btn-sm btn-outline-light py-0 px-2" id="btnBlockedNextServer"><i class="fas fa-step-forward me-1"></i>Siguiente Servidor</button>
+                                <a href="#" target="_blank" class="btn btn-sm btn-warning text-dark py-0 px-2 fw-bold" id="btnBlockedExternalLink"><i class="fas fa-external-link-alt me-1"></i>Abrir Externo</a>
+                            </div>
+                        </div>
                     </div>
                     <div id="playerAdTipBar" class="py-1 px-3 bg-dark bg-opacity-75 border-top border-secondary d-flex align-items-center justify-content-between text-secondary" style="font-size: 0.76rem;">
                         <span class="d-flex align-items-center text-truncate me-2">
@@ -251,6 +264,26 @@ document.addEventListener('DOMContentLoaded', () => {
             btnNextModal.addEventListener('click', (e) => {
                 e.stopPropagation();
                 playNextEpisode();
+            });
+        }
+
+        const btnNextServer = document.getElementById('btnNextServerModal');
+        if (btnNextServer) {
+            btnNextServer.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (typeof playNextServer === 'function') {
+                    playNextServer();
+                }
+            });
+        }
+
+        const btnBlockedNext = document.getElementById('btnBlockedNextServer');
+        if (btnBlockedNext) {
+            btnBlockedNext.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (typeof playNextServer === 'function') {
+                    playNextServer();
+                }
             });
         }
 
@@ -813,7 +846,62 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     };
 
-    const openStreamModal = async (url, title, server, provider, thumbnail, episodeMeta) => {
+    let currentActiveStreamBtn = null;
+    let currentStreamBlockId = null;
+    let currentStreamWatchdogTimer = null;
+
+    const findNextStreamButton = (currentBtnOrUrl) => {
+        let buttons = [];
+        if (currentStreamBlockId) {
+            buttons = Array.from(document.querySelectorAll(`[data-block-id="${currentStreamBlockId}"].stream-play-btn`));
+        }
+        if (buttons.length === 0) {
+            buttons = Array.from(document.querySelectorAll('.stream-play-btn'));
+        }
+        if (buttons.length <= 1) return null;
+
+        let curIdx = -1;
+        if (currentBtnOrUrl instanceof Element) {
+            curIdx = buttons.indexOf(currentBtnOrUrl);
+        } else if (typeof currentBtnOrUrl === 'string') {
+            curIdx = buttons.findIndex(b => (b.dataset.streamUrl === currentBtnOrUrl || b.dataset.url === currentBtnOrUrl));
+        }
+
+        // 1. Buscar primero en los botones visibles del mismo idioma que no estén caídos
+        for (let step = 1; step < buttons.length; step++) {
+            const idx = (curIdx + step) % buttons.length;
+            const b = buttons[idx];
+            if (!b.classList.contains('is-dead') && !b.classList.contains('d-none') && !b.disabled) {
+                return b;
+            }
+        }
+
+        // 2. Si no hay más en el filtro actual, buscar cualquier siguiente botón disponible no caído
+        for (let step = 1; step < buttons.length; step++) {
+            const idx = (curIdx + step) % buttons.length;
+            const b = buttons[idx];
+            if (!b.classList.contains('is-dead') && !b.disabled) {
+                return b;
+            }
+        }
+
+        return null;
+    };
+
+    const playNextServer = () => {
+        const nextBtn = findNextStreamButton(currentActiveStreamBtn);
+        if (nextBtn) {
+            console.log('%c⏭️ [Servidor] Cambiando automáticamente al siguiente servidor disponible...', 'color: #0dcaf0;');
+            nextBtn.click();
+            return true;
+        }
+        if (window._currentArtplayer && window._currentArtplayer.notice) {
+            window._currentArtplayer.notice.show = 'No hay más servidores alternativos disponibles';
+        }
+        return false;
+    };
+
+    const openStreamModal = async (url, title, server, provider, thumbnail, episodeMeta, clickedButton = null) => {
         const modalEl = document.getElementById('videoPlayerModal');
         const iframe = document.getElementById('playerIframe');
         const artContainer = document.getElementById('artplayerContainer');
@@ -823,6 +911,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const provLabel = provider || 'Online';
         
         const isCurrentlyMinimized = modalEl && modalEl.classList.contains('player-minimized');
+
+        // Guardar referencia al botón de origen
+        currentActiveStreamBtn = clickedButton || (window.event?.currentTarget?.classList?.contains('stream-play-btn') ? window.event.currentTarget : null) || document.querySelector(`.stream-play-btn[data-stream-url="${CSS.escape(url)}"]`);
+        if (currentActiveStreamBtn && currentActiveStreamBtn.dataset.blockId) {
+            currentStreamBlockId = currentActiveStreamBtn.dataset.blockId;
+        }
 
         // Guardar referencia al elemento activo y posición de scroll previa solo si abrimos desde vista normal
         if (!isCurrentlyMinimized) {
@@ -875,6 +969,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 btnNextModal.classList.add('d-none');
                 btnNextModal.classList.remove('d-inline-flex');
             }
+        }
+
+        // Actualizar botón "Siguiente Servidor" en cabecera del modal
+        const btnNextServer = document.getElementById('btnNextServerModal');
+        const hasNextServer = Boolean(findNextStreamButton(currentActiveStreamBtn || url));
+        if (btnNextServer) {
+            if (hasNextServer) {
+                btnNextServer.classList.remove('d-none');
+                btnNextServer.classList.add('d-inline-flex');
+            } else {
+                btnNextServer.classList.add('d-none');
+                btnNextServer.classList.remove('d-inline-flex');
+            }
+        }
+
+        // Limpiar banner de iframe bloqueado previo y cancelar watchdog anterior
+        const blockedBanner = document.getElementById('playerBlockedBanner');
+        if (blockedBanner) blockedBanner.classList.add('d-none');
+        if (currentStreamWatchdogTimer) {
+            clearTimeout(currentStreamWatchdogTimer);
+            currentStreamWatchdogTimer = null;
         }
 
         // Consultar skip times para series / anime en segundo plano
@@ -976,6 +1091,71 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log(`%c⚡ [Resolver] Resolviendo enlace limpio para: ${url}`, 'color: #9b59b6;');
             const res = await fetch(`api/resolve_stream.php?url=${encodeURIComponent(url)}`);
             const resData = await res.json();
+
+            // COMPROBACIÓN DE DISPONIBILIDAD REAL
+            const isAvailable = (resData?.status === 'success') && (resData?.available !== false) && (resData?.data?.is_available !== false);
+
+            if (!isAvailable) {
+                const errorMsg = resData?.error || 'El video fue eliminado del servidor o no responde.';
+                console.warn(`%c⚠️ [Stream Caído] ${url} no disponible: ${errorMsg}`, 'color: #e74c3c; font-weight: bold;');
+
+                // Marcar el botón como caído en la UI
+                if (currentActiveStreamBtn) {
+                    currentActiveStreamBtn.classList.remove('btn-outline-success', 'btn-success');
+                    currentActiveStreamBtn.classList.add('btn-outline-danger', 'is-dead');
+                    currentActiveStreamBtn.disabled = true;
+                    currentActiveStreamBtn.title = 'Servidor no disponible / archivo eliminado';
+                    if (!currentActiveStreamBtn.querySelector('.badge-dead')) {
+                        const deadBadge = document.createElement('span');
+                        deadBadge.className = 'badge bg-danger ms-1 badge-dead';
+                        deadBadge.innerHTML = '<i class="fas fa-times me-1"></i>Caído';
+                        currentActiveStreamBtn.appendChild(deadBadge);
+                    }
+                }
+
+                if (badgesEl) {
+                    badgesEl.innerHTML = `
+                        <span class="badge bg-primary text-white"><i class="fas fa-globe me-1"></i>${provLabel}</span>
+                        <span class="badge bg-danger text-white"><i class="fas fa-times-circle me-1"></i>${server} (Caído)</span>
+                        <span class="badge bg-warning text-dark"><i class="fas fa-spinner fa-spin me-1"></i>Saltando al siguiente...</span>
+                    `;
+                }
+
+                // Auto-fallback: Cambiar automáticamente al siguiente servidor disponible
+                const nextBtn = findNextStreamButton(currentActiveStreamBtn || url);
+                if (nextBtn) {
+                    setTimeout(() => {
+                        const m = document.getElementById('videoPlayerModal');
+                        if (m && m.classList.contains('show')) {
+                            nextBtn.click();
+                        }
+                    }, 1000);
+                    return;
+                } else {
+                    if (badgesEl) {
+                        badgesEl.innerHTML = `
+                            <span class="badge bg-primary text-white"><i class="fas fa-globe me-1"></i>${provLabel}</span>
+                            <span class="badge bg-danger text-white"><i class="fas fa-times-circle me-1"></i>Servidor no disponible</span>
+                        `;
+                    }
+                    if (iframe) iframe.style.display = 'none';
+                    if (artContainer) {
+                        artContainer.style.display = 'block';
+                        artContainer.innerHTML = `
+                            <div class="d-flex flex-column align-items-center justify-content-center text-center p-4" style="min-height: 400px; color: #fff;">
+                                <i class="fas fa-unlink text-danger mb-3" style="font-size: 3.5rem;"></i>
+                                <h4 class="fw-bold">Servidor no disponible</h4>
+                                <p class="text-secondary small mb-3">${errorMsg}</p>
+                                <button type="button" class="btn btn-outline-info" data-bs-dismiss="modal">
+                                    <i class="fas fa-arrow-left me-1"></i> Elegir otro servidor o proveedor
+                                </button>
+                            </div>
+                        `;
+                    }
+                    return;
+                }
+            }
+
             const cleanUrl = resData?.data?.embed_url || url;
             const streamUrl = resData?.data?.stream_url;
             const downloadUrl = resData?.data?.download_url || streamUrl || cleanUrl;
@@ -1671,6 +1851,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 iframe.src = cleanUrl;
                 const tipBar = document.getElementById('playerAdTipBar');
                 if (tipBar) tipBar.style.display = 'flex';
+
+                // Watchdog para detectar posible bloqueo por X-Frame-Options o AdBlocker
+                currentStreamWatchdogTimer = setTimeout(() => {
+                    const currentModal = document.getElementById('videoPlayerModal');
+                    if (currentModal && currentModal.classList.contains('show') && iframe.style.display !== 'none') {
+                        const blockedBanner = document.getElementById('playerBlockedBanner');
+                        if (blockedBanner) {
+                            blockedBanner.classList.remove('d-none');
+                            blockedBanner.classList.add('d-flex');
+                            const btnBlockedExt = document.getElementById('btnBlockedExternalLink');
+                            if (btnBlockedExt) btnBlockedExt.href = cleanUrl;
+                        }
+                    }
+                }, 4500);
             }
         } catch (e) {
             if (artContainer) {
@@ -1682,6 +1876,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 iframe.src = url;
                 const tipBar = document.getElementById('playerAdTipBar');
                 if (tipBar) tipBar.style.display = 'flex';
+
+                currentStreamWatchdogTimer = setTimeout(() => {
+                    const currentModal = document.getElementById('videoPlayerModal');
+                    if (currentModal && currentModal.classList.contains('show') && iframe.style.display !== 'none') {
+                        const blockedBanner = document.getElementById('playerBlockedBanner');
+                        if (blockedBanner) {
+                            blockedBanner.classList.remove('d-none');
+                            blockedBanner.classList.add('d-flex');
+                            const btnBlockedExt = document.getElementById('btnBlockedExternalLink');
+                            if (btnBlockedExt) btnBlockedExt.href = url;
+                        }
+                    }
+                }, 4500);
             }
             if (badgesEl) {
                 badgesEl.innerHTML = `
@@ -2996,9 +3203,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <!-- Sección 2: Streaming Online (Agrupada por Proveedor en Desplegables) -->
                 <div class="section-streaming mb-3" style="display: none;">
-                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-1 mb-2">
-                        <h6 class="text-success mb-0"><i class="fas fa-play-circle me-1"></i> Reproducción Online (<span class="stream-count-text">0 servidores</span>)</h6>
-                        <small class="text-secondary"><i class="fas fa-hand-pointer me-1 text-info"></i>Toca un proveedor para ver servidores</small>
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <h6 class="text-success mb-0"><i class="fas fa-play-circle me-1"></i> Reproducción Online (<span class="stream-count-text">0 servidores</span>)</h6>
+                        </div>
+                        <div class="stream-lang-filter-bar d-flex align-items-center flex-wrap gap-1" id="${blockId}_streamLangBar"></div>
                     </div>
                     <div class="streaming-groups-container d-flex flex-column gap-2"></div>
                 </div>
@@ -3086,6 +3295,91 @@ document.addEventListener('DOMContentLoaded', () => {
             secDirect.style.display = 'block';
         };
 
+        let activeLangFilter = localStorage.getItem('preferred_stream_lang') || 'all';
+
+        const updateStreamLangFilters = () => {
+            const langBar = document.getElementById(`${blockId}_streamLangBar`);
+            if (!langBar) return;
+
+            const allStreamButtons = Array.from(streamBox.querySelectorAll('.stream-play-btn'));
+            if (allStreamButtons.length === 0) return;
+
+            // Contar servidores por idioma
+            const counts = { all: allStreamButtons.length, lat: 0, cast: 0, sub: 0, eng: 0, dual: 0 };
+            allStreamButtons.forEach(btn => {
+                const code = btn.dataset.langCode || 'lat';
+                if (counts[code] !== undefined) {
+                    counts[code]++;
+                } else {
+                    counts.lat++;
+                }
+            });
+
+            // Si el filtro seleccionado no tiene servidores en este bloque, volver a 'all'
+            if (activeLangFilter !== 'all' && (!counts[activeLangFilter] || counts[activeLangFilter] === 0)) {
+                activeLangFilter = 'all';
+            }
+
+            // Aplicar visibilidad de botones
+            let visibleTotal = 0;
+            allStreamButtons.forEach(btn => {
+                const code = btn.dataset.langCode || 'lat';
+                if (activeLangFilter === 'all' || code === activeLangFilter) {
+                    btn.classList.remove('d-none');
+                    visibleTotal++;
+                } else {
+                    btn.classList.add('d-none');
+                }
+            });
+
+            // Actualizar visibilidad de tarjetas de proveedor
+            streamBox.querySelectorAll('.provider-collapse-card').forEach(card => {
+                const visibleBtns = card.querySelectorAll('.stream-play-btn:not(.d-none)');
+                const totalBtns = card.querySelectorAll('.stream-play-btn');
+                if (visibleBtns.length === 0) {
+                    card.classList.add('d-none');
+                } else {
+                    card.classList.remove('d-none');
+                    const countBadge = card.querySelector('.provider-toggle-btn .badge.bg-success');
+                    if (countBadge) {
+                        countBadge.textContent = activeLangFilter === 'all' ? visibleBtns.length : `${visibleBtns.length}/${totalBtns.length}`;
+                    }
+                }
+            });
+
+            if (streamCountText) {
+                streamCountText.textContent = `${visibleTotal} ${visibleTotal === 1 ? 'servidor' : 'servidores'}`;
+            }
+
+            // Renderizar píldoras de filtro
+            const filterDefs = [
+                { id: 'all', label: '🌐 Todos', count: counts.all },
+                { id: 'lat', label: '🇲🇽 Latino', count: counts.lat },
+                { id: 'cast', label: '🇪🇸 Castellano', count: counts.cast },
+                { id: 'sub', label: '💬 Subtitulado', count: counts.sub },
+                { id: 'eng', label: '🇺🇸 Inglés', count: counts.eng },
+                { id: 'dual', label: '✨ Dual', count: counts.dual }
+            ];
+
+            langBar.innerHTML = '';
+            filterDefs.forEach(f => {
+                if (f.id !== 'all' && f.count === 0) return;
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `stream-lang-filter-btn ${activeLangFilter === f.id ? 'active' : ''}`;
+                btn.innerHTML = `${f.label} <span class="lang-count">${f.count}</span>`;
+                btn.addEventListener('click', (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    activeLangFilter = f.id;
+                    localStorage.setItem('preferred_stream_lang', f.id);
+                    updateStreamLangFilters();
+                });
+                langBar.appendChild(btn);
+            });
+        };
+
         const renderStreamGroup = (group) => {
             const collapseId = `${blockId}_stream_${group.providerId}_${Math.random().toString(36).substring(2, 6)}`;
             const icon = getProviderIcon(group.providerId, 'streaming');
@@ -3132,17 +3426,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 const url = src.url;
                 const srv = (src.server || 'Servidor Online').replace(/"/g, '&quot;');
                 const provName = (src.provider_name || group.rawProviderName || 'Streaming').replace(/"/g, '&quot;');
-                const lang = src.language ? `<span class="badge bg-secondary ms-1">${src.language}</span>` : '';
+                
+                // Normalizar idioma
+                let langCode = src.lang_code;
+                let langLabel = src.language;
+                let langFlag = src.lang_flag;
+                if (!langCode) {
+                    const rawL = (src.language || src.lang || '').toLowerCase();
+                    if (rawL.includes('cast') || rawL.includes('españa')) {
+                        langCode = 'cast'; langLabel = 'Español Castellano'; langFlag = '🇪🇸';
+                    } else if (rawL.includes('sub') || rawL.includes('vose') || rawL.includes('jap')) {
+                        langCode = 'sub'; langLabel = 'Subtitulado'; langFlag = '💬';
+                    } else if (rawL.includes('ing') || rawL.includes('eng')) {
+                        langCode = 'eng'; langLabel = 'Inglés'; langFlag = '🇺🇸';
+                    } else if (rawL.includes('dual')) {
+                        langCode = 'dual'; langLabel = 'Dual'; langFlag = '✨';
+                    } else {
+                        langCode = 'lat'; langLabel = 'Español Latino'; langFlag = '🇲🇽';
+                    }
+                }
                 const qlt = src.quality ? `<span class="badge bg-success ms-1">${src.quality}</span>` : '';
 
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'btn btn-sm btn-outline-success stream-play-btn shadow-sm d-inline-flex align-items-center flex-wrap gap-1 py-1 px-2';
-                btn.innerHTML = `<i class="fas fa-play text-success me-1 flex-shrink-0"></i><strong>${srv}</strong> ${lang} ${qlt}`;
+                btn.dataset.streamUrl = url;
+                btn.dataset.server = srv;
+                btn.dataset.provider = provName;
+                btn.dataset.langCode = langCode;
+                btn.dataset.blockId = blockId;
+                btn.innerHTML = `<i class="fas fa-play text-success me-1 flex-shrink-0"></i><strong>${srv}</strong> <span class="badge bg-secondary ms-1">${langFlag} ${langLabel}</span> ${qlt}`;
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    openStreamModal(url, safeTitle, srv, provName, safeThumb, episodeMeta || { isMovie: true });
+                    openStreamModal(url, safeTitle, srv, provName, safeThumb, episodeMeta || { isMovie: true }, btn);
                 });
                 slot.appendChild(btn);
             });
@@ -3150,6 +3467,7 @@ document.addEventListener('DOMContentLoaded', () => {
             streamBox.appendChild(cardWrapper);
             secStream.style.display = 'block';
             streamCountText.textContent = `${streamLinksCount} ${streamLinksCount === 1 ? 'servidor' : 'servidores'}`;
+            updateStreamLangFilters();
         };
 
         const parseTorrentItemMeta = (src, fallbackTitle) => {
@@ -4149,8 +4467,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-    // Delegación de clic para botones de torrents (compatibilidad con renderSourcesBlock)
+    // Delegación de clic para botones de torrents y streaming (compatibilidad con renderSourcesBlock)
     document.addEventListener('click', (e) => {
+        const streamBtn = e.target.closest('.stream-play-btn');
+        if (streamBtn && streamBtn.dataset.url && !streamBtn.classList.contains('is-dead')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const u = streamBtn.dataset.url;
+            const t = streamBtn.dataset.title;
+            const s = streamBtn.dataset.server;
+            const p = streamBtn.dataset.provider;
+            const th = streamBtn.dataset.thumbnail;
+            openStreamModal(u, t, s, p, th, null, streamBtn);
+            return;
+        }
+
         const torrentBtn = e.target.closest('.stream-torrent-btn');
         if (torrentBtn) {
             e.preventDefault();

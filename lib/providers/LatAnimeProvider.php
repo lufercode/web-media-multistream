@@ -42,11 +42,24 @@ class LatAnimeProvider implements ProviderInterface
         }
 
         $results = [];
-        $queries = array_values(array_unique(array_filter([
-            trim($title),
-            trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s.]/u', ' ', $title))),
-            trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s]/u', ' ', $title)))
-        ])));
+        $queries = [trim($title), trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s.]/u', ' ', $title)))];
+
+        // Enriquecer con nombres alternativos y Romaji desde TMDB si está disponible
+        if ($tmdb_id !== null && function_exists('get_tmdb_data')) {
+            $alt_data = get_tmdb_data("tv/{$tmdb_id}/alternative_titles");
+            foreach ($alt_data['results'] ?? [] as $alt) {
+                $alt_title = trim($alt['title'] ?? '');
+                if (!empty($alt_title)) {
+                    $queries[] = $alt_title;
+                }
+            }
+            $details = get_tmdb_data("tv/{$tmdb_id}");
+            $orig_name = trim($details['original_name'] ?? '');
+            if (!empty($orig_name)) {
+                $queries[] = $orig_name;
+            }
+        }
+        $queries = array_values(array_unique(array_filter($queries)));
 
         $candidates = [];
         $seen_urls = [];
@@ -76,7 +89,15 @@ class LatAnimeProvider implements ProviderInterface
                 $base_cand = trim($base_cand, " \t\n\r\0\x0B:-");
                 if (empty($base_cand)) $base_cand = $raw_text;
 
-                if (is_anime_title_match($title, $base_cand) || is_strict_title_match($title, $base_cand)) {
+                $matched = false;
+                foreach ($queries as $queryItem) {
+                    if (is_anime_title_match($queryItem, $base_cand) || is_strict_title_match($queryItem, $base_cand)) {
+                        $matched = true;
+                        break;
+                    }
+                }
+
+                if ($matched) {
                     $seen_urls[$slug] = true;
                     $lang = 'Español Latino';
                     if (stripos($slug, 'castellano') !== false || stripos($raw_text, 'castellano') !== false) {
@@ -188,9 +209,12 @@ class LatAnimeProvider implements ProviderInterface
         }));
         if (empty($non_ova)) $non_ova = $candidates;
 
-        // 1. Buscar coincidencia explícita de temporada: s{season} o temporada-{season}
+        // 1. Buscar coincidencia explícita de temporada: s{season}, temporada-{season}, o números romanos
         $explicit = [];
-        $s_pat = '/(?:^|[-_ ])(?:s0*' . $season . '|temporada[-_ ]*0*' . $season . '|season[-_ ]*0*' . $season . ')(?:[-_ ]|$)/i';
+        $roman_map = [2 => 'ii', 3 => 'iii', 4 => 'iv', 5 => 'v', 6 => 'vi', 7 => 'vii', 8 => 'viii'];
+        $rom = $roman_map[$season] ?? null;
+        $rom_pat = $rom ? '|[-_ ]' . $rom . '\b' : '';
+        $s_pat = '/(?:^|[-_ ])(?:s0*' . $season . '|temporada[-_ ]*0*' . $season . '|season[-_ ]*0*' . $season . '|[-_ ]' . $season . '\b' . $rom_pat . ')(?:[-_ ]|$)/i';
         foreach ($non_ova as $c) {
             if (preg_match($s_pat, $c['slug']) || preg_match($s_pat, $c['title'])) {
                 $explicit[] = $c;
@@ -210,10 +234,10 @@ class LatAnimeProvider implements ProviderInterface
             }
         }
 
-        // 3. Si es temporada 1, tomar los que NO tengan s2, s3, s4...
+        // 3. Si es temporada 1, tomar los que NO tengan s2, s3, s4 ni números romanos de secuela
         if ($season === 1) {
             $s1 = array_values(array_filter($non_ova, function ($c) {
-                return !preg_match('/(?:^|[-_ ])(?:s[2-9]|temporada[-_ ]*[2-9]|season[-_ ]*[2-9])(?:[-_ ]|$)/i', $c['slug'] . ' ' . $c['title']);
+                return !preg_match('/(?:^|[-_ ])(?:s[2-9]|temporada[-_ ]*[2-9]|season[-_ ]*[2-9]|[-_ ](?:ii|iii|iv|v|vi|[2-9])\b)(?:[-_ ]|$)/i', $c['slug'] . ' ' . $c['title']);
             }));
             if (!empty($s1)) return $s1;
         }

@@ -184,6 +184,10 @@ class ProviderManager
             $consolidated[$type] = $unique;
         }
 
+        // Sanitizar y descartar servidores muertos / caídos / inseguros
+        $consolidated['streaming'] = sanitize_and_filter_stream_links($consolidated['streaming']);
+        $consolidated['direct'] = sanitize_and_filter_stream_links($consolidated['direct']);
+
         return $consolidated;
     }
 
@@ -244,6 +248,10 @@ class ProviderManager
             }
             $consolidated[$type] = $unique;
         }
+
+        // Sanitizar y descartar servidores muertos / caídos / inseguros
+        $consolidated['streaming'] = sanitize_and_filter_stream_links($consolidated['streaming']);
+        $consolidated['direct'] = sanitize_and_filter_stream_links($consolidated['direct']);
 
         return $consolidated;
     }
@@ -330,6 +338,10 @@ class ProviderManager
             $consolidated[$type] = $unique;
         }
 
+        // Sanitizar y descartar servidores muertos / caídos / inseguros
+        $consolidated['streaming'] = sanitize_and_filter_stream_links($consolidated['streaming']);
+        $consolidated['direct'] = sanitize_and_filter_stream_links($consolidated['direct']);
+
         return $consolidated;
     }
 
@@ -392,6 +404,10 @@ class ProviderManager
             }
             $consolidated[$type] = $unique;
         }
+
+        // Sanitizar y descartar servidores muertos / caídos / inseguros
+        $consolidated['streaming'] = sanitize_and_filter_stream_links($consolidated['streaming']);
+        $consolidated['direct'] = sanitize_and_filter_stream_links($consolidated['direct']);
 
         return $consolidated;
     }

@@ -59,6 +59,18 @@ class FastreamResolver implements ResolverInterface
             ]
         ]);
 
+        $is_dead = (!$html || stripos($html, 'file was deleted') !== false || stripos($html, 'file not found') !== false || stripos($html, '404 not found') !== false || stripos($html, 'video has been removed') !== false);
+        if ($is_dead) {
+            return [
+                'server' => 'Fastream',
+                'embed_url' => $embed_url,
+                'stream_url' => null,
+                'quality' => '1080p Full HD',
+                'is_available' => false,
+                'error' => 'El video fue eliminado de Fastream'
+            ];
+        }
+
         if ($html) {
             // 1. Detección directa de m3u8
             if (preg_match('/["\'](https?:\/\/[^"\']+\.m3u8[^"\']*)["\']/i', $html, $m)) {
@@ -76,7 +88,8 @@ class FastreamResolver implements ResolverInterface
             'server' => 'Fastream',
             'embed_url' => $embed_url,
             'stream_url' => $stream_url,
-            'quality' => '1080p Full HD'
+            'quality' => '1080p Full HD',
+            'is_available' => true
         ];
     }
 }

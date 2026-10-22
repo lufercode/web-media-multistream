@@ -57,10 +57,24 @@ class AnimeFLVProvider implements ProviderInterface
 
     private function searchViaApi(string $title, int $season, int $episode, ?int $tmdb_id, ?int $absolute_episode): array
     {
-        $queries = array_values(array_unique(array_filter([
-            $title,
-            preg_replace('/[^\w\s]/u', ' ', $title)
-        ])));
+        $queries = [$title, preg_replace('/[^\w\s]/u', ' ', $title)];
+
+        // Enriquecer con nombres alternativos / Romaji desde TMDB si está disponible
+        if ($tmdb_id !== null && function_exists('get_tmdb_data')) {
+            $alt_data = get_tmdb_data("tv/{$tmdb_id}/alternative_titles");
+            foreach ($alt_data['results'] ?? [] as $alt) {
+                $alt_title = trim($alt['title'] ?? '');
+                if (!empty($alt_title)) {
+                    $queries[] = $alt_title;
+                }
+            }
+            $details = get_tmdb_data("tv/{$tmdb_id}");
+            $orig_name = trim($details['original_name'] ?? '');
+            if (!empty($orig_name)) {
+                $queries[] = $orig_name;
+            }
+        }
+        $queries = array_values(array_unique(array_filter($queries)));
 
         $search_media = [];
         foreach ($queries as $q) {
@@ -84,7 +98,7 @@ class AnimeFLVProvider implements ProviderInterface
             : null;
 
         // Determinar candidatos con slug y episodio correspondiente
-        $attempts = $this->resolveMediaAttempts($search_media, $title, $season, $episode, $season_name, $absolute_episode);
+        $attempts = $this->resolveMediaAttempts($search_media, $queries, $season, $episode, $season_name, $absolute_episode);
 
         $results = [];
         $formatted_title = sprintf('%s S%02dE%02d', $title, $season, $episode);
@@ -152,9 +166,9 @@ class AnimeFLVProvider implements ProviderInterface
         return $results;
     }
 
-    private function resolveMediaAttempts(array $mediaList, string $title, int $season, int $episode, ?string $season_name, ?int $absolute_episode): array
+    private function resolveMediaAttempts(array $mediaList, array|string $queries, int $season, int $episode, ?string $season_name, ?int $absolute_episode): array
     {
-        $attempts = [];
+        $query_list = is_array($queries) ? $queries : [$queries];
         $candidates = [];
 
         foreach ($mediaList as $item) {
@@ -162,7 +176,15 @@ class AnimeFLVProvider implements ProviderInterface
             $slug = $item['slug'] ?? '';
             if (empty($slug)) continue;
 
-            if (is_anime_title_match($title, $item_title) || is_strict_title_match($title, $item_title)) {
+            $matched = false;
+            foreach ($query_list as $q) {
+                if (is_anime_title_match($q, $item_title) || is_strict_title_match($q, $item_title)) {
+                    $matched = true;
+                    break;
+                }
+            }
+
+            if ($matched) {
                 $candidates[] = [
                     'title' => $item_title,
                     'slug' => $slug,
@@ -175,14 +197,47 @@ class AnimeFLVProvider implements ProviderInterface
             $candidates = $mediaList;
         }
 
+        $is_special_or_movie = function(array $c): bool {
+            $type = mb_strtolower($c['type'] ?? '', 'UTF-8');
+            $str = mb_strtolower(($c['slug'] ?? '') . ' ' . ($c['title'] ?? ''), 'UTF-8');
+            if (in_array($type, ['película', 'pelicula', 'movie', 'ova', 'ona', 'special', 'especial'])) {
+                return true;
+            }
+            return (bool)preg_match('/(?:[-_\s](?:movie|pelicula|ova|ona|special|specials|gekijouban|daisakusen))\b/iu', $str);
+        };
+
+        $detect_season = function(array $c): int {
+            $str = mb_strtolower(($c['slug'] ?? '') . ' ' . ($c['title'] ?? ''), 'UTF-8');
+            // Detección de números romanos y arábigos de temporada
+            if (preg_match('/(?:[-_\s](?:ii|2|2nd|season[-_\s]*0*2|s0*2|second[-_\s]*season))\b/iu', $str)) return 2;
+            if (preg_match('/(?:[-_\s](?:iii|3|3rd|season[-_\s]*0*3|s0*3|third[-_\s]*season))\b/iu', $str)) return 3;
+            if (preg_match('/(?:[-_\s](?:iv|4|4th|season[-_\s]*0*4|s0*4|fourth[-_\s]*season))\b/iu', $str)) return 4;
+            if (preg_match('/(?:[-_\s](?:v|5|5th|season[-_\s]*0*5|s0*5|fifth[-_\s]*season))\b/iu', $str)) return 5;
+            if (preg_match('/(?:[-_\s](?:vi|6|6th|season[-_\s]*0*6|s0*6))\b/iu', $str)) return 6;
+            if (preg_match('/(?:[-_\s](?:vii|7|7th|season[-_\s]*0*7|s0*7))\b/iu', $str)) return 7;
+            if (preg_match('/(?:[-_\s](?:viii|8|8th|season[-_\s]*0*8|s0*8))\b/iu', $str)) return 8;
+            if (preg_match('/(?:season[-_\s]*0*([2-9])|s0*([2-9]))/iu', $str, $m)) {
+                return (int)($m[1] ?: $m[2]);
+            }
+            return 1; // Base / Temporada 1
+        };
+
+        // Separar candidatos regulares de TV de películas o especiales
+        $tv_candidates = array_values(array_filter($candidates, fn($c) => !$is_special_or_movie($c)));
+        if (empty($tv_candidates)) {
+            $tv_candidates = $candidates;
+        }
+
+        $attempts = [];
+
         // 1. Coincidencia por nombre de arco TMDB (ej. Science Future, New World, etc.)
         if ($season >= 2 && !empty($season_name)) {
-            $arc_clean = preg_replace('/[^\w\s]/u', '', strtolower($season_name));
+            $arc_clean = preg_replace('/[^\w\s]/u', '', mb_strtolower($season_name, 'UTF-8'));
             $arc_words = array_filter(explode(' ', $arc_clean));
 
             $arc_matches = [];
-            foreach ($candidates as $c) {
-                $s_lower = strtolower($c['slug'] . ' ' . $c['title']);
+            foreach ($tv_candidates as $c) {
+                $s_lower = mb_strtolower($c['slug'] . ' ' . $c['title'], 'UTF-8');
                 $matched_all = true;
                 foreach ($arc_words as $w) {
                     if (strlen($w) > 2 && strpos($s_lower, $w) === false) {
@@ -194,7 +249,6 @@ class AnimeFLVProvider implements ProviderInterface
             }
 
             if (!empty($arc_matches)) {
-                // Si el arco tiene Part 2 (ej. Dr. Stone Science Future Part 2 para episodios > 12)
                 if ($episode > 12) {
                     foreach ($arc_matches as $c) {
                         if (preg_match('/part[-_ ]*2/i', $c['slug'])) {
@@ -207,35 +261,38 @@ class AnimeFLVProvider implements ProviderInterface
                         $attempts[] = ['slug' => $c['slug'], 'episode' => $episode];
                     }
                 }
+                if (!empty($attempts)) return $attempts;
             }
         }
 
-        // 2. Coincidencia por temporada numérica en el slug (season-4, s4, 4th-season)
-        $s_pat = '/(?:season[-_ ]*0*' . $season . '|s0*' . $season . '|' . $season . '(?:nd|rd|th)?[-_ ]*season)/i';
-        foreach ($candidates as $c) {
-            if (preg_match($s_pat, $c['slug']) || preg_match($s_pat, $c['title'])) {
-                if ($episode > 12 && preg_match('/part[-_ ]*2/i', $c['slug'])) {
-                    $attempts[] = ['slug' => $c['slug'], 'episode' => $episode - 12];
-                } else {
-                    $attempts[] = ['slug' => $c['slug'], 'episode' => $episode];
+        // 2. Coincidencia por temporada exacta (Season >= 2)
+        if ($season >= 2) {
+            foreach ($tv_candidates as $c) {
+                if ($detect_season($c) === $season) {
+                    if ($episode > 12 && preg_match('/part[-_ ]*2/i', $c['slug'])) {
+                        $attempts[] = ['slug' => $c['slug'], 'episode' => $episode - 12];
+                    } else {
+                        $attempts[] = ['slug' => $c['slug'], 'episode' => $episode];
+                    }
                 }
             }
+            if (!empty($attempts)) return $attempts;
         }
 
-        // 3. Temporada 1 o candidato base
-        foreach ($candidates as $c) {
-            $is_subseason = preg_match('/(?:season[-_ ]*[2-9]|s[2-9]|part[-_ ]*[2-9])/i', $c['slug']);
-            if ($season === 1 && !$is_subseason) {
-                $attempts[] = ['slug' => $c['slug'], 'episode' => $episode];
-                break;
-            } elseif ($season >= 2 && $absolute_episode !== null && !$is_subseason) {
-                $attempts[] = ['slug' => $c['slug'], 'episode' => $absolute_episode];
+        // 3. Temporada 1: Candidato base (temporada 1 y sin sufijos de secuela)
+        if ($season === 1) {
+            foreach ($tv_candidates as $c) {
+                if ($detect_season($c) === 1) {
+                    $attempts[] = ['slug' => $c['slug'], 'episode' => $episode];
+                    break;
+                }
             }
+            if (!empty($attempts)) return $attempts;
         }
 
-        // Fallback: probar el primer candidato con el episodio
-        if (empty($attempts) && !empty($candidates[0])) {
-            $attempts[] = ['slug' => $candidates[0]['slug'], 'episode' => $episode];
+        // 4. Fallback si nada específico coincidió
+        if (!empty($tv_candidates[0])) {
+            $attempts[] = ['slug' => $tv_candidates[0]['slug'], 'episode' => $episode];
         }
 
         return $attempts;
@@ -253,17 +310,11 @@ class AnimeFLVProvider implements ProviderInterface
         $items = @json_decode($raw, true);
         if (!is_array($items)) return [];
 
-        $slug = null;
-        foreach ($items as $item) {
-            $cand_title = $item['title'] ?? ($item['title_english'] ?? '');
-            if (is_anime_title_match($title, $cand_title) || is_strict_title_match($title, $cand_title)) {
-                $slug = $item['slug'] ?? null;
-                break;
-            }
-        }
-        if (!$slug) return [];
+        $attempts = $this->resolveMediaAttempts($items, $title, $season, $episode, null, $absolute_episode);
+        if (empty($attempts)) return [];
 
-        $ep_candidates = [$episode];
+        $slug = $attempts[0]['slug'];
+        $ep_candidates = [$attempts[0]['episode']];
         if ($season >= 2 && $absolute_episode !== null && $absolute_episode !== $episode) {
             array_unshift($ep_candidates, $absolute_episode);
         }

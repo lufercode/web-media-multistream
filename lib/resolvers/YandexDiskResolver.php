@@ -26,10 +26,12 @@ class YandexDiskResolver implements ResolverInterface
 
         if (!$info || empty($info['download_url'])) {
             return [
-                'server'     => 'Movie+ Cloud FastStream',
-                'embed_url'  => $proxyStreamUrl,
-                'stream_url' => $proxyStreamUrl,
-                'quality'    => 'HD / 1080p'
+                'server'       => 'Movie+ Cloud FastStream',
+                'embed_url'    => null,
+                'stream_url'   => null,
+                'quality'      => 'HD / 1080p',
+                'is_available' => false,
+                'error'        => 'El enlace de Movie+ en Yandex no está disponible o fue eliminado'
             ];
         }
 
@@ -47,7 +49,8 @@ class YandexDiskResolver implements ResolverInterface
             'download_url' => $directUrl,
             'filename'     => $filename,
             'is_mkv'       => $isMkv,
-            'quality'      => $quality
+            'quality'      => $quality,
+            'is_available' => true
         ];
     }
 }

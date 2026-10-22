@@ -159,4 +159,30 @@ web2-ftp/
 
 ---
 
+## 7. Validación de Embeds, Filtro por Idioma y Prevención de Bloqueos (Actualización Reciente)
+
+### 7.1. Filtrado de Servidores Caídos / Muertos
+- **Lista Negra de Dominios Caídos:** En `lib/utils.php` (`is_dead_stream_domain`) se descartan dominios con error 500 permanente (`player.cuevana-3.mx`, `player.poseidonhd2.co`), DNS caídos (`goodstream.one`), o servicios cerrados (`fembed`, `uptobox`, `streamz`, `animeav1`).
+- **Verificación Rápida de Salud (cURL Range):** `ResolverManager` y resolvers dedicados (`VoeResolver`, `StreamWishResolver`, `VidHideResolver`, `FastreamResolver`, `YandexDiskResolver`, `CuevanaResolver`) verifican encabezados y respuestas para detectar `404 Not Found` y páginas de archivo eliminado ("file was deleted").
+- **API `resolve_stream.php`:** Devuelve `status: unavailable`, `available: false` para que el frontend no intente reproducir servidores muertos.
+- **Auto-fallback Inteligente:** En el reproductor (`assets/js/details_loader.js`), si un servidor responde como caído, su botón se marca visualmente con tachado y badge `Caído`, y el modal salta automáticamente al siguiente servidor disponible sin que el usuario tenga que recargar la página.
+
+### 7.2. Filtro y Selección Interactiva de Idiomas
+- **Normalización de Idiomas:** En `lib/utils.php` (`normalize_stream_language`), cada fuente se clasifica con código estándar (`lat`, `cast`, `sub`, `eng`, `dual`), bandera (🇲🇽, 🇪🇸, 💬, 🇺🇸, ✨) y etiqueta clara.
+- **Barra de Filtros por Idioma:** Se implementó `.stream-lang-filter-bar` sobre la lista de servidores en `details_loader.js`. El usuario puede filtrar al instante solo servidores en su idioma preferido (`🇲🇽 Latino`, `🇪🇸 Castellano`, `💬 Subtitulado`, `🌐 Todos`), recordando su selección en `localStorage`.
+
+### 7.3. Prevención de Bloqueos en el Navegador
+- **Política de Referrer:** Se añadió `referrerpolicy="no-referrer"` en `playerIframe` para evitar que servidores de video rechacen conexiones con HTTP 403 por encabezado Referer.
+- **Botón "Otro Servidor" y Watchdog:** Cabecera con `#btnNextServerModal` para alternar servidores en un clic. Watchdog de 4.5s que activa `#playerBlockedBanner` con botón de salto o apertura externa si el navegador/adblocker bloquea el iframe.
+
+### 7.4. Precisión de Temporadas y Capítulos en Anime (AnimeFLV & LatAnime)
+- **Causa Raíz Diagnosticada:** AnimeFLV y LatAnime devuelven resultados con nombres Romaji (ej: *Youjo Senki* en vez de *Saga of Tanya the Evil*) y organizan las secuelas con números romanos en el slug (`youjo-senki-ii`, `overlord-iv`). Anteriormente, la regex de temporadas solo buscaba `-s2` o `season-2`, ignorando `-ii`, `-iii` y sufijos numéricos. Esto causaba que la búsqueda de la Temporada 1 tomase erróneamente la Temporada 2 (`youjo-senki-ii/1`).
+- **Enriquecimiento con Títulos Alternativos de TMDB:** Si `$tmdb_id` está presente, `AnimeFLVProvider` y `LatAnimeProvider` consultan `/tv/{id}/alternative_titles` y `original_name` para inyectar automáticamente el título Romaji/Japonés en las búsquedas.
+- **Filtro de Películas y Especiales:** Se descartan slugs con palabras como `movie`, `pelicula`, `ova`, `ona`, `special` para peticiones de series episódicas regulares.
+- **Mapeo de Números Romanos y Temporadas:** Se introdujo detección estricta de números romanos (`ii`=2, `iii`=3, `iv`=4, `v`=5, `vi`=6, etc.) y sufijos (`-2`, `-3`, `2nd`). Temporada 1 selecciona únicamente el slug base limpio (`youjo-senki`), y Temporada 2 selecciona la secuela correspondiente (`youjo-senki-ii`).
+
+---
+
 *Este archivo sirve como brújula técnica permanente para cualquier mantenimiento, despliegue o ampliación de la plataforma.*
+
+
