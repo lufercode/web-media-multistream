@@ -43,30 +43,57 @@ class TioAnimeProvider implements ProviderInterface
         }
 
         $results = [];
-        $query_clean = preg_replace('/[^\w\s]/u', ' ', $title);
-        $query_clean = trim(preg_replace('/\s+/', ' ', $query_clean));
+        $queries = array_values(array_unique(array_filter([
+            trim($title),
+            trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s]/u', ' ', $title))),
+        ])));
 
-        $search_url = $this->host . 'directorio?q=' . rawurlencode($query_clean);
-        $html = http_get($search_url, ['timeout' => 6]);
-        if (!$html || strlen($html) < 500) return [];
-
-        preg_match_all('/<a\s+href="(\/anime\/[^"]+)"[^>]*>.*?<h3[^>]*>([^<]+)<\/h3>/is', $html, $matches, PREG_SET_ORDER);
-        if (empty($matches)) return [];
+        if ($tmdb_id !== null && function_exists('get_tmdb_data')) {
+            $alt_data = get_tmdb_data("tv/{$tmdb_id}/alternative_titles");
+            foreach ($alt_data['results'] ?? [] as $alt) {
+                $alt_title = trim($alt['title'] ?? '');
+                if (!empty($alt_title)) $queries[] = $alt_title;
+            }
+            $details = get_tmdb_data("tv/{$tmdb_id}");
+            $orig_name = trim($details['original_name'] ?? '');
+            if (!empty($orig_name)) $queries[] = $orig_name;
+        }
+        $queries = array_values(array_unique(array_filter($queries)));
 
         $candidates = [];
         $seen_slugs = [];
-        foreach ($matches as $m) {
-            $rel_slug = basename($m[1]);
-            if (isset($seen_slugs[$rel_slug])) continue;
-            $anime_title = trim(strip_tags($m[2]));
 
-            if (is_anime_title_match($title, $anime_title)) {
-                $seen_slugs[$rel_slug] = true;
-                $candidates[] = [
-                    'slug' => $rel_slug,
-                    'title' => $anime_title
-                ];
+        foreach ($queries as $q) {
+            if (connection_aborted()) exit;
+            $search_url = $this->host . 'directorio?q=' . rawurlencode($q);
+            $html = http_get($search_url, ['timeout' => 6]);
+            if (!$html || strlen($html) < 500) continue;
+
+            preg_match_all('/<a\s+href="(\/anime\/[^"]+)"[^>]*>.*?<h3[^>]*>([^<]+)<\/h3>/is', $html, $matches, PREG_SET_ORDER);
+            if (empty($matches)) continue;
+
+            foreach ($matches as $m) {
+                $rel_slug = basename($m[1]);
+                if (isset($seen_slugs[$rel_slug])) continue;
+                $anime_title = trim(strip_tags($m[2]));
+
+                $is_match = false;
+                foreach ($queries as $cand_q) {
+                    if (is_anime_title_match($cand_q, $anime_title) || is_strict_title_match($cand_q, $anime_title)) {
+                        $is_match = true;
+                        break;
+                    }
+                }
+
+                if ($is_match) {
+                    $seen_slugs[$rel_slug] = true;
+                    $candidates[] = [
+                        'slug' => $rel_slug,
+                        'title' => $anime_title
+                    ];
+                }
             }
+            if (!empty($candidates)) break;
         }
 
         if (empty($candidates)) return [];
@@ -208,12 +235,12 @@ class TioAnimeProvider implements ProviderInterface
         }
 
         $season_patterns = [
-            2 => '/(?:2nd[-_ ]season|second[-_ ]season|season[-_ ]2|2da[-_ ]temporada|[-_ ]2(?=[-_\/]|$))/i',
-            3 => '/(?:3rd[-_ ]season|third[-_ ]season|season[-_ ]3|3ra[-_ ]temporada|[-_ ]3(?=[-_\/]|$))/i',
-            4 => '/(?:4th[-_ ]season|fourth[-_ ]season|season[-_ ]4|4ta[-_ ]temporada|the[-_ ]final[-_ ]season|final[-_ ]season|[-_ ]4(?=[-_\/]|$))/i',
-            5 => '/(?:5th[-_ ]season|season[-_ ]5|[-_ ]5(?=[-_\/]|$))/i',
-            6 => '/(?:6th[-_ ]season|season[-_ ]6|[-_ ]6(?=[-_\/]|$))/i',
-            7 => '/(?:7th[-_ ]season|season[-_ ]7|[-_ ]7(?=[-_\/]|$))/i',
+            2 => '/(?:2nd[-_ ]season|second[-_ ]season|season[-_ ]2|2da[-_ ]temporada|[-_ ]2(?=[-_\/]|$)|[-_ ]ii(?=[-_\/]|$))/i',
+            3 => '/(?:3rd[-_ ]season|third[-_ ]season|season[-_ ]3|3ra[-_ ]temporada|[-_ ]3(?=[-_\/]|$)|[-_ ]iii(?=[-_\/]|$))/i',
+            4 => '/(?:4th[-_ ]season|fourth[-_ ]season|season[-_ ]4|4ta[-_ ]temporada|the[-_ ]final[-_ ]season|final[-_ ]season|[-_ ]4(?=[-_\/]|$)|[-_ ]iv(?=[-_\/]|$))/i',
+            5 => '/(?:5th[-_ ]season|season[-_ ]5|[-_ ]5(?=[-_\/]|$)|[-_ ]v(?=[-_\/]|$))/i',
+            6 => '/(?:6th[-_ ]season|season[-_ ]6|[-_ ]6(?=[-_\/]|$)|[-_ ]vi(?=[-_\/]|$))/i',
+            7 => '/(?:7th[-_ ]season|season[-_ ]7|[-_ ]7(?=[-_\/]|$)|[-_ ]vii(?=[-_\/]|$))/i',
         ];
 
         // Caso 2: Solicitud explícita de temporada >= 2 por número
@@ -240,7 +267,7 @@ class TioAnimeProvider implements ProviderInterface
         // Caso 4: Temporada 1 base
         foreach ($tv_candidates as $c) {
             $slug = strtolower($c['slug']);
-            if (preg_match('/(?:2nd|3rd|4th|5th|6th|7th|season[-_ ][2-9]|temporada[-_ ][2-9]|final[-_ ]season|part[-_ ][2-9])/i', $slug)) {
+            if (preg_match('/(?:2nd|3rd|4th|5th|6th|7th|season[-_ ][2-9]|temporada[-_ ][2-9]|final[-_ ]season|part[-_ ][2-9]|[-_ ](?:ii|iii|iv|v|vi|[2-9])(?=[-_\/]|$))/i', $slug)) {
                 continue;
             }
             if ($season === 1) {

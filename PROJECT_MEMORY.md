@@ -175,11 +175,12 @@ web2-ftp/
 - **Política de Referrer:** Se añadió `referrerpolicy="no-referrer"` en `playerIframe` para evitar que servidores de video rechacen conexiones con HTTP 403 por encabezado Referer.
 - **Botón "Otro Servidor" y Watchdog:** Cabecera con `#btnNextServerModal` para alternar servidores en un clic. Watchdog de 4.5s que activa `#playerBlockedBanner` con botón de salto o apertura externa si el navegador/adblocker bloquea el iframe.
 
-### 7.4. Precisión de Temporadas y Capítulos en Anime (AnimeFLV & LatAnime)
-- **Causa Raíz Diagnosticada:** AnimeFLV y LatAnime devuelven resultados con nombres Romaji (ej: *Youjo Senki* en vez de *Saga of Tanya the Evil*) y organizan las secuelas con números romanos en el slug (`youjo-senki-ii`, `overlord-iv`). Anteriormente, la regex de temporadas solo buscaba `-s2` o `season-2`, ignorando `-ii`, `-iii` y sufijos numéricos. Esto causaba que la búsqueda de la Temporada 1 tomase erróneamente la Temporada 2 (`youjo-senki-ii/1`).
-- **Enriquecimiento con Títulos Alternativos de TMDB:** Si `$tmdb_id` está presente, `AnimeFLVProvider` y `LatAnimeProvider` consultan `/tv/{id}/alternative_titles` y `original_name` para inyectar automáticamente el título Romaji/Japonés en las búsquedas.
-- **Filtro de Películas y Especiales:** Se descartan slugs con palabras como `movie`, `pelicula`, `ova`, `ona`, `special` para peticiones de series episódicas regulares.
+### 7.4. Precisión de Temporadas y Capítulos en Anime (AnimeFLV, LatAnime, TioAnime, JKAnime)
+- **Causa Raíz Diagnosticada:** Los sitios de anime guardan las series bajo sus títulos Romaji (ej: *Youjo Senki* en vez de *Saga of Tanya the Evil*, *Shingeki no Kyojin* en vez de *Attack on Titan*, *Kimetsu no Yaiba* en vez de *Demon Slayer*) y organizan las secuelas con números romanos en el slug (`youjo-senki-ii`, `overlord-iv`). Anteriormente, la regex de temporadas solo buscaba `-s2` o `season-2`, ignorando `-ii`, `-iii` y sufijos numéricos. Esto causaba que la búsqueda de la Temporada 1 tomase erróneamente la primera secuela que aparecía en la API (`youjo-senki-ii/1`).
+- **Enriquecimiento con Títulos Alternativos de TMDB:** Si `$tmdb_id` está presente, los scrapers (`AnimeFLVProvider`, `LatAnimeProvider`, `TioAnimeProvider`, `JKAnimeProvider`) consultan `/tv/{id}/alternative_titles` y `original_name` para inyectar automáticamente los nombres Romaji y Japoneses oficiales en las consultas.
+- **Filtro de Películas y Especiales:** Se descartan de forma estricta slugs con palabras como `movie`, `pelicula`, `ova`, `ona`, `special` para peticiones de series episódicas regulares.
 - **Mapeo de Números Romanos y Temporadas:** Se introdujo detección estricta de números romanos (`ii`=2, `iii`=3, `iv`=4, `v`=5, `vi`=6, etc.) y sufijos (`-2`, `-3`, `2nd`). Temporada 1 selecciona únicamente el slug base limpio (`youjo-senki`), y Temporada 2 selecciona la secuela correspondiente (`youjo-senki-ii`).
+- **Series Tradicionales (No Anime):** Proveedores como `MoviePlusProvider`, `SeriesKaoProvider`, `PelisPlusProvider` utilizan URLs canónicas `/temporada/{season}/capitulo/{episode}` y IDs numéricos de TMDB, por lo que nunca sufrieron de este problema.
 
 ---
 

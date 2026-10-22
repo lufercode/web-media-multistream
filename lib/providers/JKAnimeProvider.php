@@ -32,6 +32,18 @@ class JKAnimeProvider implements ProviderInterface
             trim(preg_replace('/\s+/', ' ', preg_replace('/[^\w\s.]/u', ' ', $title))),
         ])));
 
+        if ($tmdb_id !== null && function_exists('get_tmdb_data')) {
+            $alt_data = get_tmdb_data("tv/{$tmdb_id}/alternative_titles");
+            foreach ($alt_data['results'] ?? [] as $alt) {
+                $alt_title = trim($alt['title'] ?? '');
+                if (!empty($alt_title)) $queries[] = $alt_title;
+            }
+            $details = get_tmdb_data("tv/{$tmdb_id}");
+            $orig_name = trim($details['original_name'] ?? '');
+            if (!empty($orig_name)) $queries[] = $orig_name;
+        }
+        $queries = array_values(array_unique(array_filter($queries)));
+
         $matched_cards = [];
 
         foreach ($queries as $q) {
@@ -53,7 +65,15 @@ class JKAnimeProvider implements ProviderInterface
                 $cand = trim(html_entity_decode(strip_tags($mTitle[1]), ENT_QUOTES, 'UTF-8'));
                 if ($cand === '') continue;
 
-                if (is_anime_title_match($title, $cand) || is_strict_title_match($title, $cand)) {
+                $is_match = false;
+                foreach ($queries as $q) {
+                    if (is_anime_title_match($q, $cand) || is_strict_title_match($q, $cand)) {
+                        $is_match = true;
+                        break;
+                    }
+                }
+
+                if ($is_match) {
                     $card_default_lang = 'Japonés (Sub Latino)';
                     if (preg_match('/\b(latino|doblado|audio\s*latino)\b/i', $cand)) {
                         $card_default_lang = 'Español Latino';
@@ -75,12 +95,22 @@ class JKAnimeProvider implements ProviderInterface
         usort($matched_cards, function ($a, $b) use ($season, $episode) {
             $score = function ($item) use ($season, $episode) {
                 $t = strtolower($item['title'] . ' ' . $item['slug']);
+                if (preg_match('/\b(movie|pelicula|ova|ona|especial|special)\b/i', $t)) {
+                    return -10;
+                }
+                $roman_map = [2 => 'ii', 3 => 'iii', 4 => 'iv', 5 => 'v', 6 => 'vi', 7 => 'vii', 8 => 'viii'];
+                $rom = $roman_map[$season] ?? '';
                 if ($season === 1) {
-                    if (preg_match('/\b(2nd|3rd|4th|season\s*[2-9]|part\s*[2-9]|parte\s*[2-9])\b/i', $t)) return 0;
+                    if (preg_match('/(?:^|[-_ ])(?:s[2-9]|temporada[-_ ]*[2-9]|season[-_ ]*[2-9]|part[-_ ]*[2-9]|parte[-_ ]*[2-9]|[-_ ](?:ii|iii|iv|v|vi|[2-9])\b|2nd|3rd|4th)(?:[-_ ]|$)/i', $t)) {
+                        return 0;
+                    }
                     return 10;
                 }
                 if ($season >= 2 && $episode > 12 && preg_match('/\b(part\s*2|parte\s*2|cour\s*2)\b/i', $t)) {
                     return 25;
+                }
+                if ($rom && preg_match('/(?:^|[-_ ])' . $rom . '(?:[-_ ]|$)/i', $t)) {
+                    return 22;
                 }
                 if (preg_match('/\b(' . $season . '(?:nd|rd|th)?\s*season|season\s*' . $season . '|temporada\s*' . $season . ')\b/i', $t)) {
                     return 20;
