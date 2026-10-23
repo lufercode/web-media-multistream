@@ -419,9 +419,91 @@ async function resolveEmbedToHls(embedUrl, customReferer = '') {
                 return { url: mp4Match[1], referer: 'https://www.mp4upload.com/' };
             }
         }
+
+        // 4. Streamtape (reconstrucción extractor Kodi Balandro)
+        if (lower.includes('streamtape.com')) {
+            const stUrl = embedUrl.replace('/e/', '/v/');
+            const html = await httpGet(stUrl, { timeout: 4000, headers: { Referer: 'https://streamtape.com/' } });
+            if (html) {
+                const robotMatch = html.match(/id=["']robotlink["'][^>]*>([^<]+)/i) || html.match(/id=robotlink[^>]*>([^<]+)/i);
+                if (robotMatch) {
+                    let streamPath = robotMatch[1].trim();
+                    const tokenMatch = html.match(/&token=([a-zA-Z0-9_-]+)/);
+                    if (tokenMatch && !streamPath.includes('&token=')) {
+                        streamPath += `&token=${tokenMatch[1]}`;
+                    }
+                    const fullStream = streamPath.startsWith('http') ? streamPath : `https:${streamPath}`;
+                    return { url: fullStream, referer: 'https://streamtape.com/' };
+                }
+            }
+        }
+
+        // 5. YourUpload (reconstrucción extractor Kodi Balandro)
+        if (lower.includes('yourupload.com')) {
+            const yuUrl = embedUrl.replace('/watch/', '/embed/');
+            const html = await httpGet(yuUrl, { timeout: 4000, headers: { Referer: 'https://www.yourupload.com/' } });
+            if (html) {
+                const vm = html.match(/<video[^>]+src=["']([^"']+)["']/i) || html.match(/file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i);
+                if (vm) {
+                    const direct = vm[1].startsWith('http') ? vm[1] : `https://www.yourupload.com${vm[1]}`;
+                    return { url: direct, referer: 'https://www.yourupload.com/' };
+                }
+            }
+        }
+
+        // 6. OkRu (reconstrucción extractor Kodi Balandro)
+        if (/(?:ok\.ru|odnoklassniki\.ru)/i.test(lower)) {
+            const html = await httpGet(embedUrl, { timeout: 4000, headers: { Referer: 'https://ok.ru/' } });
+            if (html) {
+                const optMatch = html.match(/data-options="([^"]+)"/i);
+                if (optMatch) {
+                    try {
+                        const unesc = optMatch[1].replace(/&quot;/g, '"');
+                        const opts = JSON.parse(unesc);
+                        const metadata = JSON.parse(opts.flashvars?.metadata || '{}');
+                        const videos = metadata.videos || [];
+                        const best = videos.find(v => v.name === 'hd') || videos.find(v => v.name === 'sd') || videos[0];
+                        if (best?.url) {
+                            return { url: best.url, referer: 'https://ok.ru/' };
+                        }
+                        if (metadata.hlsManifestUrl) {
+                            return { url: metadata.hlsManifestUrl, referer: 'https://ok.ru/' };
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+
+        // 7. MixDrop (reconstrucción extractor Kodi Balandro)
+        if (/(?:mixdrop\.(?:co|to|ch|bz|ms))/i.test(lower)) {
+            const mdUrl = embedUrl.replace('/f/', '/e/');
+            const html = await httpGet(mdUrl, { timeout: 4000, headers: { Referer: 'https://mixdrop.co/' } });
+            if (html) {
+                const packedBlocks = html.match(/eval\(function\(p,a,c,k,e,[rd]\).*?\.split\(['"]\|['"]\)\)\)/gs) || [];
+                for (const block of packedBlocks) {
+                    const unpacked = unpackDeanEdwards(block);
+                    const wm = unpacked.match(/wurl\s*=\s*["']([^"']+)["']/i);
+                    if (wm) {
+                        const direct = wm[1].startsWith('//') ? `https:${wm[1]}` : (wm[1].startsWith('http') ? wm[1] : `https:${wm[1]}`);
+                        return { url: direct, referer: 'https://mixdrop.co/' };
+                    }
+                }
+            }
+        }
     } catch (e) {}
 
     return null;
+}
+
+/**
+ * Enruta la URL de video a través del Universal Stream Proxy de Stremio
+ * para asegurar reproducción directa sin errores de CORS o Referer.
+ */
+export function makeStreamUrl(rawUrl, referer = '', baseUrl = '') {
+    if (!rawUrl) return '';
+    const effectiveBaseUrl = (baseUrl || '').replace(/\/+$/, '');
+    if (!effectiveBaseUrl) return rawUrl;
+    return `${effectiveBaseUrl}/stream-proxy?url=${encodeURIComponent(rawUrl)}&referer=${encodeURIComponent(referer || '')}`;
 }
 
 /**
@@ -527,6 +609,18 @@ export async function resolveTmdbMetadata(type, rawId) {
         }
     }
 
+    let alternativeTitles = [];
+    if (tmdbId && isAnime) {
+        try {
+            const altData = await httpGet(`https://api.themoviedb.org/3/tv/${tmdbId}/alternative_titles?api_key=${TMDB_API_KEY}`, { json: true, timeout: 3000 });
+            for (const item of (altData?.results || [])) {
+                if (item.title && typeof item.title === 'string') {
+                    alternativeTitles.push(item.title.trim());
+                }
+            }
+        } catch (e) {}
+    }
+
     const meta = {
         type: isMovie ? 'movie' : 'series',
         imdbId,
@@ -534,6 +628,7 @@ export async function resolveTmdbMetadata(type, rawId) {
         title: titleEs || titleEn || titleOrig,
         originalTitle: titleOrig || titleEn || titleEs,
         englishTitle: titleEn || titleOrig || titleEs,
+        alternativeTitles: Array.from(new Set(alternativeTitles)),
         year,
         season,
         episode,
@@ -581,7 +676,7 @@ function classifyStreamingLangTag(rawLang = 'LAT', isAnime = false) {
 /**
  * 1. Scraper: LaMovie / AllCalidad (https://lamovie.org/wp-api/v1 + Fallback v2)
  */
-async function scrapeLaMovie(meta) {
+async function scrapeLaMovie(meta, baseUrl = '') {
     const fastApi = 'https://lamovie.org/wp-api/v1';
     const headers = { Referer: 'https://lamovie.org/', Origin: 'https://lamovie.org', Accept: 'application/json' };
     const candidateEmbeds = [];
@@ -592,7 +687,7 @@ async function scrapeLaMovie(meta) {
         : `${meta.title} S${String(meta.season).padStart(2, '0')}E${String(meta.episode).padStart(2, '0')}`;
 
     // A. Intentar API oficial actual de LaMovie (wp-api/v1)
-    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
+    const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
     let matchedPost = null;
 
     for (const q of queries.slice(0, 2)) {
@@ -666,6 +761,7 @@ async function scrapeLaMovie(meta) {
                         ? { langKey: torrentCheck.langKey, flag: torrentCheck.flag, langBadge: torrentCheck.badge }
                         : classifyStreamingLangTag(dl.lang || fallbackRawLang, meta.isAnime);
                     const dnMatch = decMag.match(/[?&]dn=([^&]+)/i);
+                    const releaseName = dnMatch ? decodeURIComponent(dnMatch[1].replace(/\+/g, ' ')) : (meta.title || 'Movie');
                     const flagLine = (langInfo.langKey === 'castellano') ? '🇪🇸 Spanish' : 'Dual Audio / 🇲🇽';
                     const formattedTitle = formatTorrentioTitle({
                         releaseTitle: releaseName,
@@ -731,7 +827,7 @@ async function scrapeLaMovie(meta) {
         return {
             name: `${emb.flag} LaMovie\n1080p HD`,
             title: `${labelTitle}\n⚡ ${emb.server || 'HLS'} Directo • ${emb.langBadge}`,
-            url: resolved.url,
+            url: makeStreamUrl(resolved.url, resolved.referer || 'https://lamovie.org/', baseUrl),
             _lang: emb.langKey,
             behaviorHints: {
                 notWebReady: false,
@@ -813,11 +909,11 @@ function decryptEmbed69DataLink(html, isAnime = false) {
 /**
  * 2. Scraper: SeriesKao & PelisPlusHD (con soporte de Películas, Series y Anime + Embed69 PoW)
  */
-async function scrapeKaoOrPelisPlus(meta, providerId = 'serieskao') {
+async function scrapeKaoOrPelisPlus(meta, providerId = 'serieskao', baseUrl = '') {
     const host = providerId === 'pelisplus' ? 'https://pelisplushd.bz' : 'https://serieskao.top';
     const providerLabel = providerId === 'pelisplus' ? 'PelisPlus' : 'SeriesKao';
 
-    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
+    const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
     let matchedUrl = null;
 
     for (const q of queries) {
@@ -908,7 +1004,7 @@ async function scrapeKaoOrPelisPlus(meta, providerId = 'serieskao') {
         return {
             name: `${flag} ${providerLabel}\n1080p HD`,
             title: `${labelTitle}\n⚡ HLS Directo • ${emb.langBadge}`,
-            url: res.url,
+            url: makeStreamUrl(res.url, res.referer || `${host}/`, baseUrl),
             _lang: emb.langKey,
             behaviorHints: {
                 notWebReady: false,
@@ -928,10 +1024,10 @@ async function scrapeKaoOrPelisPlus(meta, providerId = 'serieskao') {
 /**
  * 3. Scraper: LatAnime (https://latanime.org) - Especializado en Anime en Español Latino y Castellano
  */
-async function scrapeLatAnime(meta) {
+async function scrapeLatAnime(meta, baseUrl = '') {
     if (!meta.isAnime && meta.type === 'movie') return [];
     const host = 'https://latanime.org';
-    const baseQueries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
+    const baseQueries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
     const searchQueries = [];
     for (const q of baseQueries) {
         if (meta.season >= 2) searchQueries.push(`${q} ${meta.season}`);
@@ -996,7 +1092,7 @@ async function scrapeLatAnime(meta) {
                     return {
                         name: `${flag} LatAnime\n1080p HD`,
                         title: `${rawTitle} - Ep. ${epNum}\n⚡ ${item.serverName} HLS • ${langBadge}`,
-                        url: r.url,
+                        url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
                         _lang: langKey,
                         behaviorHints: {
                             notWebReady: false,
@@ -1023,11 +1119,11 @@ async function scrapeLatAnime(meta) {
 /**
  * 4. Scraper: Cuevana 3 / PoseidonHD (__NEXT_DATA__ JSON)
  */
-async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana') {
+async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana', baseUrl = '') {
     const host = providerId === 'poseidonhd' ? 'https://poseidonhd2.co' : 'https://www.cuevana-3.mx';
     const providerLabel = providerId === 'poseidonhd' ? 'PoseidonHD' : 'Cuevana 3';
 
-    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
+    const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
     let matchedItem = null;
 
     for (const q of queries.slice(0, 2)) {
@@ -1137,7 +1233,7 @@ async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana') {
         return {
             name: `${flag} ${providerLabel}\n1080p HD`,
             title: `${labelTitle}\n⚡ ${srv.cyberlocker} HLS • ${srv.langBadge}`,
-            url: r.url,
+            url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
             _lang: srv.langKey,
             behaviorHints: {
                 notWebReady: false,
@@ -2088,7 +2184,7 @@ async function scrapeTpb(meta) {
 /**
  * 10. Scraper: Cinecalidad (https://www.cinecalidad.ro) — Torrents Dual Latino (/protect/ver.php + data-url) y Embeds HLS
  */
-async function scrapeCinecalidad(meta) {
+async function scrapeCinecalidad(meta, baseUrl = '') {
     const host = 'https://www.cinecalidad.ro';
     const searchTerms = Array.from(new Set([
         meta.title,
@@ -2247,7 +2343,7 @@ async function scrapeCinecalidad(meta) {
         return {
             name: `🇲🇽 Cinecalidad\n1080p HLS`,
             title: `${labelTitle}\n⚡ HLS Directo • 🇲🇽 Audio Español Latino`,
-            url: r.url,
+            url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
             _lang: 'latino',
             behaviorHints: {
                 notWebReady: false,
@@ -2264,10 +2360,10 @@ async function scrapeCinecalidad(meta) {
  * 11. Scraper: JKAnime (https://jkanime.net) — Extrae var servers (Base64) y verifica <select id="deflang">
  * para distinguir con precisión entre Japonés Sub. Español (lang=1) y Español Latino.
  */
-async function scrapeJkAnime(meta) {
+async function scrapeJkAnime(meta, baseUrl = '') {
     if (!meta.isAnime) return [];
     const host = 'https://jkanime.net';
-    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
+    const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
 
     for (const q of queries.slice(0, 2)) {
         const html = await httpGet(`${host}/buscar/${encodeURIComponent(q)}/`, { headers: { Referer: `${host}/` }, timeout: 4500 });
@@ -2361,7 +2457,7 @@ async function scrapeJkAnime(meta) {
                 return {
                     name: `${item.langInfo.flag} JKAnime\n1080p HD`,
                     title: `${meta.title} - Ep. ${epNum}\n⚡ ${item.serverName} HLS • ${item.langInfo.langBadge}`,
-                    url: r.url,
+                    url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
                     _lang: item.langInfo.langKey,
                     behaviorHints: {
                         notWebReady: false,
@@ -2379,9 +2475,9 @@ async function scrapeJkAnime(meta) {
 /**
  * 12. Scraper: AnimeFLV (AnimeAV1 REST API + AnimeFLV Web Fallback)
  */
-async function scrapeAnimeFLV(meta) {
+async function scrapeAnimeFLV(meta, baseUrl = '') {
     if (!meta.isAnime) return [];
-    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
+    const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
 
     // 1. Intentar primero con la API REST directa (ultrarrápida y sin Cloudflare blocks)
     for (const q of queries.slice(0, 2)) {
@@ -2408,12 +2504,12 @@ async function scrapeAnimeFLV(meta) {
             }
 
             if (!targetSlug) {
-                const sPat = new RegExp(`(?:season[-_ ]*0*${meta.season}|s0*${meta.season}|${meta.season}(?:nd|rd|th)?[-_ ]*season)`, 'i');
+                const sPat = new RegExp(`(?:season[-_ ]*0*${meta.season}|s0*${meta.season}|${meta.season}(?:nd|rd|th)?[-_ ]*season|\\b${meta.season}\\b)`, 'i');
                 const seasonMatch = pool.find(item => sPat.test(item.slug || '') || sPat.test(item.title || ''));
                 if (seasonMatch) {
                     targetSlug = seasonMatch.slug;
                 } else if (meta.season === 1) {
-                    const s1Match = pool.find(item => !/(?:season[-_ ]*[2-9]|s[2-9]|part[-_ ]*[2-9])/i.test(item.slug || ''));
+                    const s1Match = pool.find(item => !/(?:season[-_ ]*[2-9]|s[2-9]|part[-_ ]*[2-9]|[-_ ](?:ii|iii|iv|v|vi|[2-9])\b)/i.test(item.slug || ''));
                     if (s1Match) targetSlug = s1Match.slug;
                 } else if (meta.absoluteEpisode) {
                     targetEp = meta.absoluteEpisode;
@@ -2429,7 +2525,14 @@ async function scrapeAnimeFLV(meta) {
                 const epData = await httpGet(`https://animeav1.ahmedrangel.com/api/anime/${targetSlug}/${targetEp}`, {
                     json: true, timeout: 4500
                 });
-                const embeds = (epData?.data?.embeds || []).filter(emb => emb.url && /(?:zilla-networks|voe|mp4upload|wish|vidhide)/i.test(emb.url));
+                const embeds = (epData?.data?.embeds || []).filter(emb => emb.url && /(?:zilla-networks|voe|mp4upload|wish|vidhide|yourupload|streamtape|okru)/i.test(emb.url));
+                // Priorizar servidores estándar (VOE, Mp4Upload, StreamWish, VidHide, etc.) sobre Zilla (Cloudflare en segmentos)
+                embeds.sort((a, b) => {
+                    const aZ = /zilla-networks/i.test(a.url || '') ? 1 : 0;
+                    const bZ = /zilla-networks/i.test(b.url || '') ? 1 : 0;
+                    return aZ - bZ;
+                });
+
                 if (embeds.length > 0) {
                     const resolved = await Promise.all(embeds.slice(0, 6).map(async (emb) => {
                         const isLatino = /^(?:DUB|LAT|LATINO)$/i.test(String(emb.type || '').trim());
@@ -2442,7 +2545,7 @@ async function scrapeAnimeFLV(meta) {
                         return {
                             name: `${flag} AnimeFLV\n1080p HD`,
                             title: `${meta.title} - S${String(meta.season).padStart(2, '0')}E${String(meta.episode).padStart(2, '0')}\n⚡ ${emb.name || 'HLS Directo'} • ${langBadge}`,
-                            url: r.url,
+                            url: makeStreamUrl(r.url, r.referer || 'https://player.zilla-networks.com/', baseUrl),
                             _lang: langKey,
                             behaviorHints: {
                                 notWebReady: false,
@@ -2493,14 +2596,14 @@ async function scrapeAnimeFLV(meta) {
                 const langBadge = isLatino ? '🇲🇽 Audio Español Latino' : '🇯🇵 Audio Japonés + 🇲🇽 Sub Español';
                 const flag = isLatino ? '🇲🇽' : '🇯🇵';
 
-                const resolvable = list.filter(v => v.url && /(?:voe|wish|streamwish|vidhide|hglink|morencius|filemoon|fembed|mp4upload)/i.test(v.url)).slice(0, 3);
+                const resolvable = list.filter(v => v.url && /(?:voe|wish|streamwish|vidhide|hglink|morencius|filemoon|fembed|mp4upload|yourupload|streamtape|okru)/i.test(v.url)).slice(0, 4);
                 const resolved = await Promise.all(resolvable.map(async (v) => {
                     const r = await resolveEmbedToHls(v.url, epUrl);
                     if (!r?.url) return null;
                     return {
                         name: `${flag} AnimeFLV\n1080p HD`,
                         title: `${meta.title} - Ep. ${epNum}\n⚡ ${v.title || 'HLS Directo'} • ${langBadge}`,
-                        url: r.url,
+                        url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
                         _lang: langKey,
                         behaviorHints: {
                             notWebReady: false,
@@ -2596,17 +2699,17 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
 
     if (cfg.providers.has('movieplus')) tasks.push(scrapeMoviePlus(meta, baseUrl));
     if (cfg.providers.has('local_cdn')) tasks.push(scrapeLocalCdn(meta));
-    if (cfg.providers.has('lamovie')) tasks.push(scrapeLaMovie(meta));
-    if (cfg.providers.has('latanime')) tasks.push(scrapeLatAnime(meta));
-    if (cfg.providers.has('jkanime')) tasks.push(scrapeJkAnime(meta));
-    if (cfg.providers.has('animeflv')) tasks.push(scrapeAnimeFLV(meta));
-    if (cfg.providers.has('serieskao')) tasks.push(scrapeKaoOrPelisPlus(meta, 'serieskao'));
-    if (cfg.providers.has('pelisplus')) tasks.push(scrapeKaoOrPelisPlus(meta, 'pelisplus'));
-    if (cfg.providers.has('cuevana')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'cuevana'));
-    if (cfg.providers.has('poseidonhd')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'poseidonhd'));
+    if (cfg.providers.has('lamovie')) tasks.push(scrapeLaMovie(meta, baseUrl));
+    if (cfg.providers.has('latanime')) tasks.push(scrapeLatAnime(meta, baseUrl));
+    if (cfg.providers.has('jkanime')) tasks.push(scrapeJkAnime(meta, baseUrl));
+    if (cfg.providers.has('animeflv')) tasks.push(scrapeAnimeFLV(meta, baseUrl));
+    if (cfg.providers.has('serieskao')) tasks.push(scrapeKaoOrPelisPlus(meta, 'serieskao', baseUrl));
+    if (cfg.providers.has('pelisplus')) tasks.push(scrapeKaoOrPelisPlus(meta, 'pelisplus', baseUrl));
+    if (cfg.providers.has('cuevana')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'cuevana', baseUrl));
+    if (cfg.providers.has('poseidonhd')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'poseidonhd', baseUrl));
     // Ejecutar primero los scrapers P2P dedicados (Cinecalidad, TPB, YTS, Nyaa) antes de Torrentio
     // para que al deduplicar infoHash prevalezca la etiqueta dedicada (PirateBay, YTS, Cinecalidad)
-    if (cfg.providers.has('cinecalidad')) tasks.push(scrapeCinecalidad(meta));
+    if (cfg.providers.has('cinecalidad')) tasks.push(scrapeCinecalidad(meta, baseUrl));
     if (cfg.providers.has('tpb')) tasks.push(scrapeTpb(meta));
     if (cfg.providers.has('yts')) tasks.push(scrapeYts(meta));
     if (cfg.providers.has('nyaa')) tasks.push(scrapeNyaa(meta));

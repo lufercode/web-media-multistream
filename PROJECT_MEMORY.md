@@ -184,6 +184,38 @@ web2-ftp/
 
 ---
 
+## 8. 🚀 Reproducción Directa Universal en Stremio (Lógica Reconstruida de Kodi / Balandro / ResolveURL)
+
+### 8.1. Diagnóstico del Fallo en Stremio
+- **Causa Raíz:** En clientes Stremio (especialmente Android TV con ExoPlayer, Stremio Web y Firestick), la directiva `behaviorHints.proxyHeaders` es ignorada con frecuencia cuando la URL apunta directamente a los CDNs de servidores embed (`sfastwish.com`, `vidhide.com`, `vimeos.zip`).
+- Los CDNs de video exigen la cabecera `Referer` exacta del embed emisor. Al no enviarla ExoPlayer ni el navegador, el servidor responde con **HTTP 403 Forbidden**.
+- En el caso de listas maestras HLS (`.m3u8`), incluso si el primer archivo cargaba, los segmentos subsiguientes (`.ts`, `.m4s`, `.html`) se solicitaban sin cabeceras o con bloqueos anti-bot (ej. Cloudflare en `player.zilla-networks.com`), provocando corte inmediato de reproducción.
+- *¿Por qué Movie+ y Torrents nunca fallaban?* Porque Movie+ pasa a través de `/movieplus-stream` (con proxy HTTP 206 y CORS `*`), y los Torrents pasan por el motor WebTorrent en RAM.
+
+### 8.2. ¿Cómo lo soluciona Kodi (Balandro / ResolveURL)?
+- En Kodi, los resolvers extraen la URL limpia y adjuntan las cabeceras requeridas con la sintaxis de tubería (`|`):  
+  `stream_url|User-Agent=...&Referer=...`
+- El reproductor nativo C++ de Kodi intercepta la tubería e inyecta las cabeceras en todas las peticiones HTTP y en cada segmento `.ts`.
+- En Stremio no existe soporte para la tubería `|` (da error 400). Por lo tanto, en Stremio la solución equivalente es un **Universal Stream Proxy con reescritura de playlists M3U8**.
+
+### 8.3. Arquitectura Reconstruida: Universal Stream Proxy con Reescritura HLS
+- **Endpoint `/stream-proxy` en Node.js (`tools/torrent-streamer/server.js`):**
+  - **Reescritura en Vuelo de Playlists M3U8:** Descarga el playlist `.m3u8` del CDN original, analiza línea por línea y reescribe todas las URIs relativas y absolutas de segmentos (`.ts`, `.m4s`, `.html`), directivas `#EXT-X-MAP` y sub-playlists para que pasen recursivamente por `/stream-proxy?url=...&referer=...`.
+  - **Inyección Upstream de Cabeceras:** Inyecta automáticamente el `User-Agent`, `Referer` y `Origin` requeridos por cada CDN para neutralizar bloqueos 403.
+  - **Soporte Completo HTTP 206 (Partial Content / Range):** Para MP4 y segmentos binarios TS, permitiendo seeking inmediato y streaming continuo en reproductores nativos.
+  - **CORS Completo:** Emite `Access-Control-Allow-Origin: *` y `Access-Control-Expose-Headers` para total compatibilidad en Stremio Web y WebView.
+- **Extractores Directos Estilo Balandro/ResolveURL (`tools/torrent-streamer/stremio_addon.js`):**
+  - Implementados extractores limpios para:
+    - **Streamtape:** Conversión `/e/` -> `/v/` y resolución de token robotlink.
+    - **YourUpload:** Extracción de `<video src>` y direct MP4.
+    - **OkRu:** Desempaquetado JSON de `data-options` (HD/SD).
+    - **MixDrop:** Desempaquetado Dean Edwards para `wurl`.
+    - **Voe, StreamWish, VidHide, Mp4Upload:** Extracción y resolución directa a HLS.
+  - Todos los scrapers web de Stremio (`scrapeLaMovie`, `scrapeLatAnime`, `scrapeJkAnime`, `scrapeAnimeFLV`, `scrapeKaoOrPelisPlus`, `scrapeCuevanaOrPoseidon`, `scrapeCinecalidad`) envuelven sus enlaces con `makeStreamUrl(rawUrl, referer, baseUrl)`.
+
+---
+
 *Este archivo sirve como brújula técnica permanente para cualquier mantenimiento, despliegue o ampliación de la plataforma.*
+
 
 

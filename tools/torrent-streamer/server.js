@@ -749,6 +749,129 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // =========================================================================
+    // UNIVERSAL STREAM PROXY (HLS .m3u8 Playlist Rewriting + HTTP 206 MP4/TS)
+    // Reconstruye la lógica de Kodi (headers/Referer/CORS) para Stremio (ExoPlayer/Web)
+    // =========================================================================
+    if (pathname === '/stream-proxy' && req.method === 'GET') {
+        const targetUrl = parsedUrl.searchParams.get('url');
+        const customReferer = parsedUrl.searchParams.get('referer') || '';
+        if (!targetUrl) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('Error: url param required');
+            return;
+        }
+
+        try {
+            const clientReqHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': '*/*'
+            };
+
+            if (customReferer) {
+                clientReqHeaders['Referer'] = customReferer;
+                try {
+                    const refUrl = new URL(customReferer);
+                    clientReqHeaders['Origin'] = `${refUrl.protocol}//${refUrl.host}`;
+                } catch (e) {}
+            } else {
+                try {
+                    const tUrl = new URL(targetUrl);
+                    clientReqHeaders['Referer'] = `${tUrl.protocol}//${tUrl.host}/`;
+                    clientReqHeaders['Origin'] = `${tUrl.protocol}//${tUrl.host}`;
+                } catch (e) {}
+            }
+
+            if (req.headers['range']) {
+                clientReqHeaders['Range'] = req.headers['range'];
+            }
+
+            const upstreamRes = await fetch(targetUrl, {
+                headers: clientReqHeaders,
+                redirect: 'follow'
+            });
+
+            const respHeaders = {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': '*',
+                'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                'Accept-Ranges': 'bytes'
+            };
+
+            const ct = (upstreamRes.headers.get('content-type') || '').toLowerCase();
+            const isM3u8 = targetUrl.toLowerCase().includes('.m3u8') || ct.includes('mpegurl') || ct.includes('x-mpegurl');
+
+            if (isM3u8 && upstreamRes.status === 200) {
+                const text = await upstreamRes.text();
+                const lines = text.split('\n');
+                const rewritten = lines.map(line => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return line;
+
+                    // Si es directiva con URI="..." (ej. #EXT-X-MAP:URI="init.mp4" o #EXT-X-KEY:URI="...")
+                    if (trimmed.startsWith('#') && trimmed.includes('URI="')) {
+                        return line.replace(/URI="([^"]+)"/g, (match, uri) => {
+                            let absUri = uri;
+                            try {
+                                absUri = new URL(uri, targetUrl).href;
+                            } catch (e) {}
+                            const proxied = `${baseUrl}/stream-proxy?url=${encodeURIComponent(absUri)}&referer=${encodeURIComponent(customReferer || targetUrl)}`;
+                            return `URI="${proxied}"`;
+                        });
+                    }
+
+                    // Si es una línea de comentario o metadata sin URI
+                    if (trimmed.startsWith('#')) return line;
+
+                    // Es una URL de segmento o sub-playlist (.ts, .m4s, .m3u8, .html, etc.)
+                    let absUri = trimmed;
+                    try {
+                        absUri = new URL(trimmed, targetUrl).href;
+                    } catch (e) {}
+
+                    return `${baseUrl}/stream-proxy?url=${encodeURIComponent(absUri)}&referer=${encodeURIComponent(customReferer || targetUrl)}`;
+                }).join('\n');
+
+                respHeaders['Content-Type'] = 'application/vnd.apple.mpegurl; charset=utf-8';
+                respHeaders['Content-Length'] = Buffer.byteLength(rewritten);
+                res.writeHead(200, respHeaders);
+                res.end(rewritten);
+                return;
+            }
+
+            // Flujo binario / segmento / MP4 con soporte HTTP 206 (Range)
+            if (ct) {
+                respHeaders['Content-Type'] = ct.includes('matroska') || ct.includes('octet-stream') ? 'video/mp4' : ct;
+            } else if (targetUrl.includes('.ts')) {
+                respHeaders['Content-Type'] = 'video/mp2t';
+            } else {
+                respHeaders['Content-Type'] = 'video/mp4';
+            }
+
+            const cl = upstreamRes.headers.get('content-length');
+            if (cl) respHeaders['Content-Length'] = cl;
+
+            const cr = upstreamRes.headers.get('content-range');
+            if (cr) respHeaders['Content-Range'] = cr;
+
+            res.writeHead(upstreamRes.status, respHeaders);
+
+            if (upstreamRes.body) {
+                const { Readable } = await import('stream');
+                Readable.fromWeb(upstreamRes.body).pipe(res);
+            } else {
+                res.end();
+            }
+        } catch (err) {
+            console.error('[Universal Stream Proxy] Error:', err);
+            if (!res.headersSent) {
+                res.writeHead(502, { 'Content-Type': 'text/plain' });
+                res.end('Error streaming from upstream: ' + err.message);
+            }
+        }
+        return;
+    }
+
     // POST /load { magnet: "magnet:?..." }
     if (pathname === '/load' && req.method === 'POST') {
         const data = await parseJsonBody(req);
