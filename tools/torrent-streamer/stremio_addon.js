@@ -283,7 +283,7 @@ function decodeVoeJsonPayload(rawJson) {
  * Resuelve un embed de Zilla / Vimeos / StreamWish / VidHide / Voe / MP4Upload / Goodstream en un enlace directo .m3u8 o .mp4
  * para que el reproductor nativo de Stremio lo reproduzca directamente sin pasar por Render.
  */
-async function resolveEmbedToHls(embedUrl, customReferer = '') {
+export async function resolveEmbedToHls(embedUrl, customReferer = '') {
     if (!embedUrl || !embedUrl.startsWith('http')) return null;
     const lower = embedUrl.toLowerCase();
 

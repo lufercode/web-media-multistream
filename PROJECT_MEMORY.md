@@ -217,9 +217,10 @@ web2-ftp/
     2. Si PHP no pudo extraer el video directo de algún embed complejo, el frontend consulta `${streamerBase}/resolve` para aprovechar los extractores del microservicio.
     3. Solo si ningún extractor logra obtener el stream directo, se utiliza el `iframe` con sandbox y protecciones.
 
+### 8.5. Solución al Error 404 en Render (SyntaxError ESM)
+- **Diagnóstico:** En el despliegue a Render, `server.js` fallaba al arrancar con `SyntaxError: The requested module './stremio_addon.js' does not provide an export named 'resolveEmbedToHls'`. Como consecuencia, el contenedor salía con código 1 y Render continuaba ejecutando la instancia anterior (sin `/stream-proxy`), resultando en `404 Not Found`.
+- **Corrección:** Se añadió `export` a la declaración de `resolveEmbedToHls` en `stremio_addon.js`. Adicionalmente, se fortaleció la extracción de query params en `/stream-proxy` de `server.js` para evitar truncamiento de tokens upstream con múltiples `&` y se configuró `Access-Control-Expose-Headers` para compatibilidad total con Hls.js y Artplayer.
+
 ---
 
 *Este archivo sirve como brújula técnica permanente para cualquier mantenimiento, despliegue o ampliación de la plataforma.*
-
-
-

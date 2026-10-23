@@ -791,8 +791,28 @@ const server = http.createServer(async (req, res) => {
     // Reconstruye la lógica de Kodi (headers/Referer/CORS) para Stremio (ExoPlayer/Web)
     // =========================================================================
     if (pathname === '/stream-proxy' && req.method === 'GET') {
-        const targetUrl = parsedUrl.searchParams.get('url');
-        const customReferer = parsedUrl.searchParams.get('referer') || '';
+        let targetUrl = parsedUrl.searchParams.get('url');
+        let customReferer = parsedUrl.searchParams.get('referer') || '';
+
+        // Si la URL vino con query params anidados que pudieron ser cortados por searchParams
+        if (targetUrl && req.url.includes('?url=')) {
+            const afterUrl = req.url.slice(req.url.indexOf('?url=') + 5);
+            const refIdx = afterUrl.indexOf('&referer=');
+            if (refIdx !== -1) {
+                const rawUrlPart = afterUrl.substring(0, refIdx);
+                try {
+                    const dec = decodeURIComponent(rawUrlPart);
+                    if (dec.length > targetUrl.length) targetUrl = dec;
+                } catch (e) {
+                    if (rawUrlPart.length > targetUrl.length) targetUrl = rawUrlPart;
+                }
+                if (!customReferer) {
+                    const rawRef = afterUrl.substring(refIdx + 9);
+                    try { customReferer = decodeURIComponent(rawRef); } catch (e) { customReferer = rawRef; }
+                }
+            }
+        }
+
         if (!targetUrl) {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             res.end('Error: url param required');
@@ -802,7 +822,8 @@ const server = http.createServer(async (req, res) => {
         try {
             const clientReqHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                'Accept': '*/*'
+                'Accept': '*/*',
+                'Accept-Language': 'es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7'
             };
 
             if (customReferer) {
@@ -832,6 +853,7 @@ const server = http.createServer(async (req, res) => {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': '*',
                 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Type',
                 'Accept-Ranges': 'bytes'
             };
 

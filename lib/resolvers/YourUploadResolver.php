@@ -69,3 +69,4 @@ class YourUploadResolver implements ResolverInterface
         ];
     }
 }
+

@@ -65,3 +65,4 @@ class Mp4UploadResolver implements ResolverInterface
         ];
     }
 }
+

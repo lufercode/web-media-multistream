@@ -76,3 +76,4 @@ class StreamtapeResolver implements ResolverInterface
         ];
     }
 }
+
