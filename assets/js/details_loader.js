@@ -1156,12 +1156,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            const cleanUrl = resData?.data?.embed_url || url;
-            const streamUrl = resData?.data?.stream_url;
-            const downloadUrl = resData?.data?.download_url || streamUrl || cleanUrl;
-            const videoFilename = resData?.data?.filename || '';
-            const isMkv = Boolean(resData?.data?.is_mkv || (videoFilename && videoFilename.toLowerCase().endsWith('.mkv')));
-            const resolvedServer = resData?.data?.server || server;
+            let cleanUrl = resData?.data?.embed_url || url;
+            let streamUrl = resData?.data?.stream_url;
+            let downloadUrl = resData?.data?.download_url || streamUrl || cleanUrl;
+            let videoFilename = resData?.data?.filename || '';
+            let isMkv = Boolean(resData?.data?.is_mkv || (videoFilename && videoFilename.toLowerCase().endsWith('.mkv')));
+            let resolvedServer = resData?.data?.server || server;
+
+            const streamerBase = (window.TORRENT_STREAMER_REMOTE_URL || '').trim().replace(/\/+$/, '');
+
+            // 1. Si PHP no pudo extraer el video directo (.m3u8/.mp4), consultar al microservicio Node.js (con resolvers nativos de Balandro)
+            if (!streamUrl && streamerBase && cleanUrl) {
+                try {
+                    const nodeRes = await fetch(`${streamerBase}/resolve?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(url)}`, { mode: 'cors' });
+                    if (nodeRes.ok) {
+                        const nodeData = await nodeRes.json();
+                        if (nodeData?.status === 'success' && nodeData?.data?.stream_url) {
+                            streamUrl = nodeData.data.stream_url;
+                            if (nodeData.data.raw_url) downloadUrl = nodeData.data.raw_url;
+                            console.log(`%c✨ [Balandro Microservice] Stream directo resuelto exitosamente: ${streamUrl}`, 'color: #38bdf8; font-weight: bold;');
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // 2. Si el stream proviene de un CDN externo que exige Referer o CORS (*.m3u8 / *.mp4),
+            // enrutarlo a través del Universal Stream Proxy de Render para reproducción limpia en Artplayer sin errores 403
+            if (streamUrl && streamerBase && !streamUrl.includes('movieplus-stream') && !streamUrl.includes('stream-proxy') && !streamUrl.includes('localhost') && !streamUrl.includes('127.0.0.1')) {
+                streamUrl = `${streamerBase}/stream-proxy?url=${encodeURIComponent(streamUrl)}&referer=${encodeURIComponent(cleanUrl || url)}`;
+            }
 
             if (badgesEl) {
                 const streamBadge = streamUrl ? '<span class="badge bg-info text-dark ms-1"><i class="fas fa-bolt me-1"></i>Directo Pro (Sin Publicidad)</span>' : '';

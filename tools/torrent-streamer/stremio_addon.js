@@ -2184,7 +2184,7 @@ async function scrapeTpb(meta) {
 /**
  * 10. Scraper: Cinecalidad (https://www.cinecalidad.ro) — Torrents Dual Latino (/protect/ver.php + data-url) y Embeds HLS
  */
-async function scrapeCinecalidad(meta, baseUrl = '') {
+async function scrapeCinecalidad(meta) {
     const host = 'https://www.cinecalidad.ro';
     const searchTerms = Array.from(new Set([
         meta.title,
@@ -2343,7 +2343,7 @@ async function scrapeCinecalidad(meta, baseUrl = '') {
         return {
             name: `🇲🇽 Cinecalidad\n1080p HLS`,
             title: `${labelTitle}\n⚡ HLS Directo • 🇲🇽 Audio Español Latino`,
-            url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
+            url: r.url,
             _lang: 'latino',
             behaviorHints: {
                 notWebReady: false,
@@ -2360,10 +2360,10 @@ async function scrapeCinecalidad(meta, baseUrl = '') {
  * 11. Scraper: JKAnime (https://jkanime.net) — Extrae var servers (Base64) y verifica <select id="deflang">
  * para distinguir con precisión entre Japonés Sub. Español (lang=1) y Español Latino.
  */
-async function scrapeJkAnime(meta, baseUrl = '') {
+async function scrapeJkAnime(meta) {
     if (!meta.isAnime) return [];
     const host = 'https://jkanime.net';
-    const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
+    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
 
     for (const q of queries.slice(0, 2)) {
         const html = await httpGet(`${host}/buscar/${encodeURIComponent(q)}/`, { headers: { Referer: `${host}/` }, timeout: 4500 });
@@ -2457,7 +2457,7 @@ async function scrapeJkAnime(meta, baseUrl = '') {
                 return {
                     name: `${item.langInfo.flag} JKAnime\n1080p HD`,
                     title: `${meta.title} - Ep. ${epNum}\n⚡ ${item.serverName} HLS • ${item.langInfo.langBadge}`,
-                    url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
+                    url: r.url,
                     _lang: item.langInfo.langKey,
                     behaviorHints: {
                         notWebReady: false,
@@ -2475,9 +2475,9 @@ async function scrapeJkAnime(meta, baseUrl = '') {
 /**
  * 12. Scraper: AnimeFLV (AnimeAV1 REST API + AnimeFLV Web Fallback)
  */
-async function scrapeAnimeFLV(meta, baseUrl = '') {
+async function scrapeAnimeFLV(meta) {
     if (!meta.isAnime) return [];
-    const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
+    const queries = Array.from(new Set([meta.title, meta.originalTitle].filter(Boolean)));
 
     // 1. Intentar primero con la API REST directa (ultrarrápida y sin Cloudflare blocks)
     for (const q of queries.slice(0, 2)) {
@@ -2504,12 +2504,12 @@ async function scrapeAnimeFLV(meta, baseUrl = '') {
             }
 
             if (!targetSlug) {
-                const sPat = new RegExp(`(?:season[-_ ]*0*${meta.season}|s0*${meta.season}|${meta.season}(?:nd|rd|th)?[-_ ]*season|\\b${meta.season}\\b)`, 'i');
+                const sPat = new RegExp(`(?:season[-_ ]*0*${meta.season}|s0*${meta.season}|${meta.season}(?:nd|rd|th)?[-_ ]*season)`, 'i');
                 const seasonMatch = pool.find(item => sPat.test(item.slug || '') || sPat.test(item.title || ''));
                 if (seasonMatch) {
                     targetSlug = seasonMatch.slug;
                 } else if (meta.season === 1) {
-                    const s1Match = pool.find(item => !/(?:season[-_ ]*[2-9]|s[2-9]|part[-_ ]*[2-9]|[-_ ](?:ii|iii|iv|v|vi|[2-9])\b)/i.test(item.slug || ''));
+                    const s1Match = pool.find(item => !/(?:season[-_ ]*[2-9]|s[2-9]|part[-_ ]*[2-9])/i.test(item.slug || ''));
                     if (s1Match) targetSlug = s1Match.slug;
                 } else if (meta.absoluteEpisode) {
                     targetEp = meta.absoluteEpisode;
@@ -2525,14 +2525,7 @@ async function scrapeAnimeFLV(meta, baseUrl = '') {
                 const epData = await httpGet(`https://animeav1.ahmedrangel.com/api/anime/${targetSlug}/${targetEp}`, {
                     json: true, timeout: 4500
                 });
-                const embeds = (epData?.data?.embeds || []).filter(emb => emb.url && /(?:zilla-networks|voe|mp4upload|wish|vidhide|yourupload|streamtape|okru)/i.test(emb.url));
-                // Priorizar servidores estándar (VOE, Mp4Upload, StreamWish, VidHide, etc.) sobre Zilla (Cloudflare en segmentos)
-                embeds.sort((a, b) => {
-                    const aZ = /zilla-networks/i.test(a.url || '') ? 1 : 0;
-                    const bZ = /zilla-networks/i.test(b.url || '') ? 1 : 0;
-                    return aZ - bZ;
-                });
-
+                const embeds = (epData?.data?.embeds || []).filter(emb => emb.url && /(?:zilla-networks|voe|mp4upload|wish|vidhide)/i.test(emb.url));
                 if (embeds.length > 0) {
                     const resolved = await Promise.all(embeds.slice(0, 6).map(async (emb) => {
                         const isLatino = /^(?:DUB|LAT|LATINO)$/i.test(String(emb.type || '').trim());
@@ -2545,7 +2538,7 @@ async function scrapeAnimeFLV(meta, baseUrl = '') {
                         return {
                             name: `${flag} AnimeFLV\n1080p HD`,
                             title: `${meta.title} - S${String(meta.season).padStart(2, '0')}E${String(meta.episode).padStart(2, '0')}\n⚡ ${emb.name || 'HLS Directo'} • ${langBadge}`,
-                            url: makeStreamUrl(r.url, r.referer || 'https://player.zilla-networks.com/', baseUrl),
+                            url: r.url,
                             _lang: langKey,
                             behaviorHints: {
                                 notWebReady: false,
@@ -2596,14 +2589,14 @@ async function scrapeAnimeFLV(meta, baseUrl = '') {
                 const langBadge = isLatino ? '🇲🇽 Audio Español Latino' : '🇯🇵 Audio Japonés + 🇲🇽 Sub Español';
                 const flag = isLatino ? '🇲🇽' : '🇯🇵';
 
-                const resolvable = list.filter(v => v.url && /(?:voe|wish|streamwish|vidhide|hglink|morencius|filemoon|fembed|mp4upload|yourupload|streamtape|okru)/i.test(v.url)).slice(0, 4);
+                const resolvable = list.filter(v => v.url && /(?:voe|wish|streamwish|vidhide|hglink|morencius|filemoon|fembed|mp4upload)/i.test(v.url)).slice(0, 3);
                 const resolved = await Promise.all(resolvable.map(async (v) => {
                     const r = await resolveEmbedToHls(v.url, epUrl);
                     if (!r?.url) return null;
                     return {
                         name: `${flag} AnimeFLV\n1080p HD`,
                         title: `${meta.title} - Ep. ${epNum}\n⚡ ${v.title || 'HLS Directo'} • ${langBadge}`,
-                        url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
+                        url: r.url,
                         _lang: langKey,
                         behaviorHints: {
                             notWebReady: false,
@@ -2699,17 +2692,17 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
 
     if (cfg.providers.has('movieplus')) tasks.push(scrapeMoviePlus(meta, baseUrl));
     if (cfg.providers.has('local_cdn')) tasks.push(scrapeLocalCdn(meta));
-    if (cfg.providers.has('lamovie')) tasks.push(scrapeLaMovie(meta, baseUrl));
-    if (cfg.providers.has('latanime')) tasks.push(scrapeLatAnime(meta, baseUrl));
-    if (cfg.providers.has('jkanime')) tasks.push(scrapeJkAnime(meta, baseUrl));
-    if (cfg.providers.has('animeflv')) tasks.push(scrapeAnimeFLV(meta, baseUrl));
-    if (cfg.providers.has('serieskao')) tasks.push(scrapeKaoOrPelisPlus(meta, 'serieskao', baseUrl));
-    if (cfg.providers.has('pelisplus')) tasks.push(scrapeKaoOrPelisPlus(meta, 'pelisplus', baseUrl));
-    if (cfg.providers.has('cuevana')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'cuevana', baseUrl));
-    if (cfg.providers.has('poseidonhd')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'poseidonhd', baseUrl));
+    if (cfg.providers.has('lamovie')) tasks.push(scrapeLaMovie(meta));
+    if (cfg.providers.has('latanime')) tasks.push(scrapeLatAnime(meta));
+    if (cfg.providers.has('jkanime')) tasks.push(scrapeJkAnime(meta));
+    if (cfg.providers.has('animeflv')) tasks.push(scrapeAnimeFLV(meta));
+    if (cfg.providers.has('serieskao')) tasks.push(scrapeKaoOrPelisPlus(meta, 'serieskao'));
+    if (cfg.providers.has('pelisplus')) tasks.push(scrapeKaoOrPelisPlus(meta, 'pelisplus'));
+    if (cfg.providers.has('cuevana')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'cuevana'));
+    if (cfg.providers.has('poseidonhd')) tasks.push(scrapeCuevanaOrPoseidon(meta, 'poseidonhd'));
     // Ejecutar primero los scrapers P2P dedicados (Cinecalidad, TPB, YTS, Nyaa) antes de Torrentio
     // para que al deduplicar infoHash prevalezca la etiqueta dedicada (PirateBay, YTS, Cinecalidad)
-    if (cfg.providers.has('cinecalidad')) tasks.push(scrapeCinecalidad(meta, baseUrl));
+    if (cfg.providers.has('cinecalidad')) tasks.push(scrapeCinecalidad(meta));
     if (cfg.providers.has('tpb')) tasks.push(scrapeTpb(meta));
     if (cfg.providers.has('yts')) tasks.push(scrapeYts(meta));
     if (cfg.providers.has('nyaa')) tasks.push(scrapeNyaa(meta));

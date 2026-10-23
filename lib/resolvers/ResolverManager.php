@@ -10,6 +10,10 @@ require_once __DIR__ . '/RetroTVEResolver.php';
 require_once __DIR__ . '/OkRuResolver.php';
 require_once __DIR__ . '/GnulaResolver.php';
 require_once __DIR__ . '/YandexDiskResolver.php';
+require_once __DIR__ . '/StreamtapeResolver.php';
+require_once __DIR__ . '/YourUploadResolver.php';
+require_once __DIR__ . '/MixDropResolver.php';
+require_once __DIR__ . '/Mp4UploadResolver.php';
 
 class ResolverManager
 {
@@ -33,7 +37,11 @@ class ResolverManager
             new VoeResolver(),
             new VidHideResolver(),
             new StreamWishResolver(),
-            new FastreamResolver()
+            new FastreamResolver(),
+            new StreamtapeResolver(),
+            new YourUploadResolver(),
+            new MixDropResolver(),
+            new Mp4UploadResolver()
         ];
     }
 

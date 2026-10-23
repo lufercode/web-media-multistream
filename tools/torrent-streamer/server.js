@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import WebTorrent from 'webtorrent';
 import MemoryChunkStore from 'memory-chunk-store';
-import { buildManifest, getStremioStreams, getStremiosCatalog } from './stremio_addon.js';
+import { buildManifest, getStremioStreams, getStremiosCatalog, resolveEmbedToHls, makeStreamUrl } from './stremio_addon.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -683,6 +683,43 @@ const server = http.createServer(async (req, res) => {
             console.error('[Stremio Addon] Error:', err);
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ streams: [] }));
+        }
+        return;
+    }
+
+    // =========================================================================
+    // EMBED RESOLUTION ENDPOINT (Usado por la Web para resolución directa de servidores)
+    // =========================================================================
+    if (pathname === '/resolve' && req.method === 'GET') {
+        const targetUrl = parsedUrl.searchParams.get('url');
+        const customReferer = parsedUrl.searchParams.get('referer') || '';
+        if (!targetUrl) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'error', error: 'url required' }));
+            return;
+        }
+
+        try {
+            const resolved = await resolveEmbedToHls(targetUrl, customReferer);
+            if (resolved?.url) {
+                const proxiedUrl = makeStreamUrl(resolved.url, resolved.referer || customReferer || targetUrl, baseUrl);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    status: 'success',
+                    available: true,
+                    data: {
+                        stream_url: proxiedUrl,
+                        raw_url: resolved.url,
+                        referer: resolved.referer || customReferer
+                    }
+                }));
+            } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'unavailable', available: false }));
+            }
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'error', error: e.message }));
         }
         return;
     }
