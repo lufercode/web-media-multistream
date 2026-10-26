@@ -3193,7 +3193,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return html;
     };
 
+    let currentSourcesAbortController = null;
+
     const startProgressiveSourcesLoad = (targetContainer, requestParams, itemTitle, thumbnail, episodeMeta = null) => {
+        if (currentSourcesAbortController) {
+            try { currentSourcesAbortController.abort(); } catch (e) {}
+        }
+        currentSourcesAbortController = new AbortController();
+        const sourcesSignal = currentSourcesAbortController.signal;
+        window.isDetailsLoading = true;
+
         const isAnimeContent = linksContainer?.dataset?.isAnime === '1';
         let rawProviders = (window._cachedProvidersList && window._cachedProvidersList.length > 0) ? window._cachedProvidersList : [
             { id: 'local_cdn', name: 'CDN Propio', type: 'direct' },
@@ -3327,6 +3336,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (completedProviders >= totalProviders) {
                 targetContainer.dataset.loading = 'false';
                 targetContainer.dataset.loaded = 'true';
+                window.isDetailsLoading = false;
                 spinnerEl.classList.add('d-none');
                 checkEl.classList.remove('d-none');
                 bannerEl.classList.add('is-done');
@@ -3867,23 +3877,27 @@ document.addEventListener('DOMContentLoaded', () => {
             return valA - valB;
         });
 
-        // 2. Pool de concurrencia equilibrada (6 workers en paralelo)
-        // Punto óptimo: máxima velocidad de carga sin sobrecargar los procesos del hosting.
-        const MAX_CONCURRENT = 6;
+        // 2. Pool de concurrencia optimizado para hosting compartido e InfinityFree (3 workers simultáneos)
+        // Mantiene el número de Entry Processes de Apache/CloudLinux siempre dentro del límite seguro
+        const MAX_CONCURRENT = 3;
         const queue = [...sortedProviders];
 
         const fetchSingleProvider = async (prov, isRetry = false) => {
+            if (sourcesSignal.aborted || abortController.signal.aborted) return;
+
             const queryParams = new URLSearchParams({
                 ...requestParams,
                 provider: prov.id
             });
 
             try {
-                const r = await fetch(`api/get_links.php?${queryParams.toString()}`, { signal: abortController.signal });
+                const r = await fetch(`api/get_links.php?${queryParams.toString()}`, { signal: sourcesSignal });
                 
-                // Si el servidor devuelve 503 o 508 (límite temporal de hosting), reintentar una vez tras 400ms
+                // Si el servidor devuelve 503 o 508 (límite temporal de hosting), esperar con jitter antes de reintentar
                 if (!r.ok && (r.status === 503 || r.status === 508) && !isRetry) {
-                    await new Promise(res => setTimeout(res, 400));
+                    console.warn(`%c⚠️ [Fuentes] Hosting ocupado con ${prov.id} (HTTP ${r.status}). Pausando 1.5s antes de reintentar...`, 'color: #fd7e14;');
+                    await new Promise(res => setTimeout(res, 1500 + Math.random() * 500));
+                    if (sourcesSignal.aborted || abortController.signal.aborted) return;
                     return fetchSingleProvider(prov, true);
                 }
 
@@ -3933,15 +3947,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             } catch (err) {
-                // Si fue un fallo transitorio de red no abortado por el usuario, reintentar ágilmente
-                if (!isRetry && err.name !== 'AbortError' && !abortController.signal.aborted) {
+                if (sourcesSignal.aborted || abortController.signal.aborted) return;
+                // Si fue un fallo transitorio de red no abortado por el usuario, reintentar una vez
+                if (!isRetry && err.name !== 'AbortError') {
                     try {
-                        await new Promise(res => setTimeout(res, 400));
+                        await new Promise(res => setTimeout(res, 800));
+                        if (sourcesSignal.aborted || abortController.signal.aborted) return;
                         return await fetchSingleProvider(prov, true);
                     } catch (e) {}
                 }
             } finally {
-                if (!isRetry) {
+                if (!isRetry && !sourcesSignal.aborted) {
                     completedProviders++;
                     updateProgressUI();
                 }
@@ -3950,21 +3966,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const worker = async () => {
             while (queue.length > 0) {
-                if (abortController.signal.aborted) break;
+                if (sourcesSignal.aborted || abortController.signal.aborted) break;
                 const prov = queue.shift();
                 await fetchSingleProvider(prov);
             }
         };
 
-        // Iniciar hasta 6 workers en paralelo con micro-espaciado de 30ms para suavizar el inicio
+        // Iniciar hasta 3 workers en paralelo con micro-espaciado de 80ms para suavizar el inicio
         const activeWorkers = Math.min(MAX_CONCURRENT, sortedProviders.length);
         for (let i = 0; i < activeWorkers; i++) {
             if (i === 0) {
                 worker();
             } else {
                 setTimeout(() => {
-                    if (!abortController.signal.aborted) worker();
-                }, i * 30);
+                    if (!sourcesSignal.aborted && !abortController.signal.aborted) worker();
+                }, i * 80);
             }
         }
     };

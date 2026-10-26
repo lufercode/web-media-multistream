@@ -60,6 +60,12 @@ AddDefaultCharset UTF-8
 # Proteger base de datos local y directorio tools
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Si es un archivo o directorio real existente, servirlo directamente sin reescritura
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
     RewriteRule ^tools/ - [F,L]
     RewriteRule ^\.git - [F,L]
     RewriteRule ^data/movieplus/catalog\.db - [F,L]

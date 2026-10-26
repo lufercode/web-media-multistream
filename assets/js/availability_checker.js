@@ -9,7 +9,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isStorageOffline = false;
     let isOnlineToastShown = false;
+    let isHostingThrottled = false;
+    let consecutiveLimitErrors = 0;
     const abortController = new AbortController();
+    const availabilityCache = new Map();
 
     // Cancelar inmediatamente todas las peticiones activas si el usuario recarga o cambia de página
     const cancelAllPendingRequests = () => {
@@ -58,7 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         container.appendChild(toastEl);
 
-        // Auto-desaparecer tras 3.5 segundos con animación suave
         setTimeout(() => {
             toastEl.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
             toastEl.style.opacity = '0';
@@ -74,7 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Si había un toast de online, removerlo
         const onlineToast = container.querySelector('.storage-online-toast');
         if (onlineToast) onlineToast.remove();
 
@@ -105,8 +106,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const applyBadgeStatus = (badge, status) => {
+        if (!badge) return;
+        if (status === 'found') {
+            badge.className = 'badge-availability badge-available';
+            badge.innerHTML = '<i class="fas fa-check-circle me-1"></i>Disponible';
+            badge.style.display = 'inline-flex';
+        } else {
+            badge.className = 'badge-availability badge-unavailable';
+            badge.innerHTML = '<i class="fas fa-times-circle me-1"></i>No disponible';
+            badge.style.display = 'inline-flex';
+        }
+    };
+
     const checkAvailability = async (card) => {
-        if (isStorageOffline || abortController.signal.aborted) {
+        if (isStorageOffline || abortController.signal.aborted || isHostingThrottled) {
             return;
         }
 
@@ -121,6 +135,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Revisar caché en memoria/sesión del cliente
+        const cacheKey = `${type}_${id || query}`;
+        if (availabilityCache.has(cacheKey)) {
+            card.dataset.checked = 'true';
+            applyBadgeStatus(badge, availabilityCache.get(cacheKey));
+            return;
+        }
+
         card.dataset.checked = 'true';
 
         if (badge) {
@@ -128,8 +150,6 @@ document.addEventListener('DOMContentLoaded', () => {
             badge.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Buscando...';
             badge.style.display = 'inline-flex';
         }
-
-        console.log(`%c🔍 [Buscador] Verificando en fuentes: "${query}" (${type})`, 'color: #ffc107;');
 
         try {
             const bodyParams = new URLSearchParams({
@@ -151,14 +171,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 signal: abortController.signal,
             });
 
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
+            // Circuit Breaker ante límite de recursos de hosting compartido (508 Loop Detected / Resource Limit o 503)
+            if (response.status === 508 || response.status === 503) {
+                consecutiveLimitErrors++;
+                console.warn(`%c⚠️ [Buscador] Servidor ocupado (HTTP ${response.status}). Pausando verificador para no saturar procesos.`, 'color: #fd7e14;');
+                if (badge) {
+                    badge.style.display = 'none';
+                    card.dataset.checked = 'false'; // Permitir reintento posterior si el usuario vuelve
+                }
+                if (consecutiveLimitErrors >= 2) {
+                    isHostingThrottled = true;
+                    // Pausar verificaciones durante 8 segundos
+                    setTimeout(() => {
+                        isHostingThrottled = false;
+                        consecutiveLimitErrors = 0;
+                        processQueue();
+                    }, 8000);
+                }
+                return;
             }
+
+            consecutiveLimitErrors = 0;
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.status === 'storage_offline') {
                 isStorageOffline = true;
-                console.warn(`%c⚠️ [Almacenamiento] Servidor CDN fuera de línea o inaccesible para "${query}": ${data.message}`, 'color: #dc3545; font-weight: bold;');
                 showStorageOfflineToast(data.message);
                 disableRemainingCards();
                 if (badge) {
@@ -169,57 +211,70 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // CDN responde con éxito: mostrar toast de confirmación (una vez por página)
             showStorageOnlineToast();
-
-            if (badge) {
-                if (data.status === 'found') {
-                    console.log(`%c✅ [Buscador] DISPONIBLE: "${query}"`, 'color: #198754; font-weight: bold;');
-                    badge.className = 'badge-availability badge-available';
-                    badge.innerHTML = '<i class="fas fa-check-circle me-1"></i>Disponible';
-                    badge.style.display = 'inline-flex';
-                } else {
-                    console.log(`%c❌ [Buscador] No encontrado: "${query}"`, 'color: #adb5bd;');
-                    badge.className = 'badge-availability badge-unavailable';
-                    badge.innerHTML = '<i class="fas fa-times-circle me-1"></i>No disponible';
-                    badge.style.display = 'inline-flex';
-                }
-            }
+            const resultStatus = data.status === 'found' ? 'found' : 'not_found';
+            availabilityCache.set(cacheKey, resultStatus);
+            applyBadgeStatus(badge, resultStatus);
 
         } catch (error) {
             if (error.name !== 'AbortError') {
-                console.error(`❌ [Buscador] Error al verificar "${query}":`, error);
                 if (badge) {
-                    badge.className = 'badge-availability badge-unavailable';
-                    badge.innerHTML = '<i class="fas fa-times-circle me-1"></i>No disponible';
-                    badge.style.display = 'inline-flex';
+                    badge.style.display = 'none';
                 }
             }
         }
     };
 
-    // Usar IntersectionObserver para verificar solo las tarjetas visibles en pantalla
+    // Cola controlada con 1 worker (cero concurrencia, cero saturación de Entry Processes en InfinityFree)
+    const checkQueue = [];
+    let isQueueRunning = false;
+
+    const processQueue = async () => {
+        if (isQueueRunning) return;
+        isQueueRunning = true;
+
+        while (checkQueue.length > 0) {
+            if (abortController.signal.aborted || isStorageOffline || isHostingThrottled) {
+                break;
+            }
+
+            // Si el usuario está viendo o cargando detalles/reproductor, pausar para ceder el 100% de recursos al streaming
+            if (window.isDetailsLoading) {
+                await new Promise(r => setTimeout(r, 600));
+                continue;
+            }
+
+            const card = checkQueue.shift();
+            await checkAvailability(card);
+
+            // Espaciado ligero de 150ms entre tarjetas para mantener el consumo de CPU y procesos en niveles mínimos
+            await new Promise(r => setTimeout(r, 150));
+        }
+
+        isQueueRunning = false;
+    };
+
+    const enqueueCard = (card) => {
+        if (!card || card.dataset.enqueued === 'true') return;
+        card.dataset.enqueued = 'true';
+        checkQueue.push(card);
+        processQueue();
+    };
+
+    // Usar IntersectionObserver para encolar solo las tarjetas que entren en pantalla
     if ('IntersectionObserver' in window) {
         const observer = new IntersectionObserver((entries, obs) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     obs.unobserve(entry.target);
-                    checkAvailability(entry.target);
+                    enqueueCard(entry.target);
                 }
             });
-        }, { rootMargin: '100px' });
+        }, { rootMargin: '80px' });
 
         contentCards.forEach(card => observer.observe(card));
     } else {
-        // Fallback: procesar en lotes de 2
-        const runQueue = async () => {
-            const batchSize = 2;
-            for (let i = 0; i < contentCards.length; i += batchSize) {
-                if (isStorageOffline || abortController.signal.aborted) break;
-                const batch = contentCards.slice(i, i + batchSize);
-                await Promise.all(batch.map(checkAvailability));
-            }
-        };
-        runQueue();
+        // Fallback progresivo en orden
+        contentCards.forEach(enqueueCard);
     }
 });

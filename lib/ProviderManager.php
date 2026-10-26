@@ -96,11 +96,31 @@ class ProviderManager
     public function checkAvailability(string $title, string $type, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null, bool $is_anime = true): bool
     {
         if (connection_aborted()) exit;
-        $anime_providers = ['anime', 'tioanime', 'latanime', 'animeflv', 'jkanime', 'nyaa'];
+
+        // Lista prioritaria de alta velocidad y máxima cobertura para comprobación ligera en tarjetas
+        // Evita saturar el hosting compartido (InfinityFree/cPanel) ejecutando 25 scrapers externos por cada tarjeta
+        $fast_check_ids = $is_anime
+            ? ['movieplus', 'local_cdn', 'latanime', 'animeflv', 'serieskao', 'torrentio']
+            : ['movieplus', 'local_cdn', 'lamovie', 'serieskao', 'pelisplus', 'cuevana', 'torrentio'];
+
+        $external_checks = 0;
+        $max_external_checks = 3; // Límite estricto de scrapers externos por tarjeta para proteger los Entry Processes
 
         foreach ($this->providers as $provider) {
+            if (connection_aborted()) exit;
+            $pid = $provider->getId();
+
+            if (!in_array($pid, $fast_check_ids, true)) continue;
             if (!$provider->isEnabled()) continue;
-            if (!$is_anime && in_array($provider->getId(), $anime_providers, true)) continue;
+
+            // movieplus y local_cdn son instantáneos (SQLite local o caché en memoria)
+            $is_instant = ($pid === 'movieplus' || $pid === 'local_cdn');
+            if (!$is_instant) {
+                if ($external_checks >= $max_external_checks) {
+                    break;
+                }
+                $external_checks++;
+            }
 
             try {
                 if ($type === 'movie') {
@@ -119,7 +139,7 @@ class ProviderManager
                     }
                 }
             } catch (\Throwable $e) {
-                error_log("Error comprobando proveedor {$provider->getId()}: " . $e->getMessage());
+                // Silenciar fallos de scrapers en la verificación ligera
             }
         }
 

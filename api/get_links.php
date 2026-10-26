@@ -73,11 +73,18 @@ if ($requested_provider !== null && $requested_provider !== '') {
     $links_cache_key = 'links_' . md5($requested_provider . '_' . $type . '_' . $id . '_' . ($requested_season ?? '') . '_' . ($requested_episode ?? '') . '_' . ($requested_absolute ?? ''));
     $links_cache_file = CACHE_DIR . '/' . $links_cache_key . '.json';
 
-    if (file_exists($links_cache_file) && (time() - filemtime($links_cache_file) < $links_cache_time)) {
+    if (file_exists($links_cache_file)) {
+        $file_age = time() - filemtime($links_cache_file);
         $cached_resp = @file_get_contents($links_cache_file);
         if ($cached_resp) {
-            echo $cached_resp;
-            exit;
+            $parsed_cached = json_decode($cached_resp, true);
+            $has_data = !empty($parsed_cached['links']['direct']) || !empty($parsed_cached['links']['streaming']) || !empty($parsed_cached['links']['torrent']);
+            // TTL de 1800s si contiene enlaces; TTL de 600s (10 min) si estaba vacío para no saturar scrapers
+            $effective_ttl = $has_data ? $links_cache_time : 600;
+            if ($file_age < $effective_ttl) {
+                echo $cached_resp;
+                exit;
+            }
         }
     }
 
@@ -99,14 +106,11 @@ if ($requested_provider !== null && $requested_provider !== '') {
 
     $json_output = json_encode($response_payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-    // Solo cachear si devolvió al menos un enlace (evita fijar fallos temporales de red)
-    $has_links = !empty($single_links['direct']) || !empty($single_links['streaming']) || !empty($single_links['torrent']);
-    if ($has_links) {
-        if (!is_dir(CACHE_DIR)) {
-            @mkdir(CACHE_DIR, 0755, true);
-        }
-        @file_put_contents($links_cache_file, $json_output);
+    // Guardar en caché tanto respuestas con enlaces (30 min) como vacías (10 min) para proteger recursos
+    if (!is_dir(CACHE_DIR)) {
+        @mkdir(CACHE_DIR, 0755, true);
     }
+    @file_put_contents($links_cache_file, $json_output);
 
     echo $json_output;
     exit;
