@@ -60,8 +60,8 @@ class MoviePlusProvider implements ProviderInterface
 
         foreach ($movie['decrypted_urls'] as $u) {
             $quality = $u['quality'] ?? 'HD';
-            $langInfo = $u['language'] ?? ['name' => 'Latino'];
-            $langName = $langInfo['name'] ?? 'Latino';
+            $langInfo = $u['language'] ?? ['name' => 'Subtitulado'];
+            $langName = $langInfo['name'] ?? 'Subtitulado';
             $url = $u['url'] ?? '';
 
             if (empty($url)) continue;
@@ -151,8 +151,8 @@ class MoviePlusProvider implements ProviderInterface
                     $url = $ep['url'] ?? '';
                     if (empty($url)) continue;
 
-                    $langInfo = $ep['language'] ?? ['name' => 'Latino'];
-                    $langName = $langInfo['name'] ?? 'Latino';
+                    $langInfo = $ep['language'] ?? ['name' => 'Subtitulado'];
+                    $langName = $langInfo['name'] ?? 'Subtitulado';
 
                     $serverName = 'Yandex CDN ' . $quality;
                     if (str_contains($url, 'mega.nz')) {

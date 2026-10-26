@@ -3204,6 +3204,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.isDetailsLoading = true;
 
         const isAnimeContent = linksContainer?.dataset?.isAnime === '1';
+        const isAnimeTitle = isAnimeContent || /\b(dragon\s*ball|naruto|one\s*piece|bleach|shingeki|jujutsu|kimetsu|demon\s*slayer|boku\s*no\s*hero|my\s*hero|chainsaw|frieren|dandadan|solo\s*leveling|hunter\s*x\s*hunter|fullmetal|death\s*note|tokyo\s*ghoul|beerus|daima|boruto|inuyasha|ranma|saint\s*seiya|pokemon|digimon)\b/i.test(itemTitle || '');
         let rawProviders = (window._cachedProvidersList && window._cachedProvidersList.length > 0) ? window._cachedProvidersList : [
             { id: 'local_cdn', name: 'CDN Propio', type: 'direct' },
             { id: 'movieplus', name: 'Movie+ (Cloud CDN)', type: 'streaming' },
@@ -3381,12 +3382,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Contar servidores por idioma
             const counts = { all: allStreamButtons.length, lat: 0, cast: 0, sub: 0, eng: 0, dual: 0 };
+            const defaultLangCode = (isAnimeContent || isAnimeTitle) ? 'sub' : 'lat';
             allStreamButtons.forEach(btn => {
-                const code = btn.dataset.langCode || 'lat';
+                const code = btn.dataset.langCode || defaultLangCode;
                 if (counts[code] !== undefined) {
                     counts[code]++;
                 } else {
-                    counts.lat++;
+                    counts[code] = (counts[code] || 0) + 1;
                 }
             });
 
@@ -3398,7 +3400,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Aplicar visibilidad de botones
             let visibleTotal = 0;
             allStreamButtons.forEach(btn => {
-                const code = btn.dataset.langCode || 'lat';
+                const code = btn.dataset.langCode || defaultLangCode;
                 if (activeLangFilter === 'all' || code === activeLangFilter) {
                     btn.classList.remove('d-none');
                     visibleTotal++;
@@ -3460,7 +3462,39 @@ document.addEventListener('DOMContentLoaded', () => {
             const icon = getProviderIcon(group.providerId, 'streaming');
             const count = group.items.length;
 
-            const langs = [...new Set(group.items.map(i => i.language || (i.lang === 'lat' ? 'Latino' : (i.lang === 'cast' ? 'Castellano' : (i.lang === 'sub' ? 'Subtitulado' : null)))).filter(Boolean))];
+            // Pre-normalizar idiomas en cada item del grupo
+            group.items.forEach(src => {
+                let langCode = src.lang_code;
+                let langLabel = src.language;
+                let langFlag = src.lang_flag;
+                if (!langCode) {
+                    const rawL = (src.language || src.lang || '').toLowerCase();
+                    if (rawL.includes('cast') || rawL.includes('españa')) {
+                        langCode = 'cast'; langLabel = 'Español Castellano'; langFlag = '🇪🇸';
+                    } else if (rawL.includes('sub') || rawL.includes('vose') || rawL.includes('jap')) {
+                        langCode = 'sub'; langLabel = 'Subtitulado (VOSE)'; langFlag = '💬';
+                    } else if (rawL.includes('ing') || rawL.includes('eng')) {
+                        langCode = 'eng'; langLabel = 'Inglés'; langFlag = '🇺🇸';
+                    } else if (rawL.includes('dual')) {
+                        langCode = 'dual'; langLabel = 'Dual'; langFlag = '✨';
+                    } else if (rawL.includes('lat')) {
+                        langCode = 'lat'; langLabel = 'Español Latino'; langFlag = '🇲🇽';
+                    } else if (isAnimeContent || isAnimeTitle) {
+                        langCode = 'sub'; langLabel = 'Subtitulado (VOSE)'; langFlag = '💬';
+                    } else {
+                        langCode = 'lat'; langLabel = 'Español Latino'; langFlag = '🇲🇽';
+                    }
+                }
+                src.lang_code = langCode;
+                src.language = langLabel;
+                src.lang_flag = langFlag;
+            });
+
+            // Ordenar items de streaming dentro del grupo: Latino -> Dual -> Subtitulado -> Castellano -> Inglés
+            const langOrder = { 'lat': 1, 'dual': 2, 'sub': 3, 'cast': 4, 'eng': 5 };
+            group.items.sort((a, b) => (langOrder[a.lang_code] || 99) - (langOrder[b.lang_code] || 99));
+
+            const langs = [...new Set(group.items.map(i => i.language).filter(Boolean))];
             const langBadges = langs.map(l => `<span class="badge bg-dark border border-secondary text-info fw-normal" style="font-size: 0.72rem;">${l}</span>`).join(' ');
 
             const qualities = [...new Set(group.items.map(i => i.quality).filter(Boolean))];
@@ -3501,25 +3535,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const url = src.url;
                 const srv = (src.server || 'Servidor Online').replace(/"/g, '&quot;');
                 const provName = (src.provider_name || group.rawProviderName || 'Streaming').replace(/"/g, '&quot;');
-                
-                // Normalizar idioma
-                let langCode = src.lang_code;
-                let langLabel = src.language;
-                let langFlag = src.lang_flag;
-                if (!langCode) {
-                    const rawL = (src.language || src.lang || '').toLowerCase();
-                    if (rawL.includes('cast') || rawL.includes('españa')) {
-                        langCode = 'cast'; langLabel = 'Español Castellano'; langFlag = '🇪🇸';
-                    } else if (rawL.includes('sub') || rawL.includes('vose') || rawL.includes('jap')) {
-                        langCode = 'sub'; langLabel = 'Subtitulado'; langFlag = '💬';
-                    } else if (rawL.includes('ing') || rawL.includes('eng')) {
-                        langCode = 'eng'; langLabel = 'Inglés'; langFlag = '🇺🇸';
-                    } else if (rawL.includes('dual')) {
-                        langCode = 'dual'; langLabel = 'Dual'; langFlag = '✨';
-                    } else {
-                        langCode = 'lat'; langLabel = 'Español Latino'; langFlag = '🇲🇽';
-                    }
-                }
+                const langCode = src.lang_code;
+                const langLabel = src.language;
+                const langFlag = src.lang_flag;
                 const qlt = src.quality ? `<span class="badge bg-success ms-1">${src.quality}</span>` : '';
 
                 const btn = document.createElement('button');
@@ -3599,12 +3617,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Idiomas y banderas
             const flags = [];
-            const isLatino = src.is_latino === true || /\b(latino|latam|es[\s\.\-_]*mx|es[\s\.\-_]*419|dual[\s\.\-_]*lat)\b/i.test(fullBlob) || (src.language && /latino/i.test(src.language));
-            const isCastellano = !isLatino && (/\b(castellano|españa|spanish|es[\s\.\-_]*es)\b/i.test(fullBlob) || (src.language && /castellano/i.test(src.language)));
-            const isJapanese = /\b(jap|japanese|jpn|nyaa|anime)\b/i.test(fullBlob) || (src.language && /japon/i.test(src.language));
-            const isSubEsp = /\b(sub[\s\.\-_]*esp|subtitulad[oa]|vose|multi[\s\.\-_]*sub)\b/i.test(fullBlob) || (src.language && /sub/i.test(src.language));
-            const isMultiAudio = /\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub)\b/i.test(fullBlob) || src.is_multi_audio === true;
-            const isDualAudio = (/\b(dual[\s\.\-_]*audio|dual)\b/i.test(fullBlob) || src.is_dual === true) && !isMultiAudio;
+            const isFansubOrSubRip = /\b(erai[\s\.\-_]*raws|subsplease|toonshub|horriblesubs|judas|nandesuka|cr[\s\.\-_]*web-?dl|crunchyroll|multiple[\s\.\-_]*subtitles?|multi[\s\.\-_]*subs?|multisub|softsubs?|vose)\b/i.test(fullBlob);
+            const hasExplicitAudioLatino = /\b(audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|dual[\s\.\-_]*lat(?:ino)?|latino[\s\.\-_]*audio|doblado[\s\.\-_]*al?[\s\.\-_]*latino)\b/i.test(fullBlob);
+            const hasSubLatino = /\b(es[\s\.\-_]*mx|es[\s\.\-_]*419|spa[\s\.\-_]*la|lat(?:ino|am)?[\s\.\-_]*sub|sub[\s\.\-_]*(?:esp|lat))\b/i.test(fullBlob);
+
+            const isLatino = hasExplicitAudioLatino || (!isFansubOrSubRip && (src.is_latino === true || /\b(audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|dual[\s\.\-_]*lat)\b/i.test(fullBlob) || (src.language && /\baudio[\s\.\-_]*latino\b/i.test(src.language))));
+            const isCastellano = !isLatino && !isFansubOrSubRip && (/\b(castellano|españa|audio[\s\.\-_]*castellano)\b/i.test(fullBlob) || (src.language && /castellano/i.test(src.language)));
+            const isJapanese = /\b(jap|japanese|jpn|nyaa|anime)\b/i.test(fullBlob) || (src.language && /japon/i.test(src.language)) || isFansubOrSubRip || isAnimeContent || isAnimeTitle;
+            const isSubEsp = isFansubOrSubRip || hasSubLatino || /\b(sub[\s\.\-_]*esp|subtitulad[oa]|vose|multi[\s\.\-_]*sub)\b/i.test(fullBlob) || (src.language && /sub/i.test(src.language));
+            const isMultiAudio = !isFansubOrSubRip && (/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub)\b/i.test(fullBlob) || src.is_multi_audio === true);
+            const isDualAudio = !isFansubOrSubRip && (/\b(dual[\s\.\-_]*audio|dual)\b/i.test(fullBlob) || src.is_dual === true) && !isMultiAudio;
 
             if (isLatino) {
                 flags.push({ flag: '🇲🇽', code: 'LAT', name: 'Latino', cls: 'badge-lang-lat' });
@@ -3628,7 +3650,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const audioPills = [];
             if (isMultiAudio) audioPills.push({ text: 'MULTI', cls: 'badge-audio-multi' });
             else if (isDualAudio) audioPills.push({ text: 'DUAL', cls: 'badge-audio-dual' });
-            if (isSubEsp && !isLatino) audioPills.push({ text: 'SUB', cls: 'badge-audio-sub' });
+            if (isSubEsp && !isLatino) audioPills.push({ text: (hasSubLatino || isFansubOrSubRip) ? 'SUB LAT' : 'SUB', cls: 'badge-audio-sub' });
 
             if (/atmos/i.test(fullBlob)) audioPills.push({ text: 'Atmos', cls: 'badge-sound' });
             else if (/5\.1|ddp5\.1|ac3[\s\.\-_]*5\.1/i.test(fullBlob)) audioPills.push({ text: '5.1', cls: 'badge-sound' });
@@ -3707,6 +3729,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 src,
                 meta: parseTorrentItemMeta(src, itemTitle)
             }));
+
+            // Ordenar: 1º Audio Latino confirmado, 2º Sub Latino / VOSE, 3º Otros, con semillas descendentes
+            parsedItems.sort((a, b) => {
+                const aIsLat = a.meta.flags.some(f => f.code === 'LAT');
+                const bIsLat = b.meta.flags.some(f => f.code === 'LAT');
+                if (aIsLat && !bIsLat) return -1;
+                if (!aIsLat && bIsLat) return 1;
+
+                const aHasSubLat = a.meta.audioPills.some(p => p.text === 'SUB LAT');
+                const bHasSubLat = b.meta.audioPills.some(p => p.text === 'SUB LAT');
+                if (aHasSubLat && !bHasSubLat) return -1;
+                if (!aHasSubLat && bHasSubLat) return 1;
+
+                const aSeeds = a.meta.seedsObj ? a.meta.seedsObj.count : 0;
+                const bSeeds = b.meta.seedsObj ? b.meta.seedsObj.count : 0;
+                return bSeeds - aSeeds;
+            });
 
             // Calidades resumidas para la cabecera
             const uniqueQualities = [...new Set(parsedItems.map(p => p.meta.qTag))];

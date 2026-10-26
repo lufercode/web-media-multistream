@@ -518,12 +518,14 @@ class MoviePlusService
             ];
         }
 
+        // Si no se encuentra indicación explícita de idioma, clasificar como Subtitulado / VO
+        // para no marcar erróneamente animes o series como Audio Latino
         return [
-            'code'  => 'LAT',
-            'name'  => 'Latino',
-            'label' => 'Español Latino',
-            'flag'  => '🇲🇽',
-            'badge' => '🇲🇽 LAT'
+            'code'  => 'VOSE',
+            'name'  => 'Subtitulado',
+            'label' => 'Subtitulado / VO',
+            'flag'  => '💬',
+            'badge' => '💬 SUB'
         ];
     }
 

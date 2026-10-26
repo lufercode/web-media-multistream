@@ -98,12 +98,11 @@ class LatAnimeProvider implements ProviderInterface
                 }
 
                 if ($matched) {
-                    $seen_urls[$slug] = true;
-                    $lang = 'Español Latino';
-                    if (stripos($slug, 'castellano') !== false || stripos($raw_text, 'castellano') !== false) {
+                    $lang = 'Subtitulado (VOSE)';
+                    if (stripos($slug, 'latino') !== false || stripos($raw_text, 'latino') !== false) {
+                        $lang = 'Español Latino';
+                    } elseif (stripos($slug, 'castellano') !== false || stripos($raw_text, 'castellano') !== false) {
                         $lang = 'Español Castellano';
-                    } elseif (stripos($slug, 'sub') !== false) {
-                        $lang = 'Japonés (Subtitulado)';
                     }
 
                     $candidates[] = [

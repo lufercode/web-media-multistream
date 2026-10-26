@@ -165,6 +165,16 @@ class PelisPediaProvider implements ProviderInterface
             elseif (stripos($final_url, 'streamtape') !== false) $server_name = 'Streamtape';
             elseif (stripos($final_url, 'vimeos') !== false) $server_name = 'Vimeos';
 
+            $item_lang = 'Español Latino';
+            $is_anime_page = (bool)preg_match('/\b(anime|japon|subtitulad|vose|dragon[\s\.\-_]*ball|naruto|one[\s\.\-_]*piece|bleach|jujutsu)\b/i', $item_title . ' ' . $detail_html);
+            if ($is_anime_page && stripos($detail_html, 'audio latino') === false && stripos($detail_html, 'doblaje') === false) {
+                $item_lang = 'Subtitulado (VOSE)';
+            } elseif (stripos($detail_html, 'castellano') !== false && stripos($detail_html, 'latino') === false) {
+                $item_lang = 'Español Castellano';
+            } elseif (stripos($detail_html, 'subtitulad') !== false || stripos($detail_html, 'vose') !== false) {
+                $item_lang = 'Subtitulado (VOSE)';
+            }
+
             $results[] = [
                 'provider' => $this->getId(),
                 'provider_name' => 'PelisPedia',
@@ -172,7 +182,7 @@ class PelisPediaProvider implements ProviderInterface
                 'title' => $item_title,
                 'server' => $server_name,
                 'quality' => '1080p Full HD',
-                'language' => 'Español Latino',
+                'language' => $item_lang,
                 'url' => $final_url,
                 'size' => null
             ];

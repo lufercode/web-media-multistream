@@ -257,33 +257,41 @@ class TorrentioProvider implements ProviderInterface
         $has_it_flag = (strpos($raw_title, '🇮🇹') !== false);
         $has_de_flag = (strpos($raw_title, '🇩🇪') !== false);
 
+        // Identificar simulcasts / ripeos subtitulados de anime (Erai-raws, SubsPlease, ToonsHub, Crunchyroll WEB-DL, etc.)
+        $is_fansub_or_subrip = (bool)preg_match('/\b(erai[\s\.\-_]*raws|subsplease|toonshub|horriblesubs|judas|nandesuka|cr[\s\.\-_]*web-?dl|crunchyroll|multiple[\s\.\-_]*subtitles?|multi[\s\.\-_]*subs?|multisub|softsubs?|vose)\b/i', $combined);
+        $has_explicit_audio_latino = (bool)preg_match('/\b(audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|dual[\s\.\-_]*lat(?:ino)?|latino[\s\.\-_]*audio|doblado[\s\.\-_]*al?[\s\.\-_]*latino)\b/i', $combined);
+        $has_sub_latino = (bool)preg_match('/\b(es[\s\.\-_]*mx|es[\s\.\-_]*419|lat(?:ino|am)?[\s\.\-_]*sub|sub[\s\.\-_]*(?:esp|lat))\b/i', $combined);
+
         $is_dubbed = (bool)preg_match('/\b(dubbed|doblado)\b/i', $cleaned);
-        // IMPORTANTE: NUNCA usar \bmulti\b suelto porque coincide con "Multi Subs" / "Multi-Subs"
-        $is_multi_audio = (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub|cr[\s\.\-_]*web-?dl[\s\.\-_]*multi|multi[\s\.\-_]+(?:\d{3,4}p[\s\.\-_]+)?cr[\s\.\-_]*web-?dl)\b/i', $cleaned);
-        $is_dual_audio = (bool)preg_match('/\b(dual[\s\.\-_]*audio|cr[\s\.\-_]*web-?dl[\s\.\-_]*dual|\bdual\b)\b/i', $cleaned);
-        $is_multi_subs = (bool)preg_match('/\b(multi[\s\.\-_]*subs?|multisub|msubs?)\b/i', $combined);
-        $is_sub_esp = (bool)preg_match('/\b(sub(?:s|titulos?|titulado|titles?)?[\s\.\-_]*(?:en[\s\.\-_]*)?(?:esp(?:añol|anol)?|lat(?:ino|am)?|es[\s\.\-_]*mx|es[\s\.\-_]*419|spa|cast(?:ellano)?)|(?:español|espanol|latino|spa)[\s\.\-_]*sub(?:s|titulos?)?)\b/iu', $combined);
+        $is_multi_audio = !$is_fansub_or_subrip && (bool)preg_match('/\b(multi[\s\.\-_]*audio|multi[\s\.\-_]*dub)\b/i', $cleaned);
+        $is_dual_audio = !$is_fansub_or_subrip && (bool)preg_match('/\b(dual[\s\.\-_]*audio|audio[\s\.\-_]*dual)\b/i', $cleaned);
+        $is_multi_subs = $is_fansub_or_subrip || (bool)preg_match('/\b(multi[\s\.\-_]*subs?|multisub|msubs?|multiple[\s\.\-_]*subtitles?)\b/i', $combined);
+        $is_sub_esp = $has_sub_latino || (bool)preg_match('/\b(sub(?:s|titulos?|titulado|titles?)?[\s\.\-_]*(?:en[\s\.\-_]*)?(?:esp(?:añol|anol)?|lat(?:ino|am)?|es[\s\.\-_]*mx|es[\s\.\-_]*419|spa|cast(?:ellano)?)|(?:español|espanol|latino|spa)[\s\.\-_]*sub(?:s|titulos?)?)\b/iu', $combined);
 
-        $explicit_latino = (bool)preg_match('/\b(latino|latam|audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|dual[\s\.\-_]*lat(?:ino)?|es[\s\.\-_]*mx|es[\s\.\-_]*419|esp[\s\.\-_]*lat|cinecalidad)\b/i', $cleaned . ' ' . $tracker);
-        $explicit_castellano = (bool)preg_match('/\b(castellano|mejortorrent|wolfmax4k)\b/i', $cleaned . ' ' . $tracker);
+        // Si es un ripeo subtitulado de anime, el flag 🇲🇽 de Torrentio corresponde a subtítulos, NO a audio
+        $is_audio_latino = $has_explicit_audio_latino || (!$is_fansub_or_subrip && (bool)preg_match('/\b(audio[\s\.\-_]*latino|doblaje[\s\.\-_]*latino|dual[\s\.\-_]*lat(?:ino)?|latino[\s\.\-_]*audio|cinecalidad)\b/i', $cleaned . ' ' . $tracker));
+        $explicit_castellano = !$is_fansub_or_subrip && (bool)preg_match('/\b(castellano|mejortorrent|wolfmax4k)\b/i', $cleaned . ' ' . $tracker);
 
-        // Construir lista de badges de audio (igual que Torrentio: Dubbed, Multi Audio, Dual Audio, Multi Subs)
+        $is_japanese = ($has_jp_flag || (bool)preg_match('/\b(jap|japanese|jpn|nyaa|crunchyroll|cr[\s\.\-_]*web-?dl|subsplease|erai[\s\.\-_]*raws|toonshub)\b/i', $combined . ' ' . $tracker));
+        $orig_flag = $is_japanese ? '🇯🇵' : '🇺🇸';
+
+        // Construir lista de badges de audio
         $tags = [];
         if ($is_dubbed) $tags[] = 'Dubbed';
         if ($is_multi_audio) $tags[] = 'Multi Audio';
         elseif ($is_dual_audio) $tags[] = 'Dual Audio';
         if ($is_multi_subs || $is_sub_esp) $tags[] = 'Multi Subs';
 
-        // Construir lista de banderas detectadas
+        // Construir lista de banderas detectadas (SOLO para pistas de AUDIO del video)
         $flags = [];
-        if ($has_mx_flag || $explicit_latino) $flags[] = '🇲🇽';
-        if ($has_es_flag || $explicit_castellano) $flags[] = '🇪🇸';
-        if ($has_en_flag) $flags[] = '🇬🇧';
-        if ($has_jp_flag) $flags[] = '🇯🇵';
-        if ($has_pt_flag) $flags[] = '🇵🇹';
-        if ($has_fr_flag) $flags[] = '🇫🇷';
-        if ($has_it_flag) $flags[] = '🇮🇹';
-        if ($has_de_flag) $flags[] = '🇩🇪';
+        if ($is_audio_latino) $flags[] = '🇲🇽';
+        if ($explicit_castellano || ($has_es_flag && !$is_fansub_or_subrip)) $flags[] = '🇪🇸';
+        if ($has_en_flag && !$is_fansub_or_subrip) $flags[] = '🇬🇧';
+        if ($has_jp_flag || $is_japanese) $flags[] = '🇯🇵';
+        if ($has_pt_flag && !$is_fansub_or_subrip) $flags[] = '🇵🇹';
+        if ($has_fr_flag && !$is_fansub_or_subrip) $flags[] = '🇫🇷';
+        if ($has_it_flag && !$is_fansub_or_subrip) $flags[] = '🇮🇹';
+        if ($has_de_flag && !$is_fansub_or_subrip) $flags[] = '🇩🇪';
 
         $is_latino = false;
         $score = 0;
@@ -291,11 +299,8 @@ class TorrentioProvider implements ProviderInterface
         $tag_summary = !empty($tags) ? implode(' / ', $tags) : '';
         $flag_summary = !empty($flags) ? implode(' ', array_slice($flags, 0, 5)) : '';
 
-        $is_japanese = ($has_jp_flag || (bool)preg_match('/\b(jap|japanese|jpn|nyaa|crunchyroll|cr[\s\.\-_]*web-?dl|subsplease|erai[\s\.\-_]*raws|toonshub)\b/i', $combined . ' ' . $tracker));
-        $orig_flag = $is_japanese ? '🇯🇵' : '🇺🇸';
-
-        // CASO 1: Audio Español Latino confirmado (Multi Audio con 🇲🇽, CR WEB-DL MULTi de VARYG, o explícitamente Latino)
-        if ($explicit_latino || ($is_multi_audio && ($has_mx_flag || preg_match('/\bcr[\s\.\-_]*web-?dl[\s\.\-_]*multi\b/i', $display_title))) || (($is_dual_audio || $is_dubbed) && !$is_multi_subs && !$is_sub_esp && $has_mx_flag)) {
+        // CASO 1: Audio Español Latino confirmado (Audio doblado real)
+        if ($is_audio_latino) {
             $is_latino = true;
             $score = 60000;
             if (!in_array('🇲🇽', $flags)) array_unshift($flags, '🇲🇽');
@@ -318,11 +323,12 @@ class TorrentioProvider implements ProviderInterface
             $score = 26000;
             $language = $is_japanese ? "🇬🇧/🇯🇵 Dual Audio (Ing/Jap) + 🇲🇽 Sub Latino" : "🇺🇸 Dual Audio (Original) + 🇲🇽 Sub Latino";
         }
-        // CASO 4: Audio Original (Inglés o Japonés) con Multi-Subs o Sub Español
-        elseif (($is_multi_subs && ($has_mx_flag || $has_es_flag)) || $is_sub_esp) {
+        // CASO 4: Audio Original (Japonés o Inglés) con Multi-Subs o Sub Español
+        elseif (($is_multi_subs && ($has_mx_flag || $has_es_flag || $has_sub_latino)) || $is_sub_esp) {
             $is_latino = false;
-            $score = 20000;
-            $language = $is_japanese ? "🇯🇵 Audio Japonés + 🇲🇽 Sub Latino" : "🇺🇸 Audio Original + 🇲🇽 Sub Latino";
+            $score = 25000;
+            $sub_label = ($has_mx_flag || $has_sub_latino) ? "🇲🇽 Sub Latino" : "💬 Sub Español";
+            $language = $is_japanese ? "🇯🇵 Audio Japonés + {$sub_label}" : "🇺🇸 Audio Original + {$sub_label}";
         }
         // CASO 5: Multi Audio sin bandera explícita pero no francés
         elseif ($is_multi_audio) {
