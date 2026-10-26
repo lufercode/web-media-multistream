@@ -63,4 +63,13 @@ AddDefaultCharset UTF-8
     RewriteRule ^tools/ - [F,L]
     RewriteRule ^\.git - [F,L]
     RewriteRule ^data/movieplus/catalog\.db - [F,L]
+
+    # Protocolo Stremio Addon en PHP (100% compatible con InfinityFree, 0% Node.js, 0% límite de Render)
+    RewriteRule ^manifest\.json$ api/stremio.php?action=manifest [QSA,L]
+    RewriteRule ^stremio/manifest\.json$ api/stremio.php?action=manifest [QSA,L]
+    RewriteRule ^stremio/([^/]+)/manifest\.json$ api/stremio.php?action=manifest&config=$1 [QSA,L]
+    RewriteRule ^stremio/(?:([^/]+)/)?catalog/([^/]+)/([^/]+)\.json$ api/stremio.php?action=catalog&config=$1&type=$2&id=$3 [QSA,L]
+    RewriteRule ^catalog/([^/]+)/([^/]+)\.json$ api/stremio.php?action=catalog&type=$1&id=$2 [QSA,L]
+    RewriteRule ^stremio/(?:([^/]+)/)?stream/([^/]+)/([^/]+)\.json$ api/stremio.php?action=stream&config=$1&type=$2&id=$3 [QSA,L]
+    RewriteRule ^stream/([^/]+)/([^/]+)\.json$ api/stremio.php?action=stream&type=$1&id=$2 [QSA,L]
 </IfModule>

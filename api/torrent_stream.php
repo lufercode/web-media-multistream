@@ -43,19 +43,22 @@ function findNodeBinary(): string
  * Comprueba si el daemon Node.js está respondiendo; si no, lo inicia en segundo plano (en local).
  * Si es un servicio remoto (Render.com), sondea para comprobar si está despierto.
  */
-function ensureDaemonRunning(string $daemon_base, int $timeout_sec = 4, bool $is_remote = false): bool
+function ensureDaemonRunning(string $daemon_base, int $timeout_sec = 3, bool $is_remote = false): bool
 {
     $health = @http_get("{$daemon_base}/health", ['timeout' => 2]);
     if ($health && stripos($health, '"status":"ok"') !== false) {
         return true;
     }
 
-    // Si es un host remoto en Render/Koyeb, esperar unos segundos en caso de 'cold start' (despertando del sleep)
+    // Si es un host remoto en Render/Koyeb y responde con página de suspensión, salir de inmediato sin esperar
     if ($is_remote) {
+        if ($health && (stripos($health, 'suspended') !== false || stripos($health, 'Service Suspended') !== false)) {
+            return false;
+        }
         $start_time = microtime(true);
         while (microtime(true) - $start_time < $timeout_sec) {
-            usleep(500000); // 500ms
-            $check = @http_get("{$daemon_base}/health", ['timeout' => 2]);
+            usleep(400000); // 400ms
+            $check = @http_get("{$daemon_base}/health", ['timeout' => 1]);
             if ($check && stripos($check, '"status":"ok"') !== false) {
                 return true;
             }
@@ -130,8 +133,9 @@ if ($action === 'health') {
         echo json_encode([
             'status' => 'offline', 
             'isRemote' => $IS_REMOTE,
+            'fallback' => 'webtor',
             'error' => $IS_REMOTE 
-                ? 'El servidor de streaming en la nube está suspendido o iniciando.' 
+                ? 'El servidor de streaming en la nube alcanzó la cuota mensual de 5 GB o está en pausa. Conmutando a Webtor Cloud...' 
                 : 'No se pudo iniciar el daemon local de torrents'
         ]);
     }
@@ -147,13 +151,15 @@ if ($action === 'load') {
         exit;
     }
 
-    if (!ensureDaemonRunning($DAEMON_BASE, $IS_REMOTE ? 8 : 3, $IS_REMOTE)) {
-        http_response_code(503);
+    if (!ensureDaemonRunning($DAEMON_BASE, $IS_REMOTE ? 2 : 2, $IS_REMOTE)) {
+        http_response_code(200);
         echo json_encode([
-            'status' => 'error', 
+            'status' => 'offline',
+            'fallback' => 'webtor',
+            'isRemote' => $IS_REMOTE,
             'error' => $IS_REMOTE 
-                ? 'El servidor de streaming en la nube está despertando. Por favor espera unos segundos e intenta nuevamente.' 
-                : 'El servicio local de streaming no está disponible.'
+                ? 'El servidor de streaming en la nube alcanzó la cuota mensual de 5 GB o está en pausa. Conmutando a Webtor Cloud automáticamente...' 
+                : 'El servicio local de streaming no está disponible. Conmutando a Webtor Cloud...'
         ]);
         exit;
     }

@@ -223,4 +223,30 @@ web2-ftp/
 
 ---
 
+## 9. Modo Autónomo en InfinityFree (Gestión de Cuota de Ancho de Banda en Render)
+
+### 9.1. Causa Raíz de la Suspensión en Render
+- El plan gratuito de Render otorga **5 GB de ancho de banda de salida mensual**.
+- Al enrutar flujos de video completos a través del proxy (`/stream-proxy`, `/movieplus-stream` o torrent streaming), cada película consume entre 1 GB y 2 GB de ancho de banda, provocando que la cuota mensual se agote en pocos días y Render suspenda el servicio (`HTTP 503 Service Suspended`).
+
+### 9.2. Arquitectura de Modo Autónomo en InfinityFree (100% PHP)
+Para evitar que la web quede inoperativa cuando Render esté suspendido o en pausa:
+1. **Circuit Breaker Inteligente en Frontend (`assets/js/details_loader.js`):**
+   - La función `isRemoteStreamerOnline()` comprueba el estado de Render con timeout estricto de 2.5s y guarda el estado en `sessionStorage`.
+   - Si Render responde con suspensión (`503`), error de pago (`402`) o falla de red, el frontend conmuta automáticamente a **Modo Autónomo**.
+   - No intenta reescribir URLs hacia el proxy de Render ni consultar `/resolve`, evitando errores 503 o cuelgues.
+2. **Reproducción de Streams en Modo Autónomo:**
+   - Enlaces directos compatibles (Mp4Upload, Zilla Networks en AnimeFLV, OkRu, YourUpload, MixDrop, Yandex Disk en Movie+) se reproducen en Artplayer sin pasar por ningún proxy.
+   - Si un CDN externo bloquea por CORS (ej. Voe), el reproductor conmuta de forma suave e instantánea al `iframe` oficial con sandbox y bloqueador de popups.
+3. **Torrents en el Navegador con Webtor Cloud P2P:**
+   - Cuando el microservicio Node.js en Render está offline o suspendido, `openTorrentStreamModal` y `playWithLocalStreamer` conmutan automáticamente a `playWithWebtor()`.
+   - Se conecta al enjambre BitTorrent directamente en el navegador del usuario a través de WebTorrent / WebRTC con transcodificación en la nube sin costo de ancho de banda para el servidor.
+4. **Motor Nativo Stremio Addon en PHP (`api/stremio.php` + `.htaccess`):**
+   - Se implementó el protocolo completo de Stremio en PHP nativo: `manifest.json`, `/catalog/:type/:id.json` y `/stream/:type/:id.json`.
+   - Utiliza `ProviderManager.php` y `ResolverManager.php` para resolver streams y torrents.
+   - Al devolver únicamente respuestas ligeras en JSON (~15 KB por consulta), **no consume ancho de banda de video en el servidor**.
+   - Permite instalar el Addon en Stremio directamente desde la URL de InfinityFree: `https://<dominio>/manifest.json`.
+
+---
+
 *Este archivo sirve como brújula técnica permanente para cualquier mantenimiento, despliegue o ampliación de la plataforma.*

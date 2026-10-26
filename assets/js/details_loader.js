@@ -565,6 +565,52 @@ document.addEventListener('DOMContentLoaded', () => {
         document.head.appendChild(s);
     };
 
+    let _streamerHealthPromise = null;
+    const isRemoteStreamerOnline = async () => {
+        const streamerBase = (window.TORRENT_STREAMER_REMOTE_URL || '').trim().replace(/\/+$/, '');
+        if (!streamerBase) return false;
+
+        const cached = sessionStorage.getItem('remote_streamer_state');
+        const cachedTime = parseInt(sessionStorage.getItem('remote_streamer_checked') || '0', 10);
+        const now = Date.now();
+        const maxAge = cached === 'online' ? 600000 : 180000; // 10m si online, 3m si suspendido
+        if (cached && (now - cachedTime < maxAge)) {
+            return cached === 'online';
+        }
+
+        if (_streamerHealthPromise) return _streamerHealthPromise;
+
+        _streamerHealthPromise = (async () => {
+            try {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 2500);
+                const res = await fetch(`${streamerBase}/health`, { signal: controller.signal, mode: 'cors' });
+                clearTimeout(timer);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.status === 'ok') {
+                        sessionStorage.setItem('remote_streamer_state', 'online');
+                        sessionStorage.setItem('remote_streamer_checked', String(Date.now()));
+                        return true;
+                    }
+                }
+                console.warn(`[Streamer] Servidor remoto en ${streamerBase} no disponible (HTTP ${res.status}). Conmutando a Modo Autónomo en InfinityFree.`);
+                sessionStorage.setItem('remote_streamer_state', 'suspended');
+                sessionStorage.setItem('remote_streamer_checked', String(Date.now()));
+                return false;
+            } catch (e) {
+                console.warn(`[Streamer] Conexión fallida con ${streamerBase} (${e.message}). Conmutando a Modo Autónomo en InfinityFree.`);
+                sessionStorage.setItem('remote_streamer_state', 'suspended');
+                sessionStorage.setItem('remote_streamer_checked', String(Date.now()));
+                return false;
+            } finally {
+                _streamerHealthPromise = null;
+            }
+        })();
+
+        return _streamerHealthPromise;
+    };
+
     let _audioCtx = null;
     const _sourceNodeMap = new WeakMap();
 
@@ -1164,9 +1210,10 @@ document.addEventListener('DOMContentLoaded', () => {
             let resolvedServer = resData?.data?.server || server;
 
             const streamerBase = (window.TORRENT_STREAMER_REMOTE_URL || '').trim().replace(/\/+$/, '');
+            const isStreamerOnline = await isRemoteStreamerOnline();
 
-            // 1. Si PHP no pudo extraer el video directo (.m3u8/.mp4), consultar al microservicio Node.js (con resolvers nativos de Balandro)
-            if (!streamUrl && streamerBase && cleanUrl) {
+            // 1. Si PHP no pudo extraer el video directo (.m3u8/.mp4) y el microservicio Node está activo, consultar /resolve
+            if (!streamUrl && isStreamerOnline && streamerBase && cleanUrl) {
                 try {
                     const nodeRes = await fetch(`${streamerBase}/resolve?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(url)}`, { mode: 'cors' });
                     if (nodeRes.ok) {
@@ -1180,14 +1227,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (e) {}
             }
 
-            // 2. Si el stream proviene de un CDN externo que exige Referer o CORS (*.m3u8 / *.mp4),
-            // enrutarlo a través del Universal Stream Proxy de Render para reproducción limpia en Artplayer sin errores 403
-            if (streamUrl && streamerBase && !streamUrl.includes('movieplus-stream') && !streamUrl.includes('stream-proxy') && !streamUrl.includes('localhost') && !streamUrl.includes('127.0.0.1')) {
+            // 2. Si el stream proviene de un CDN externo y el microservicio proxy está online,
+            // enrutarlo a través del Universal Stream Proxy de Render (SOLO si es una URL externa http(s))
+            if (isStreamerOnline && streamUrl && streamerBase && streamUrl.startsWith('http') && !streamUrl.includes('movieplus-stream') && !streamUrl.includes('stream-proxy') && !streamUrl.includes('localhost') && !streamUrl.includes('127.0.0.1')) {
                 streamUrl = `${streamerBase}/stream-proxy?url=${encodeURIComponent(streamUrl)}&referer=${encodeURIComponent(cleanUrl || url)}`;
             }
 
             if (badgesEl) {
-                const streamBadge = streamUrl ? '<span class="badge bg-info text-dark ms-1"><i class="fas fa-bolt me-1"></i>Directo Pro (Sin Publicidad)</span>' : '';
+                let streamBadge = '';
+                if (streamUrl) {
+                    streamBadge = isStreamerOnline 
+                        ? '<span class="badge bg-info text-dark ms-1"><i class="fas fa-bolt me-1"></i>Directo Pro (Sin Publicidad)</span>' 
+                        : '<span class="badge bg-success text-white ms-1"><i class="fas fa-play-circle me-1"></i>Directo Autónomo</span>';
+                }
                 badgesEl.innerHTML = `
                     <span class="badge bg-primary text-white"><i class="fas fa-globe me-1"></i>${provLabel}</span>
                     <span class="badge bg-success text-white"><i class="fas fa-server me-1"></i>${resolvedServer}</span>
@@ -1927,12 +1979,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const badgesEl = document.getElementById('playerModalBadges');
 
         if (badgesEl) {
+            const isSuspended = sessionStorage.getItem('remote_streamer_state') === 'suspended';
+            const modeBadge = isSuspended
+                ? '<span class="badge bg-primary text-white"><i class="fas fa-cloud me-1"></i>Webtor Cloud (Modo Autónomo)</span>'
+                : '<span class="badge bg-primary text-white"><i class="fas fa-cloud me-1"></i>Webtor Online</span>';
+
             badgesEl.innerHTML = `
                 <span class="badge bg-warning text-dark"><i class="fas fa-magnet me-1"></i>${provLabel}</span>
-                <span class="badge bg-primary text-white"><i class="fas fa-cloud me-1"></i>Webtor Online</span>
+                ${modeBadge}
                 <span class="badge bg-info text-dark" id="torrentSeedsBadge"><i class="fas fa-spinner fa-spin me-1"></i>Conectando a BitTorrent...</span>
                 <button type="button" class="btn btn-xs btn-outline-secondary text-light py-0 px-2 ms-1 border-secondary" id="btnSwitchToLocalStreamer" style="font-size: 0.72rem;" title="Cambiar a reproductor local (Node.js)">
-                    <i class="fas fa-exchange-alt me-1"></i>Modo Local
+                    <i class="fas fa-exchange-alt me-1"></i>Modo Node.js
                 </button>
             `;
             const btnSwitch = document.getElementById('btnSwitchToLocalStreamer');
@@ -2805,32 +2862,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (err) {
             console.error('[TorrentStream] Error:', err);
-            const isSleepingCloud = isRemote && err.message && (err.message.includes('503') || err.message.includes('despertando') || err.message.includes('iniciando'));
-            artContainer.innerHTML = `
-                <div class="d-flex flex-column align-items-center justify-content-center p-4 text-center text-light" style="min-height: 500px; background: rgba(10, 10, 15, 0.95);">
-                    <i class="fas ${isSleepingCloud ? 'fa-cloud-sun text-warning' : 'fa-server text-danger'} mb-2" style="font-size: 2.8rem;"></i>
-                    <h5 class="fw-bold text-white mb-2">${isSleepingCloud ? 'Servidor Cloud en Suspensión (Render)' : 'Servidor de Streaming No Disponible'}</h5>
-                    <p class="text-secondary small mb-3" style="max-width: 500px;">
-                        ${isSleepingCloud 
-                            ? 'Los servidores gratuitos de Render se suspenden tras unos minutos sin uso y tardan aproximadamente <strong>30 segundos</strong> en arrancar en frío.<br><br>Por favor, espera unos instantes y pulsa <strong>Reintentar Conexión</strong>.' 
-                            : (err.message || 'El servicio de streaming no está respondiendo en este momento.')}
-                    </p>
-                    <div class="d-flex flex-wrap gap-2 justify-content-center">
-                        <button type="button" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm px-3" id="btnRetryTorrentStream">
-                            <i class="fas fa-redo me-1"></i> Reintentar Conexión
-                        </button>
-                        <a href="${magnetUrl}" class="btn btn-outline-warning btn-sm shadow-sm">
-                            <i class="fas fa-external-link-alt me-1"></i> Abrir en VLC / qBittorrent
-                        </a>
-                    </div>
-                </div>
-            `;
-            const btnRetry = document.getElementById('btnRetryTorrentStream');
-            if (btnRetry) {
-                btnRetry.addEventListener('click', () => {
-                    openTorrentStreamModal(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
-                });
-            }
+            console.log('%c⚡ [Auto-Fallback] Servidor remoto no disponible o en pausa. Conmutando automáticamente a Webtor Cloud P2P...', 'color: #f59e0b; font-weight: bold;');
+            sessionStorage.setItem('remote_streamer_state', 'suspended');
+            playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+            return;
         }
     };
 
@@ -2876,7 +2911,14 @@ document.addEventListener('DOMContentLoaded', () => {
             modal.show();
         }
 
-        await playWithLocalStreamer(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+        const forceWebtor = localStorage.getItem('torrent_player_mode') === 'webtor';
+        const isOnline = await isRemoteStreamerOnline();
+
+        if (forceWebtor || !isOnline) {
+            playWithWebtor(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+        } else {
+            await playWithLocalStreamer(magnetUrl, title, server, provLabel, thumbnail, episodeMeta);
+        }
     };
 
 
