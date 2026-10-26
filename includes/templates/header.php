@@ -71,9 +71,17 @@ $has_google_client_id = defined('GOOGLE_CLIENT_ID') && strpos(GOOGLE_CLIENT_ID, 
                     </form>
 
 <?php
-$stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRENT_STREAMER_REMOTE_URL)
+$is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)
+    || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+$site_host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$site_base_path = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/\\');
+$current_site_url = ($is_https ? 'https://' : 'http://') . $site_host . ($site_base_path !== '' ? $site_base_path : '');
+
+$stremio_addon_base_url = $current_site_url;
+$stremio_remote_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRENT_STREAMER_REMOTE_URL)
     ? rtrim(TORRENT_STREAMER_REMOTE_URL, '/')
-    : 'https://web-media-multistream.onrender.com';
+    : '';
 ?>
                     <button type="button" 
                             class="btn btn-sm d-inline-flex align-items-center gap-1 px-3 py-1 fw-semibold text-white text-nowrap flex-shrink-0"
@@ -473,16 +481,37 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                         </div>
                     </div>
 
-                    <!-- 4. URL del Manifiesto Generado -->
+                    <!-- 4. Selección de Servidor y URL del Manifiesto -->
                     <div class="p-3 rounded bg-black border border-secondary">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <span class="text-secondary" style="font-size: 0.72rem;">
-                                <i class="fas fa-link me-1 text-info"></i>URL de tu Addon configurado en Render:
-                            </span>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label fw-bold text-info small mb-0 d-flex align-items-center gap-1">
+                                <i class="fas fa-server"></i> 4. Servidor del Addon para Stremio:
+                            </label>
                             <span id="stremio-copy-badge" class="badge bg-success" style="display:none; font-size: 0.68rem;">¡Copiado!</span>
                         </div>
+                        
+                        <!-- Selector de Servidor: InfinityFree / Web Actual vs Nube Externa -->
+                        <div class="btn-group btn-group-sm w-100 mb-2" role="group">
+                            <input type="radio" class="btn-check" name="stremioServerMode" id="stremioServerLocal" value="local" checked autocomplete="off">
+                            <label class="btn btn-outline-info text-truncate py-1" for="stremioServerLocal" style="font-size: 0.75rem;">
+                                🌐 Este Hosting (InfinityFree / Web)
+                            </label>
+
+                            <input type="radio" class="btn-check" name="stremioServerMode" id="stremioServerRemote" value="remote" autocomplete="off">
+                            <label class="btn btn-outline-secondary text-truncate py-1" for="stremioServerRemote" style="font-size: 0.75rem;">
+                                ☁️ Servidor Nube (Koyeb / Render)
+                            </label>
+                        </div>
+
+                        <div id="stremio-remote-input-wrap" class="mb-2" style="display: none;">
+                            <label class="form-label text-secondary mb-1" style="font-size: 0.7rem;">
+                                URL de tu microservicio en la nube (ej. Koyeb o Render):
+                            </label>
+                            <input type="url" id="stremio-custom-remote-url" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="https://tu-app.koyeb.app" value="<?= htmlspecialchars(!empty($stremio_remote_base_url) ? $stremio_remote_base_url : 'https://web-media-multistream.onrender.com') ?>">
+                        </div>
+
                         <div class="input-group input-group-sm">
-                            <input type="text" id="stremio-manifest-url" class="form-control bg-dark text-light border-secondary font-monospace" style="font-size: 0.74rem;" readonly value="<?= htmlspecialchars($stremio_addon_base_url) ?>/stremio/default/manifest.json">
+                            <input type="text" id="stremio-manifest-url" class="form-control bg-dark text-light border-secondary font-monospace" style="font-size: 0.74rem;" readonly value="">
                             <button class="btn btn-outline-info" type="button" onclick="copyStremioManifestUrl()" title="Copiar enlace del manifiesto">
                                 <i class="fas fa-copy me-1"></i>Copiar URL
                             </button>
@@ -498,7 +527,7 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                         <button type="button" class="btn btn-sm btn-outline-light" onclick="copyStremioManifestUrl()">
                             <i class="fas fa-paste me-1"></i>Copiar para pegar en Stremio
                         </button>
-                        <a id="stremio-install-btn" href="stremio://<?= htmlspecialchars(preg_replace('#^https?://#i', '', $stremio_addon_base_url)) ?>/stremio/default/manifest.json" class="btn btn-sm fw-bold text-white px-3 shadow" style="background: linear-gradient(135deg, #7b2cbf 0%, #5a189a 100%); border: 1px solid #9d4edd;">
+                        <a id="stremio-install-btn" href="#" class="btn btn-sm fw-bold text-white px-3 shadow" style="background: linear-gradient(135deg, #7b2cbf 0%, #5a189a 100%); border: 1px solid #9d4edd;">
                             <i class="fas fa-rocket me-1"></i> Instalar en Stremio
                         </a>
                     </div>
@@ -509,7 +538,26 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
 
     <script>
     (function() {
-        const RENDER_BASE = <?= json_encode($stremio_addon_base_url) ?>;
+        const LOCAL_ORIGIN = (function() {
+            try {
+                const origin = window.location.origin;
+                const path = window.location.pathname.replace(/\/[^\/]*$/, '');
+                return (origin + path).replace(/\/+$/, '');
+            } catch(e) {
+                return <?= json_encode($current_site_url) ?>;
+            }
+        })();
+
+        let REMOTE_BASE = <?= json_encode(!empty($stremio_remote_base_url) ? $stremio_remote_base_url : 'https://web-media-multistream.onrender.com') ?>;
+
+        function getActiveBaseUrl() {
+            const isRemote = document.getElementById('stremioServerRemote')?.checked;
+            if (isRemote) {
+                const customRemote = document.getElementById('stremio-custom-remote-url')?.value.trim();
+                return (customRemote || REMOTE_BASE).replace(/\/+$/, '');
+            }
+            return LOCAL_ORIGIN;
+        }
 
         function updateStremioAddonLinks() {
             const allProvBoxes = document.querySelectorAll('.stremio-prov-chk');
@@ -525,7 +573,8 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
                 configSlug = 'p-' + selectedProvs.join('.') + '_l-' + selectedLangs.join('.');
             }
 
-            const httpsUrl = `${RENDER_BASE.replace(/\/$/, '')}/stremio/${configSlug}/manifest.json`;
+            const baseUrl = getActiveBaseUrl();
+            const httpsUrl = `${baseUrl}/stremio/${configSlug}/manifest.json`;
             const stremioProtoUrl = httpsUrl.replace(/^https?:\/\//i, 'stremio://');
 
             const urlInput = document.getElementById('stremio-manifest-url');
@@ -558,6 +607,18 @@ $stremio_addon_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRE
             document.querySelectorAll('.stremio-prov-chk, .stremio-lang-chk').forEach(chk => {
                 chk.addEventListener('change', updateStremioAddonLinks);
             });
+            document.querySelectorAll('input[name="stremioServerMode"]').forEach(radio => {
+                radio.addEventListener('change', () => {
+                    const isRemote = document.getElementById('stremioServerRemote')?.checked;
+                    const remoteWrap = document.getElementById('stremio-remote-input-wrap');
+                    if (remoteWrap) remoteWrap.style.display = isRemote ? 'block' : 'none';
+                    updateStremioAddonLinks();
+                });
+            });
+            const customRemoteInput = document.getElementById('stremio-custom-remote-url');
+            if (customRemoteInput) {
+                customRemoteInput.addEventListener('input', updateStremioAddonLinks);
+            }
             updateStremioAddonLinks();
         });
     })();
