@@ -2284,20 +2284,42 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         try {
-            let remoteBase = (window.TORRENT_STREAMER_REMOTE_URL || '').trim().replace(/\/$/, '');
+            let remoteNodes = Array.isArray(window.TORRENT_STREAMER_POOL) && window.TORRENT_STREAMER_POOL.length > 0
+                ? window.TORRENT_STREAMER_POOL.map(n => n.trim().replace(/\/$/, '')).filter(Boolean)
+                : (window.TORRENT_STREAMER_REMOTE_URL ? [window.TORRENT_STREAMER_REMOTE_URL.trim().replace(/\/$/, '')] : []);
+
+            let remoteBase = remoteNodes[0] || '';
             let loadData = null;
 
-            if (remoteBase) {
-                const directLoadRes = await fetch(`${remoteBase}/load`, {
-                    method: 'POST',
-                    mode: 'cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ magnet: magnetUrl })
-                });
-                if (!directLoadRes.ok) {
-                    throw new Error(`Servidor en la nube no respondió (HTTP ${directLoadRes.status})`);
+            if (remoteNodes.length > 0) {
+                let lastError = null;
+                for (const candidateNode of remoteNodes) {
+                    try {
+                        const directLoadRes = await fetch(`${candidateNode}/load`, {
+                            method: 'POST',
+                            mode: 'cors',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ magnet: magnetUrl }),
+                            signal: (AbortSignal && AbortSignal.timeout) ? AbortSignal.timeout(7000) : undefined
+                        });
+                        if (directLoadRes.ok) {
+                            const candidateData = await directLoadRes.json();
+                            if (candidateData && candidateData.status === 'success') {
+                                loadData = candidateData;
+                                remoteBase = candidateNode;
+                                break;
+                            }
+                        } else {
+                            console.warn(`[Cluster Failover] Nodo ${candidateNode} respondió con HTTP ${directLoadRes.status}. Probando siguiente nodo del pool...`);
+                        }
+                    } catch (nodeErr) {
+                        lastError = nodeErr;
+                        console.warn(`[Cluster Failover] Fallo en ${candidateNode}:`, nodeErr.message);
+                    }
                 }
-                loadData = await directLoadRes.json();
+                if (!loadData) {
+                    throw new Error(lastError ? `Servidores remotos no disponibles: ${lastError.message}` : 'No se pudo conectar a ningún nodo del cluster.');
+                }
             } else {
                 const loadRes = await fetch('api/torrent_stream.php', {
                     method: 'POST',

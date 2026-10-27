@@ -173,6 +173,7 @@ $similar_content = get_similar_content($id, $type, 18);
 <script>
     window.TORRENT_PLAYER_MODE = '<?= defined("TORRENT_PLAYER_MODE") ? TORRENT_PLAYER_MODE : "streamer" ?>';
     window.TORRENT_STREAMER_REMOTE_URL = '<?= defined("TORRENT_STREAMER_REMOTE_URL") ? TORRENT_STREAMER_REMOTE_URL : "" ?>';
+    window.TORRENT_STREAMER_POOL = <?= json_encode(defined("TORRENT_STREAMER_POOL") ? TORRENT_STREAMER_POOL : []) ?>;
 </script>
 <script src="assets/js/hls.min.js?v=<?= file_exists(__DIR__ . '/assets/js/hls.min.js') ? filemtime(__DIR__ . '/assets/js/hls.min.js') : '1.5.8' ?>"></script>
 <script src="assets/js/artplayer.js?v=<?= file_exists(__DIR__ . '/assets/js/artplayer.js') ? filemtime(__DIR__ . '/assets/js/artplayer.js') : '5.4.0' ?>"></script>

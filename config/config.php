@@ -43,10 +43,57 @@ define('GOOGLE_CLIENT_ID', '474518961918-0r1n29n2gegd6clc3etvidmp21t4c4kh.apps.g
 // 'webtor': Reproductor en la nube Webtor.io (Legacy / Fallback)
 define('TORRENT_PLAYER_MODE', 'streamer');
 
-// URL remota del microservicio de streaming de torrents (Opción 2 - Render.com / Koyeb)
-// Si está vacío (''), el sistema arranca y usa el servidor Node.js local (Laragon en http://127.0.0.1:8889).
-// Al desplegar en Render.com, coloca aquí la URL generada: ej. 'https://mi-streamer.onrender.com'
-define('TORRENT_STREAMER_REMOTE_URL', 'https://web-media-multistream-f4qa.onrender.com');
+// Cluster de Servidores Remotos (Render / Cloud) con Conmutación Inteligente y Failover
+define('TORRENT_STREAMER_POOL', [
+    'https://web-media-multistream-f4qa.onrender.com', // Nodo activo / backup actual
+    'https://web-media-multistream.onrender.com'       // Nodo principal (se reactiva el 1 de cada mes)
+]);
+
+if (!function_exists('get_active_torrent_streamer_url')) {
+    function get_active_torrent_streamer_url(): string {
+        static $resolved_url = null;
+        if ($resolved_url !== null) {
+            return $resolved_url;
+        }
+
+        $cache_file = sys_get_temp_dir() . '/streamer_active_node.txt';
+        if (file_exists($cache_file) && (time() - filemtime($cache_file) < 180)) {
+            $cached = trim((string)@file_get_contents($cache_file));
+            if (!empty($cached)) {
+                $resolved_url = $cached;
+                return $resolved_url;
+            }
+        }
+
+        $nodes = defined('TORRENT_STREAMER_POOL') ? TORRENT_STREAMER_POOL : [];
+        foreach ($nodes as $node) {
+            $node = rtrim($node, '/');
+            if (empty($node)) continue;
+
+            $ch = curl_init("{$node}/health");
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            $res = curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($code === 200 && $res && stripos($res, '"status":"ok"') !== false) {
+                $resolved_url = $node;
+                @file_put_contents($cache_file, $node);
+                return $resolved_url;
+            }
+        }
+
+        $resolved_url = !empty($nodes[0]) ? $nodes[0] : '';
+        @file_put_contents($cache_file, $resolved_url);
+        return $resolved_url;
+    }
+}
+
+// URL activa resuelta dinámicamente con conmutación inteligente
+define('TORRENT_STREAMER_REMOTE_URL', get_active_torrent_streamer_url());
 
 // Interruptores de Proveedores (Habilitar / Deshabilitar fuentes individuales)
 $PROVIDERS_CONFIG = [
