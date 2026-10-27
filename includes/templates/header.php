@@ -490,16 +490,16 @@ $stremio_remote_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORR
                             <span id="stremio-copy-badge" class="badge bg-success" style="display:none; font-size: 0.68rem;">¡Copiado!</span>
                         </div>
                         
-                        <!-- Selector de Servidor: InfinityFree / Web Actual vs Nube Externa -->
+                        <!-- Selector de Servidor: Cluster Nube (Recomendado para Stremio) vs Hosting Web -->
                         <div class="btn-group btn-group-sm w-100 mb-2" role="group">
-                            <input type="radio" class="btn-check" name="stremioServerMode" id="stremioServerLocal" value="local" checked autocomplete="off">
-                            <label class="btn btn-outline-info text-truncate py-1" for="stremioServerLocal" style="font-size: 0.75rem;">
-                                🌐 Este Hosting (InfinityFree / Web)
+                            <input type="radio" class="btn-check" name="stremioServerMode" id="stremioServerRemote" value="remote" checked autocomplete="off">
+                            <label class="btn btn-outline-info text-truncate py-1" for="stremioServerRemote" style="font-size: 0.75rem;">
+                                ☁️ Servidor Nube (Render Activo)
                             </label>
 
-                            <input type="radio" class="btn-check" name="stremioServerMode" id="stremioServerRemote" value="remote" autocomplete="off">
-                            <label class="btn btn-outline-secondary text-truncate py-1" for="stremioServerRemote" style="font-size: 0.75rem;">
-                                ☁️ Servidor Nube (Koyeb / Render)
+                            <input type="radio" class="btn-check" name="stremioServerMode" id="stremioServerLocal" value="local" autocomplete="off">
+                            <label class="btn btn-outline-secondary text-truncate py-1" for="stremioServerLocal" style="font-size: 0.75rem;">
+                                🌐 Hosting Web (PHP)
                             </label>
                         </div>
 
