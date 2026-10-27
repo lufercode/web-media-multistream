@@ -17,7 +17,7 @@
         var RENDER_PING = <?= json_encode(
             (defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORRENT_STREAMER_REMOTE_URL)
                 ? rtrim(TORRENT_STREAMER_REMOTE_URL, '/')
-                : 'https://web-media-multistream.onrender.com')
+                : 'https://web-media-multistream-f4qa.onrender.com')
             . '/ping'
         ) ?>;
         try {
@@ -507,7 +507,7 @@ $stremio_remote_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORR
                             <label class="form-label text-secondary mb-1" style="font-size: 0.7rem;">
                                 URL de tu microservicio en la nube (ej. Koyeb o Render):
                             </label>
-                            <input type="url" id="stremio-custom-remote-url" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="https://tu-app.koyeb.app" value="<?= htmlspecialchars(!empty($stremio_remote_base_url) ? $stremio_remote_base_url : 'https://web-media-multistream.onrender.com') ?>">
+                            <input type="url" id="stremio-custom-remote-url" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="https://tu-app.koyeb.app" value="<?= htmlspecialchars(!empty($stremio_remote_base_url) ? $stremio_remote_base_url : 'https://web-media-multistream-f4qa.onrender.com') ?>">
                         </div>
 
                         <div class="input-group input-group-sm">
@@ -548,7 +548,7 @@ $stremio_remote_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORR
             }
         })();
 
-        let REMOTE_BASE = <?= json_encode(!empty($stremio_remote_base_url) ? $stremio_remote_base_url : 'https://web-media-multistream.onrender.com') ?>;
+        let REMOTE_BASE = <?= json_encode(!empty($stremio_remote_base_url) ? $stremio_remote_base_url : 'https://web-media-multistream-f4qa.onrender.com') ?>;
 
         function getActiveBaseUrl() {
             const isRemote = document.getElementById('stremioServerRemote')?.checked;
