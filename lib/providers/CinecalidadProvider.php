@@ -9,6 +9,9 @@ class CinecalidadProvider implements ProviderInterface
      * Cualquier dominio puede contener tanto servidores de streaming como torrents (4K/1080p) y descargas directas.
      */
     private array $hosts = [
+        'https://cine-calidad.mx/',
+        'https://www.cinecalidad.vg/',
+        'https://www.cinecalidad.am/',
         'https://www.cinecalidad.ro/'
     ];
 

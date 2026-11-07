@@ -365,8 +365,8 @@ export async function resolveEmbedToHls(embedUrl, customReferer = '') {
             }
         }
 
-        // 2. Voe.sx y espejos dinámicos (sigue redirección JS window.location.href y decodifica application/json)
-        if (/(?:voe\.sx|voesx|jilliandescribecompany|christopheruntilpoint|walterprettytheir|catherineupdated|megankiddifference)/i.test(lower)) {
+        // 2. Voe.sx y espejos dinámicos (sigue redirección JS window.location.href y decodifica application/json según Balandro)
+        if (/(?:voe\.sx|voesx|voe-|voeunblock|un-block-voe|v-o-e-unblock|edwardarriveoften|reputationsheriffkennethsand|fittingcentermondaysunday|tinycat-voe-fashion|scatch176duplicities|yodelswartlike|nectareousoverelate|kathleenmemberhistory|apinchcaseation|strawberriesporail|cigarlessarefy|crownmakermacaronicism|generatesnitrosate|figeterpiazine|timberwoodanotia|tubelessceliolymph|wolfdyslectic|metagnathtuggers|chromotypic|gamoneinterrupted|rationalityaloelike|valeronevijao|availedsmallest|prefulfilloverdoor|jayservicestuff|brookethoughi|jilliandescribecompany|christopheruntilpoint|walterprettytheir|catherineupdated|megankiddifference)/i.test(lower)) {
             let voeUrl = embedUrl;
             let voeHost = host;
             let html = await httpGet(voeUrl, { timeout: 3800, headers: { Referer: customReferer || `${host}/` } });
@@ -749,7 +749,7 @@ async function scrapeLaMovie(meta, baseUrl = '') {
                 });
             }
 
-            // Si LaMovie incluye torrents en downloads, inspeccionar también el nombre dentro del magnet y la calidad (ej. "Dual 1080p" / "1080P-Dual-Lat")
+            // Si LaMovie incluye torrents en downloads, extraer magnet e infoHash con metadatos reales
             for (const dl of (playerData?.data?.downloads || [])) {
                 const rawDlUrl = String(dl.url || '');
                 const magM = rawDlUrl.match(/magnet:\?xt=urn:btih:([a-fA-F0-9]{40})/i);
@@ -763,10 +763,19 @@ async function scrapeLaMovie(meta, baseUrl = '') {
                     const dnMatch = decMag.match(/[?&]dn=([^&]+)/i);
                     const releaseName = dnMatch ? decodeURIComponent(dnMatch[1].replace(/\+/g, ' ')) : (meta.title || 'Movie');
                     const flagLine = (langInfo.langKey === 'castellano') ? '🇪🇸 Spanish' : 'Dual Audio / 🇲🇽';
+
+                    let size = '';
+                    const xlM = decMag.match(/[?&]xl=(\d+)/i);
+                    if (xlM) {
+                        size = formatBytes(xlM[1]);
+                    } else {
+                        size = parseTorrentSize(decMag);
+                    }
+
                     const formattedTitle = formatTorrentioTitle({
                         releaseTitle: releaseName,
-                        seeders: 45,
-                        size: '2.05 GB',
+                        seeders: 0,
+                        size: size,
                         tracker: 'LaMovie P2P',
                         flagLine
                     });
@@ -777,7 +786,11 @@ async function scrapeLaMovie(meta, baseUrl = '') {
                         sources: STREMIO_TRACKER_SOURCES,
                         _lang: langInfo.langKey,
                         _prov: 'lamovie_p2p',
-                        _seeders: 45
+                        _seeders: 0,
+                        _size: size,
+                        _releaseTitle: releaseName,
+                        _tracker: 'LaMovie P2P',
+                        _flagLine: flagLine
                     });
                 }
             }
@@ -1117,50 +1130,58 @@ async function scrapeLatAnime(meta, baseUrl = '') {
 }
 
 /**
- * 4. Scraper: Cuevana 3 / PoseidonHD (__NEXT_DATA__ JSON)
+ * 4. Scraper: Cuevana 3 / PoseidonHD (__NEXT_DATA__ JSON — Soporte espejos actualizados Balandro)
  */
 async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana', baseUrl = '') {
-    const host = providerId === 'poseidonhd' ? 'https://poseidonhd2.co' : 'https://www.cuevana-3.mx';
+    const candidateHosts = providerId === 'poseidonhd'
+        ? ['https://poseidonhd2.co']
+        : ['https://cuevanapro.org', 'https://ver.cuevana3.one', 'https://www.cuevana-3.mx'];
     const providerLabel = providerId === 'poseidonhd' ? 'PoseidonHD' : 'Cuevana 3';
 
     const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
     let matchedItem = null;
+    let host = candidateHosts[0];
 
-    for (const q of queries.slice(0, 2)) {
-        const searchUrl = `${host}/search?q=${encodeURIComponent(q)}`;
-        const html = await httpGet(searchUrl, { timeout: 4500 });
-        if (!html) continue;
+    for (const candHost of candidateHosts) {
+        for (const q of queries.slice(0, 2)) {
+            const searchUrl = `${candHost}/search?q=${encodeURIComponent(q)}`;
+            const html = await httpGet(searchUrl, { timeout: 3800 });
+            if (!html) continue;
 
-        const mNext = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
-        if (!mNext) continue;
+            const mNext = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+            if (!mNext) continue;
 
-        let nextData = null;
-        try {
-            nextData = JSON.parse(mNext[1]);
-        } catch (e) {
-            continue;
-        }
-
-        const items = [
-            ...(nextData?.props?.pageProps?.movies || []),
-            ...(nextData?.props?.pageProps?.series || [])
-        ];
-
-        for (const item of items) {
-            const rawSlug = item?.url?.slug || '';
-            const isMovieItem = rawSlug.startsWith('movies/') || rawSlug.startsWith('pelicula/');
-            if (meta.type === 'movie' && !isMovieItem) continue;
-            if (meta.type !== 'movie' && isMovieItem) continue;
-
-            if (meta.tmdbId && Number(item.TMDbId) === Number(meta.tmdbId)) {
-                matchedItem = item;
-                break;
+            let nextData = null;
+            try {
+                nextData = JSON.parse(mNext[1]);
+            } catch (e) {
+                continue;
             }
-            const candTitle = item?.titles?.name || '';
-            if (isTitleMatch(meta.title, candTitle) || isTitleMatch(meta.originalTitle, candTitle)) {
-                matchedItem = item;
-                break;
+
+            const items = [
+                ...(nextData?.props?.pageProps?.movies || []),
+                ...(nextData?.props?.pageProps?.series || [])
+            ];
+
+            for (const item of items) {
+                const rawSlug = item?.url?.slug || '';
+                const isMovieItem = rawSlug.startsWith('movies/') || rawSlug.startsWith('pelicula/');
+                if (meta.type === 'movie' && !isMovieItem) continue;
+                if (meta.type !== 'movie' && isMovieItem) continue;
+
+                if (meta.tmdbId && Number(item.TMDbId) === Number(meta.tmdbId)) {
+                    matchedItem = item;
+                    host = candHost;
+                    break;
+                }
+                const candTitle = item?.titles?.name || '';
+                if (isTitleMatch(meta.title, candTitle) || isTitleMatch(meta.originalTitle, candTitle)) {
+                    matchedItem = item;
+                    host = candHost;
+                    break;
+                }
             }
+            if (matchedItem) break;
         }
         if (matchedItem) break;
     }
@@ -1747,6 +1768,101 @@ function classifyTorrentLanguage(rawTitle = '', isAnime = false) {
 }
 
 /**
+ * Analiza y extrae seeders de forma robusta soportando separadores de miles y sufijos (ej: "1,250", "2.1k", "👤 80")
+ */
+function parseSeeders(text) {
+    if (!text) return 0;
+    const str = String(text);
+    const m = str.match(/(?:👤|seeds?|seeders?|peers?|s:)\s*([0-9]+(?:[.,][0-9]+)*\s*k?)/iu);
+    if (!m) {
+        const directNum = str.match(/\b([0-9]+)\s*seeds?\b/i);
+        if (directNum) return parseInt(directNum[1], 10) || 0;
+        return 0;
+    }
+    let val = m[1].trim().toLowerCase();
+    if (val.endsWith('k')) {
+        return Math.round(parseFloat(val.replace('k', '').replace(',', '.')) * 1000) || 0;
+    }
+    val = val.replace(/[,.]/g, '');
+    const num = parseInt(val, 10);
+    return isNaN(num) ? 0 : num;
+}
+
+/**
+ * Normaliza unidades de tamaño binarias a decimales estándar (GiB -> GB, MiB -> MB) para consistencia en Stremio
+ */
+function normalizeSizeUnit(sizeStr) {
+    if (!sizeStr) return '';
+    return String(sizeStr).trim()
+        .replace(/GiB/i, 'GB')
+        .replace(/MiB/i, 'MB')
+        .replace(/TiB/i, 'TB')
+        .replace(/KiB/i, 'KB');
+}
+
+/**
+ * Analiza y extrae el tamaño de un torrent soportando GB, MB, TB, GiB, MiB, etc.
+ */
+function parseTorrentSize(text) {
+    if (!text) return '';
+    const str = String(text);
+    // 1. Con emoji 💾
+    const mEmoji = str.match(/💾\s*([0-9]+(?:[.,][0-9]+)?\s*(?:[TGMK]i?B|bytes?))/iu);
+    if (mEmoji) {
+        return normalizeSizeUnit(mEmoji[1].trim());
+    }
+    // 2. Con delimitadores o corchetes: [2.4 GB] o (1.5 GiB) o • 2.4 GB
+    const mDelim = str.match(/(?:\[|\(|\•|\b)([0-9]+(?:[.,][0-9]+)?\s*(?:GB|MB|TB|KB|GiB|MiB|TiB|KiB))\b/i);
+    if (mDelim) {
+        return normalizeSizeUnit(mDelim[1].trim());
+    }
+    return '';
+}
+
+/**
+ * Convierte bytes numéricos a cadena legible (MB, GB, TB)
+ */
+function formatBytes(bytes) {
+    const num = Number(bytes);
+    if (!num || isNaN(num) || num <= 0) return '';
+    if (num >= 1024 * 1024 * 1024 * 1024) return (num / (1024 * 1024 * 1024 * 1024)).toFixed(2) + ' TB';
+    if (num >= 1024 * 1024 * 1024) return (num / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    if (num >= 1024 * 1024) return (num / (1024 * 1024)).toFixed(1) + ' MB';
+    if (num >= 1024) return (num / 1024).toFixed(0) + ' KB';
+    return num + ' B';
+}
+
+/**
+ * Scraper en tiempo real de trackers públicos para infoHashes sin seeders
+ */
+async function scrapeLiveSeeders(infoHash) {
+    if (!infoHash || infoHash.length !== 40) return 0;
+    try {
+        let binary = '';
+        for (let i = 0; i < infoHash.length; i += 2) {
+            binary += '%' + infoHash.substr(i, 2);
+        }
+        const trackerUrls = [
+            `http://tracker.opentrackr.org:1337/scrape?info_hash=${binary}`,
+            `http://open.stealth.si:80/scrape?info_hash=${binary}`
+        ];
+        for (const trUrl of trackerUrls) {
+            try {
+                const res = await httpGet(trUrl, { timeout: 1500 });
+                if (res) {
+                    const m = String(res).match(/completei(\d+)e/);
+                    if (m) {
+                        const seeds = parseInt(m[1], 10);
+                        if (seeds > 0) return seeds;
+                    }
+                }
+            } catch (e) {}
+        }
+    } catch (e) {}
+    return 0;
+}
+
+/**
  * Formatea el título de cualquier torrent P2P siguiendo el estándar visual exacto de Torrentio:
  * Línea 1: Nombre de la release / archivo
  * Línea 2: 👤 <seeds> 💾 <size> ⚙️ <fuente>
@@ -1813,13 +1929,9 @@ async function scrapeTorrentio(meta) {
             const qMatch = (rawName + ' ' + rawTitle).match(/\b(2160p|4k|1080p|720p|480p)\b/i);
             const quality = qMatch ? qMatch[1].toUpperCase() : 'HD';
 
-            // Extraer seeders
-            const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
-            const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
-
-            // Extraer tamaño
-            const sizeMatch = rawTitle.match(/💾\s*([0-9.,]+\s*(?:GB|MB|TB|KB))/iu);
-            const size = sizeMatch ? sizeMatch[1].trim() : '';
+            // Extraer seeders y tamaño de forma robusta
+            const seeders = parseSeeders(rawTitle);
+            const size = parseTorrentSize(rawTitle);
 
             // Extraer tracker de origen (ej. Cinecalidad, MejorTorrent, 1337x, TorrentGalaxy, ThePirateBay, YTS)
             const trackerMatch = rawTitle.match(/⚙️\s*([^\s\n\r•]+)/u);
@@ -1866,7 +1978,11 @@ async function scrapeTorrentio(meta) {
                 sources: mergedSources,
                 _lang: langInfo.langKey,
                 _prov: 'torrentio',
-                _seeders: seeders
+                _seeders: seeders,
+                _size: size,
+                _releaseTitle: releaseLine,
+                _tracker: trackerShort,
+                _flagLine: flagLine
             };
             if (fileIdx !== undefined) streamObj.fileIdx = fileIdx;
             if (s.behaviorHints) streamObj.behaviorHints = s.behaviorHints;
@@ -1919,10 +2035,11 @@ async function scrapeYts(meta) {
             const qual = (t.quality || '1080p').toUpperCase();
             const vType = (t.type || 'BLURAY').toUpperCase();
             const releaseTitle = `${movie.title_long || meta.title} [${qual} ${vType}]`;
+            const ytsSize = t.size || formatBytes(t.size_bytes);
             const formattedTitle = formatTorrentioTitle({
                 releaseTitle,
                 seeders: t.seeds || 0,
-                size: t.size || '',
+                size: ytsSize,
                 tracker: 'YTS',
                 flagLine: '🇺🇸 English'
             });
@@ -1934,7 +2051,11 @@ async function scrapeYts(meta) {
                 sources: STREMIO_TRACKER_SOURCES,
                 _lang: 'sub',
                 _prov: 'yts',
-                _seeders: t.seeds || 0
+                _seeders: t.seeds || 0,
+                _size: ytsSize,
+                _releaseTitle: releaseTitle,
+                _tracker: 'YTS',
+                _flagLine: '🇺🇸 English'
             });
         }
     }
@@ -1950,10 +2071,8 @@ async function scrapeYts(meta) {
                 const rawTitle = s.title || '';
                 const qMatch = ((s.name || '') + ' ' + rawTitle).match(/\b(2160p|4k|1080p|720p)\b/i);
                 const qual = qMatch ? qMatch[1].toUpperCase() : '1080P';
-                const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
-                const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
-                const sizeMatch = rawTitle.match(/💾\s*([0-9.,]+\s*(?:GB|MB|TB|KB))/iu);
-                const size = sizeMatch ? sizeMatch[1].trim() : '';
+                const seeders = parseSeeders(rawTitle);
+                const size = parseTorrentSize(rawTitle);
                 const rawLines = rawTitle.split('\n').map(l => l.trim()).filter(Boolean);
                 const releaseTitle = rawLines[0] || `${meta.title} [${qual}]`;
 
@@ -1972,7 +2091,11 @@ async function scrapeYts(meta) {
                     sources: STREMIO_TRACKER_SOURCES,
                     _lang: 'sub',
                     _prov: 'yts',
-                    _seeders: seeders
+                    _seeders: seeders,
+                    _size: size,
+                    _releaseTitle: releaseTitle,
+                    _tracker: 'YTS',
+                    _flagLine: '🇺🇸 English'
                 });
             }
         }
@@ -2004,7 +2127,8 @@ async function scrapeNyaa(meta) {
         const title = block.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] || block.match(/<title>(.*?)<\/title>/)?.[1] || '';
         const hash = block.match(/<nyaa:infoHash>([a-fA-F0-9]{40})<\/nyaa:infoHash>/)?.[1]?.toLowerCase();
         const seeders = parseInt(block.match(/<nyaa:seeders>(\d+)<\/nyaa:seeders>/)?.[1] || '0', 10);
-        const size = block.match(/<nyaa:size>(.*?)<\/nyaa:size>/)?.[1] || '';
+        const rawSize = block.match(/<nyaa:size>(.*?)<\/nyaa:size>/)?.[1] || '';
+        const size = normalizeSizeUnit(rawSize);
         if (!hash || seeders < 1) continue;
 
         const langInfo = classifyTorrentLanguage(title, true);
@@ -2026,7 +2150,11 @@ async function scrapeNyaa(meta) {
             sources: STREMIO_TRACKER_SOURCES,
             _lang: langInfo.langKey,
             _prov: 'nyaa',
-            _seeders: seeders
+            _seeders: seeders,
+            _size: size,
+            _releaseTitle: title,
+            _tracker: 'Nyaa.si',
+            _flagLine: langInfo.flagLine
         });
     }
     return streams;
@@ -2089,14 +2217,14 @@ async function scrapeTpb(meta) {
             seen.add(hash);
 
             const langInfo = classifyTorrentLanguage(name, meta.isAnime);
-            const sizeGb = ((parseInt(item.size || '0', 10)) / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+            const sizeStr = formatBytes(item.size);
             const qMatch = name.match(/\b(2160p|4k|1080p|720p)\b/i);
             const quality = qMatch ? qMatch[1].toUpperCase() : '1080P';
 
             const formattedTitle = formatTorrentioTitle({
                 releaseTitle: name,
                 seeders,
-                size: sizeGb,
+                size: sizeStr,
                 tracker: 'ThePirateBay',
                 flagLine: langInfo.flagLine
             });
@@ -2108,7 +2236,11 @@ async function scrapeTpb(meta) {
                 sources: STREMIO_TRACKER_SOURCES,
                 _lang: langInfo.langKey,
                 _prov: 'tpb',
-                _seeders: seeders
+                _seeders: seeders,
+                _size: sizeStr,
+                _releaseTitle: name,
+                _tracker: 'ThePirateBay',
+                _flagLine: langInfo.flagLine
             });
         }
     }
@@ -2125,10 +2257,8 @@ async function scrapeTpb(meta) {
             const langInfo = classifyTorrentLanguage(rawTitle, meta.isAnime);
             const qMatch = (rawName + ' ' + rawTitle).match(/\b(2160p|4k|1080p|720p|480p|360p)\b/i);
             const quality = qMatch ? qMatch[1].toUpperCase() : '1080P';
-            const seedMatch = rawTitle.match(/👤\s*(\d+)/u);
-            const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
-            const sizeMatch = rawTitle.match(/💾\s*([0-9.,]+\s*(?:GB|MB|TB|KB))/iu);
-            const size = sizeMatch ? sizeMatch[1].trim() : '';
+            const seeders = parseSeeders(rawTitle);
+            const size = parseTorrentSize(rawTitle);
 
             const rawLines = rawTitle.split('\n').map(l => l.trim()).filter(Boolean);
             const metaLineIdx = rawLines.findIndex(l => /👤|💾|⚙️/u.test(l));
@@ -2161,7 +2291,11 @@ async function scrapeTpb(meta) {
                 sources: Array.from(new Set([...(Array.isArray(s.sources) ? s.sources : []), ...STREMIO_TRACKER_SOURCES])),
                 _lang: langInfo.langKey,
                 _prov: 'tpb',
-                _seeders: seeders
+                _seeders: seeders,
+                _size: size,
+                _releaseTitle: releaseTitle,
+                _tracker: 'ThePirateBay',
+                _flagLine: flagLine
             };
             if (typeof s.fileIdx === 'number') streamObj.fileIdx = s.fileIdx;
             if (s.behaviorHints) streamObj.behaviorHints = s.behaviorHints;
@@ -2182,10 +2316,10 @@ async function scrapeTpb(meta) {
 }
 
 /**
- * 10. Scraper: Cinecalidad (https://www.cinecalidad.ro) — Torrents Dual Latino (/protect/ver.php + data-url) y Embeds HLS
+ * 10. Scraper: Cinecalidad (Torrents Dual Latino y Embeds HLS — Soporte multi-espejo según Balandro)
  */
 async function scrapeCinecalidad(meta) {
-    const host = 'https://www.cinecalidad.ro';
+    const candidateHosts = ['https://cine-calidad.mx', 'https://www.cinecalidad.vg', 'https://www.cinecalidad.am', 'https://www.cinecalidad.ro'];
     const searchTerms = Array.from(new Set([
         meta.title,
         meta.originalTitle,
@@ -2193,48 +2327,55 @@ async function scrapeCinecalidad(meta) {
     ].map(s => String(s || '').replace(/[^\w\s]/gu, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)));
 
     let detailUrl = null;
+    let successfulHost = candidateHosts[0];
 
-    for (const term of searchTerms.slice(0, 2)) {
-        const html = await httpGet(`${host}/?s=${encodeURIComponent(term)}`, { timeout: 4500 });
-        if (!html || html.length < 300) continue;
+    for (const host of candidateHosts) {
+        for (const term of searchTerms.slice(0, 2)) {
+            const html = await httpGet(`${host}/?s=${encodeURIComponent(term)}`, { timeout: 3500 });
+            if (!html || html.length < 300) continue;
 
-        if (meta.type === 'movie') {
-            // Cinecalidad minifica HTML sin comillas en atributos (href=https://...)
-            const linkMatches = [...html.matchAll(/<a[^>]+href=(["']?)(https?:\/\/[^"'\s>]*(?:pelicula|movies)\/[^"'\s>]+)\1[^>]*>(.*?)<\/a>/gis)];
-            for (const m of linkMatches) {
-                const href = m[2];
-                const inner = m[3];
-                const altM = inner.match(/alt=(["']?)([^"'>]+)\1/i);
-                const srM = inner.match(/<span[^>]*class=["']?sr-only["']?[^>]*>(.*?)<\/span>/is);
-                const rawTitle = (altM ? altM[2] : (srM ? srM[1] : inner.replace(/<[^>]+>/g, '')))
-                    .replace(/\s*\((?:19|20)\d{2}\).*/, '')
-                    .replace(/\[.*?\]/g, '')
-                    .trim();
-                const candYear = (rawTitle + ' ' + href).match(/\b(19\d{2}|20\d{2})\b/)?.[1] || null;
-                if (rawTitle && (isTitleMatch(meta.title, rawTitle, meta.year, candYear) || isTitleMatch(meta.originalTitle, rawTitle, meta.year, candYear))) {
-                    detailUrl = href;
-                    break;
-                }
-            }
-        } else {
-            const articles = [...html.matchAll(/<article[^>]*>(.*?)<\/article>/gis)];
-            for (const artM of articles) {
-                const art = artM[1];
-                const hm = art.match(/href=(["']?)(https?:\/\/[^"'\s>]*\/(?:serie|series|tv)\/[^"'\s>]+)\1/i);
-                if (!hm) continue;
-                const seriesUrl = hm[2];
-                const sm = art.match(/<span[^>]*class=["']?sr-only["']?[^>]*>(.*?)<\/span>/is) || art.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/is);
-                const rawTitle = (sm ? sm[1].replace(/<[^>]+>/g, '') : '').replace(/\s*\((?:19|20)\d{2}\).*/, '').trim();
-                if (rawTitle && (isTitleMatch(meta.title, rawTitle) || isTitleMatch(meta.originalTitle, rawTitle))) {
-                    const sHtml = await httpGet(seriesUrl, { timeout: 4500 });
-                    if (sHtml) {
-                        const epRe = new RegExp(`href=(["']?)(https?:\\/\\/[^"'\\s>]*\\/(?:episodio|episodes)\\/[^"'\\s>]*-${meta.season}x${meta.episode}\\/?)\\1`, 'i');
-                        const epM = sHtml.match(epRe);
-                        if (epM) detailUrl = epM[2];
+            if (meta.type === 'movie') {
+                const linkMatches = [...html.matchAll(/<a[^>]+href=(["']?)(https?:\/\/[^"'\s>]*(?:pelicula|movies)\/[^"'\s>]+)\1[^>]*>(.*?)<\/a>/gis)];
+                for (const m of linkMatches) {
+                    const href = m[2];
+                    const inner = m[3];
+                    const altM = inner.match(/alt=(["']?)([^"'>]+)\1/i);
+                    const srM = inner.match(/<span[^>]*class=["']?sr-only["']?[^>]*>(.*?)<\/span>/is);
+                    const rawTitle = (altM ? altM[2] : (srM ? srM[1] : inner.replace(/<[^>]+>/g, '')))
+                        .replace(/\s*\((?:19|20)\d{2}\).*/, '')
+                        .replace(/\[.*?\]/g, '')
+                        .trim();
+                    const candYear = (rawTitle + ' ' + href).match(/\b(19\d{2}|20\d{2})\b/)?.[1] || null;
+                    if (rawTitle && (isTitleMatch(meta.title, rawTitle, meta.year, candYear) || isTitleMatch(meta.originalTitle, rawTitle, meta.year, candYear))) {
+                        detailUrl = href;
+                        successfulHost = host;
+                        break;
                     }
-                    break;
+                }
+            } else {
+                const articles = [...html.matchAll(/<article[^>]*>(.*?)<\/article>/gis)];
+                for (const artM of articles) {
+                    const art = artM[1];
+                    const hm = art.match(/href=(["']?)(https?:\/\/[^"'\s>]*\/(?:serie|series|tv)\/[^"'\s>]+)\1/i);
+                    if (!hm) continue;
+                    const seriesUrl = hm[2];
+                    const sm = art.match(/<span[^>]*class=["']?sr-only["']?[^>]*>(.*?)<\/span>/is) || art.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/is);
+                    const rawTitle = (sm ? sm[1].replace(/<[^>]+>/g, '') : '').replace(/\s*\((?:19|20)\d{2}\).*/, '').trim();
+                    if (rawTitle && (isTitleMatch(meta.title, rawTitle) || isTitleMatch(meta.originalTitle, rawTitle))) {
+                        const sHtml = await httpGet(seriesUrl, { timeout: 3500 });
+                        if (sHtml) {
+                            const epRe = new RegExp(`href=(["']?)(https?:\\/\\/[^"'\\s>]*\\/(?:episodio|episodes)\\/[^"'\\s>]*-${meta.season}x${meta.episode}\\/?)\\1`, 'i');
+                            const epM = sHtml.match(epRe);
+                            if (epM) {
+                                detailUrl = epM[2];
+                                successfulHost = host;
+                            }
+                        }
+                        break;
+                    }
                 }
             }
+            if (detailUrl) break;
         }
         if (detailUrl) break;
     }
@@ -2260,10 +2401,19 @@ async function scrapeCinecalidad(meta) {
         const relTitle = dnM ? dnM[1].replace(/\+/g, ' ') : labelTitle;
         const is4k = /(?:4k|2160p)/i.test(dec);
         const quality = is4k ? '4K UHD' : '1080p';
+
+        let size = '';
+        const xlM = dec.match(/[?&]xl=(\d+)/i);
+        if (xlM) {
+            size = formatBytes(xlM[1]);
+        } else {
+            size = parseTorrentSize(dec);
+        }
+
         const formattedTitle = formatTorrentioTitle({
             releaseTitle: relTitle,
-            seeders: 65,
-            size: is4k ? '4.85 GB' : '2.15 GB',
+            seeders: 0, // Será enriquecido por Torrentio o live tracker si está activo
+            size: size,
             tracker: 'Cinecalidad',
             flagLine: 'Dual Audio / 🇲🇽'
         });
@@ -2274,7 +2424,11 @@ async function scrapeCinecalidad(meta) {
             sources: STREMIO_TRACKER_SOURCES,
             _lang: 'latino',
             _prov: 'cinecalidad',
-            _seeders: 65
+            _seeders: 0,
+            _size: size,
+            _releaseTitle: relTitle,
+            _tracker: 'Cinecalidad',
+            _flagLine: 'Dual Audio / 🇲🇽'
         });
     };
 
@@ -2716,18 +2870,70 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
         }
     }
 
-    // Deduplicar torrents P2P por infoHash (conservando el primer proveedor dedicado que lo aportó: Cinecalidad, LaMovie P2P, PirateBay, YTS, Nyaa)
-    const seenHashes = new Set();
+    // Deduplicar torrents P2P por infoHash fusionando los mejores metadatos (seeders y tamaño verificados)
+    const hashIndex = new Map();
     let allStreams = [];
+
     for (const s of rawStreams) {
-        if (s.infoHash) {
-            const hKey = (meta.type === 'movie' || !s.fileIdx)
-                ? s.infoHash.toLowerCase()
-                : `${s.infoHash.toLowerCase()}:${s.fileIdx}`;
-            if (seenHashes.has(hKey)) continue;
-            seenHashes.add(hKey);
+        if (!s.infoHash) {
+            allStreams.push(s);
+            continue;
         }
-        allStreams.push(s);
+
+        const hKey = (meta.type === 'movie' || s.fileIdx === undefined)
+            ? s.infoHash.toLowerCase()
+            : `${s.infoHash.toLowerCase()}:${s.fileIdx}`;
+
+        if (!hashIndex.has(hKey)) {
+            hashIndex.set(hKey, s);
+            allStreams.push(s);
+        } else {
+            const existing = hashIndex.get(hKey);
+
+            // Fusionar seeders y tamaño reales
+            const sSeeds = s._seeders || 0;
+            const exSeeds = existing._seeders || 0;
+            const bestSeeds = Math.max(sSeeds, exSeeds);
+
+            const sSize = s._size || '';
+            const exSize = existing._size || '';
+            const bestSize = (exSize && exSize !== 'Desconocido') ? exSize : sSize;
+
+            if (bestSeeds > exSeeds || (!exSize && bestSize)) {
+                existing._seeders = bestSeeds;
+                existing._size = bestSize;
+                existing.title = formatTorrentioTitle({
+                    releaseTitle: existing._releaseTitle || s._releaseTitle || existing.title.split('\n')[0],
+                    seeders: bestSeeds,
+                    size: bestSize,
+                    tracker: existing._tracker || s._tracker || 'P2P',
+                    flagLine: existing._flagLine || s._flagLine || ''
+                });
+            }
+
+            if (s.sources && Array.isArray(s.sources)) {
+                existing.sources = Array.from(new Set([...(existing.sources || []), ...s.sources]));
+            }
+        }
+    }
+
+    // Para torrents que aún tengan 0 seeders (ej. enlaces exclusivos de Cinecalidad o LaMovie):
+    // consultar el tracker público opentrackr en paralelo
+    const zeroSeedTorrents = allStreams.filter(s => s.infoHash && (!s._seeders || s._seeders === 0)).slice(0, 5);
+    if (zeroSeedTorrents.length > 0) {
+        await Promise.all(zeroSeedTorrents.map(async (tStream) => {
+            const liveSeeds = await scrapeLiveSeeders(tStream.infoHash);
+            if (liveSeeds > 0) {
+                tStream._seeders = liveSeeds;
+                tStream.title = formatTorrentioTitle({
+                    releaseTitle: tStream._releaseTitle || tStream.title.split('\n')[0],
+                    seeders: liveSeeds,
+                    size: tStream._size || '',
+                    tracker: tStream._tracker || 'P2P',
+                    flagLine: tStream._flagLine || ''
+                });
+            }
+        }));
     }
 
     // Filtrar por idiomas seleccionados, pero NUNCA ocultar los scrapers P2P dedicados (YTS, PirateBay, Nyaa) si el usuario los dejó activos
@@ -2786,6 +2992,10 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
         delete copy._prov;
         delete copy._provRank;
         delete copy._seeders;
+        delete copy._size;
+        delete copy._releaseTitle;
+        delete copy._tracker;
+        delete copy._flagLine;
         return copy;
     });
 

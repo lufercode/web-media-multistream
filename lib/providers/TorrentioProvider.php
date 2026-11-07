@@ -139,15 +139,23 @@ class TorrentioProvider implements ProviderInterface
 
             $display_title = $episode_file_line ? "{$release_line} — {$episode_file_line}" : $release_line;
 
-            // Extraer seeds, tamaño y tracker (TorrentGalaxy, NyaaSi, 1337x, EXT, EZTV, etc.)
+            // Extraer seeds soportando separadores de miles y sufijos (ej: 👤 1,420 o 👤 2.5k)
             $seeds = 0;
-            if (preg_match('/👤\s*(\d+)/u', $raw_title, $m_seeds)) {
-                $seeds = (int)$m_seeds[1];
+            if (preg_match('/(?:👤|seeds?|seeders?|peers?|s:)\s*([0-9]+(?:[.,][0-9]+)*\s*k?)/iu', $raw_title, $m_seeds)) {
+                $rawSeedStr = strtolower(trim($m_seeds[1]));
+                if (str_ends_with($rawSeedStr, 'k')) {
+                    $seeds = (int)round((float)str_replace(['k', ','], ['', '.'], $rawSeedStr) * 1000);
+                } else {
+                    $seeds = (int)str_replace([',', '.'], '', $rawSeedStr);
+                }
             }
 
+            // Extraer tamaño soportando GB, MB, TB, KB, GiB, MiB, etc.
             $size = 'Desconocido';
-            if (preg_match('/💾\s*([0-9.,]+\s*(?:GB|MB|TB|KB))/iu', $raw_title, $m_size)) {
-                $size = trim($m_size[1]);
+            if (preg_match('/💾\s*([0-9]+(?:[.,][0-9]+)?\s*(?:[TGMK]i?B|bytes?))/iu', $raw_title, $m_size)) {
+                $size = str_ireplace(['GiB', 'MiB', 'TiB', 'KiB'], ['GB', 'MB', 'TB', 'KB'], trim($m_size[1]));
+            } elseif (preg_match('/(?:\[|\(|\•|\b)([0-9]+(?:[.,][0-9]+)?\s*(?:GB|MB|TB|KB|GiB|MiB|TiB|KiB))\b/i', $raw_title, $m_size)) {
+                $size = str_ireplace(['GiB', 'MiB', 'TiB', 'KiB'], ['GB', 'MB', 'TB', 'KB'], trim($m_size[1]));
             }
 
             $tracker = 'Torrentio';

@@ -231,16 +231,57 @@ if ($action === 'stream') {
             if (isset($seenHashes[$dedupKey])) continue;
             $seenHashes[$dedupKey] = true;
 
-            $sizeStr = !empty($s['size']) ? " • 💾 {$s['size']}" : '';
-            $stremioStreams[] = [
-                'name' => "[P2P] {$provName}",
-                'title' => "{$titleLabel}\n💾 {$quality} • 🇲🇽 {$lang}{$sizeStr}",
+            $seeds = isset($s['seeds']) ? (int)$s['seeds'] : 0;
+            $size = !empty($s['size']) && $s['size'] !== 'Desconocido' ? trim($s['size']) : '';
+            $tracker = !empty($s['tracker']) ? $s['tracker'] : (str_ireplace(['Torrentio (', ')', ' (Torrent)'], '', $provName));
+
+            $metaParts = [];
+            $metaParts[] = "👤 {$seeds}";
+            if (!empty($size)) {
+                $metaParts[] = "💾 {$size}";
+            }
+            if (!empty($tracker)) {
+                $metaParts[] = "⚙️ {$tracker}";
+            }
+            $metaLine = implode(' ', $metaParts);
+
+            $langFlag = '🇲🇽 Español Latino';
+            if (stripos($lang, 'castellano') !== false) {
+                $langFlag = '🇪🇸 Spanish';
+            } elseif (stripos($lang, 'multi') !== false || stripos($lang, 'dual') !== false) {
+                $langFlag = 'Dual Audio / 🇲🇽';
+            } elseif (stripos($lang, 'sub') !== false || stripos($lang, 'ingles') !== false) {
+                $langFlag = '🇺🇸 English';
+            }
+
+            $formattedTitle = "{$titleLabel}\n{$metaLine}\n{$langFlag}";
+
+            $flagIcon = '🇲🇽';
+            if (stripos($lang, 'castellano') !== false) $flagIcon = '🇪🇸';
+            elseif (stripos($lang, 'sub') !== false) $flagIcon = '🇺🇸';
+
+            $sources = [
+                'tracker:udp://tracker.opentrackr.org:1337/announce',
+                'tracker:udp://open.stealth.si:80/announce',
+                'tracker:udp://tracker.torrent.eu.org:451/announce',
+                'tracker:udp://exodus.desync.com:6969/announce',
+                'tracker:udp://open.demonii.com:1337/announce',
+                'dht'
+            ];
+
+            $streamObj = [
+                'name' => "{$flagIcon} {$tracker}\n{$quality}",
+                'title' => $formattedTitle,
                 'infoHash' => $infoHash,
-                'fileIdx' => $fileIdx,
+                'sources' => $sources,
                 'behaviorHints' => [
                     'bingeGroup' => "streammedia-p2p-{$infoHash}"
                 ]
             ];
+            if ($fileIdx !== null) {
+                $streamObj['fileIdx'] = $fileIdx;
+            }
+            $stremioStreams[] = $streamObj;
             continue;
         }
 

@@ -11,9 +11,7 @@ class VoeResolver implements ResolverInterface
 
     public function canResolve(string $url): bool
     {
-        return (stripos($url, 'voe.sx') !== false) ||
-               (stripos($url, 'voesx.com') !== false) ||
-               (stripos($url, 'zilla-networks.com/play/') !== false);
+        return preg_match('/(?:voe\.sx|voesx|voe-|voeunblock|un-block-voe|v-o-e-unblock|edwardarriveoften|reputationsheriffkennethsand|fittingcentermondaysunday|tinycat-voe-fashion|scatch176duplicities|yodelswartlike|nectareousoverelate|kathleenmemberhistory|apinchcaseation|strawberriesporail|cigarlessarefy|crownmakermacaronicism|generatesnitrosate|figeterpiazine|timberwoodanotia|tubelessceliolymph|wolfdyslectic|metagnathtuggers|chromotypic|gamoneinterrupted|rationalityaloelike|valeronevijao|availedsmallest|prefulfilloverdoor|jayservicestuff|brookethoughi|jilliandescribecompany|christopheruntilpoint|walterprettytheir|catherineupdated|megankiddifference|zilla-networks\.com\/play\/)/i', $url) === 1;
     }
 
     public function resolve(string $url): ?array

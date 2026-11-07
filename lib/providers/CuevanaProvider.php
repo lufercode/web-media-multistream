@@ -3,7 +3,11 @@ require_once __DIR__ . '/ProviderInterface.php';
 
 class CuevanaProvider implements ProviderInterface
 {
-    private string $host = 'https://www.cuevana-3.mx';
+    private array $hosts = [
+        'https://cuevanapro.org',
+        'https://ver.cuevana3.one',
+        'https://www.cuevana-3.mx'
+    ];
 
     public function getId(): string
     {
@@ -66,10 +70,19 @@ class CuevanaProvider implements ProviderInterface
         $query = urlencode(trim($title));
         $src_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $title));
 
-        $search_url = "{$this->host}/search?q={$query}";
-        $html = http_get($search_url, ['timeout' => 6]);
+        $html = null;
+        $active_host = $this->hosts[0];
+        foreach ($this->hosts as $h) {
+            $search_url = "{$h}/search?q={$query}";
+            $res = http_get($search_url, ['timeout' => 4]);
+            if ($res && preg_match('/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s', $res, $matches)) {
+                $html = $res;
+                $active_host = $h;
+                break;
+            }
+        }
 
-        if (!$html || !preg_match('/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s', $html, $matches)) {
+        if (!$html) {
             return [];
         }
 
@@ -110,7 +123,7 @@ class CuevanaProvider implements ProviderInterface
 
             // Transformar movies/ID/slug a pelicula/ID/slug
             $pelicula_slug = preg_replace('/^movies\//', 'pelicula/', $raw_slug);
-            $detail_url = "{$this->host}/{$pelicula_slug}";
+            $detail_url = "{$active_host}/{$pelicula_slug}";
             $detail_html = http_get($detail_url, ['timeout' => 6]);
 
             if ($detail_html && preg_match('/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s', $detail_html, $m_det)) {
@@ -160,10 +173,19 @@ class CuevanaProvider implements ProviderInterface
         $query = urlencode(trim($title));
         $src_clean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $title));
 
-        $search_url = "{$this->host}/search?q={$query}";
-        $html = http_get($search_url, ['timeout' => 6]);
+        $html = null;
+        $active_host = $this->hosts[0];
+        foreach ($this->hosts as $h) {
+            $search_url = "{$h}/search?q={$query}";
+            $res = http_get($search_url, ['timeout' => 4]);
+            if ($res && preg_match('/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s', $res, $matches)) {
+                $html = $res;
+                $active_host = $h;
+                break;
+            }
+        }
 
-        if (!$html || !preg_match('/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s', $html, $matches)) {
+        if (!$html) {
             return [];
         }
 
@@ -204,14 +226,14 @@ class CuevanaProvider implements ProviderInterface
 
             // Transformar series/ID/slug a serie/ID/slug/temporada/X/episodio/Y
             $serie_slug = preg_replace('/^series\//', 'serie/', $raw_slug);
-            $ep_url = "{$this->host}/{$serie_slug}/temporada/{$season}/episodio/{$episode}";
+            $ep_url = "{$active_host}/{$serie_slug}/temporada/{$season}/episodio/{$episode}";
             $ep_html = http_get($ep_url, ['timeout' => 6]);
             $expected_ep_num = $episode;
 
             // Si falla y la temporada es >= 2 (animes donde Cuevana unifica todo en temporada 1),
             // probar con la numeración continua en temporada 1 SOLO si el episodio absoluto es estrictamente mayor al relativo
             if (!$ep_html && $season >= 2 && $absolute_episode !== null && $absolute_episode > $episode) {
-                $alt_url = "{$this->host}/{$serie_slug}/temporada/1/episodio/{$absolute_episode}";
+                $alt_url = "{$active_host}/{$serie_slug}/temporada/1/episodio/{$absolute_episode}";
                 $ep_html = http_get($alt_url, ['timeout' => 6]);
                 $expected_ep_num = $absolute_episode;
             }
