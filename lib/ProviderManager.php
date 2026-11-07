@@ -277,6 +277,17 @@ class ProviderManager
     }
 
     /**
+     * Retorna todas las fuentes para Stremio agrupadas en 'streaming', 'direct' y 'torrent'
+     */
+    public function getStreamsForMedia(string $title, ?string $year = null, ?int $season = null, ?int $episode = null, ?int $tmdb_id = null, string $mediaType = 'movie', ?string $original_title = null, bool $is_anime = true): array
+    {
+        if ($mediaType === 'tv' && $season !== null && $episode !== null) {
+            return $this->searchSeries($title, (int)$season, (int)$episode, $tmdb_id, $original_title, null, $is_anime);
+        }
+        return $this->searchMovie($title, $year, $tmdb_id, $original_title, $is_anime);
+    }
+
+    /**
      * Retorna la lista de proveedores activos con sus metadatos
      */
     public function getEnabledProvidersList(bool $is_anime = true): array

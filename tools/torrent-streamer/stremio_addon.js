@@ -842,6 +842,7 @@ async function scrapeLaMovie(meta, baseUrl = '') {
             title: `${labelTitle}\n⚡ ${emb.server || 'HLS'} Directo • ${emb.langBadge}`,
             url: makeStreamUrl(resolved.url, resolved.referer || 'https://lamovie.org/', baseUrl),
             _lang: emb.langKey,
+            _prov: 'lamovie',
             behaviorHints: {
                 notWebReady: false,
                 bingeGroup: `streammedia-lamovie-${emb.langKey}`,
@@ -1019,6 +1020,7 @@ async function scrapeKaoOrPelisPlus(meta, providerId = 'serieskao', baseUrl = ''
             title: `${labelTitle}\n⚡ HLS Directo • ${emb.langBadge}`,
             url: makeStreamUrl(res.url, res.referer || `${host}/`, baseUrl),
             _lang: emb.langKey,
+            _prov: providerId,
             behaviorHints: {
                 notWebReady: false,
                 proxyHeaders: {
@@ -1107,6 +1109,7 @@ async function scrapeLatAnime(meta, baseUrl = '') {
                         title: `${rawTitle} - Ep. ${epNum}\n⚡ ${item.serverName} HLS • ${langBadge}`,
                         url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
                         _lang: langKey,
+                        _prov: 'latanime',
                         behaviorHints: {
                             notWebReady: false,
                             proxyHeaders: {
@@ -1256,6 +1259,7 @@ async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana', baseUrl = '
             title: `${labelTitle}\n⚡ ${srv.cyberlocker} HLS • ${srv.langBadge}`,
             url: makeStreamUrl(r.url, r.referer || `${host}/`, baseUrl),
             _lang: srv.langKey,
+            _prov: providerId,
             behaviorHints: {
                 notWebReady: false,
                 proxyHeaders: {
@@ -1292,6 +1296,7 @@ async function scrapeLocalCdn(meta) {
                 title: `${meta.title}\n⚡ Rakun Cloud Directo • 🇲🇽 Español Latino`,
                 url,
                 _lang: 'latino',
+                _prov: 'local_cdn',
                 behaviorHints: { notWebReady: false }
             }];
         }
@@ -2499,6 +2504,7 @@ async function scrapeCinecalidad(meta) {
             title: `${labelTitle}\n⚡ HLS Directo • 🇲🇽 Audio Español Latino`,
             url: r.url,
             _lang: 'latino',
+            _prov: 'cinecalidad_embed',
             behaviorHints: {
                 notWebReady: false,
                 proxyHeaders: { request: { 'Referer': r.referer || `${host}/`, 'User-Agent': UA } }
@@ -2613,6 +2619,7 @@ async function scrapeJkAnime(meta) {
                     title: `${meta.title} - Ep. ${epNum}\n⚡ ${item.serverName} HLS • ${item.langInfo.langBadge}`,
                     url: r.url,
                     _lang: item.langInfo.langKey,
+                    _prov: 'jkanime',
                     behaviorHints: {
                         notWebReady: false,
                         proxyHeaders: { request: { 'Referer': r.referer || `${host}/`, 'User-Agent': UA } }
@@ -2694,6 +2701,7 @@ async function scrapeAnimeFLV(meta) {
                             title: `${meta.title} - S${String(meta.season).padStart(2, '0')}E${String(meta.episode).padStart(2, '0')}\n⚡ ${emb.name || 'HLS Directo'} • ${langBadge}`,
                             url: r.url,
                             _lang: langKey,
+                            _prov: 'animeflv',
                             behaviorHints: {
                                 notWebReady: false,
                                 proxyHeaders: { request: { 'Referer': r.referer || 'https://player.zilla-networks.com/', 'User-Agent': UA } }
@@ -2752,6 +2760,7 @@ async function scrapeAnimeFLV(meta) {
                         title: `${meta.title} - Ep. ${epNum}\n⚡ ${v.title || 'HLS Directo'} • ${langBadge}`,
                         url: r.url,
                         _lang: langKey,
+                        _prov: 'animeflv',
                         behaviorHints: {
                             notWebReady: false,
                             proxyHeaders: { request: { 'Referer': r.referer || `${host}/`, 'User-Agent': UA } }
@@ -2943,10 +2952,10 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
         allStreams = langFiltered;
     }
 
-    // Ordenar streams:
-    // 1° HLS/Directos agrupados por prioridad de idioma (Latino > Castellano > Multi > Sub)
-    // 2° Torrents P2P en Español Latino / Castellano / Multi-Audio
-    // 3° Torrents P2P de proveedores dedicados (Cinecalidad, LaMovie P2P, PirateBay, YTS, Nyaa) seguidos por Torrentio Multi-Indexer
+    // Ordenar streams según jerarquía estricta:
+    // 1° Lugar: Streams reproducibles desde EMBEDS (servidores web como StreamWish, Voe, VidHide, PelisPlus, SeriesKao, LaMovie, Cuevana, AnimeFLV, etc.)
+    // 2° Lugar: Archivos LOCALES / Cloud CDN directos (Movie+ / Yandex CDN, CDN Propio Rakun)
+    // 3° Lugar: TORRENTS P2P al final, mostrados con prioridad estricta en Español Latino (Latino > Castellano > Multi > Sub) y ordenados por mayor número de seeders reales
     const langRank = { latino: 40, castellano: 30, multi: 20, sub: 10 };
     const provPriority = {
         cinecalidad: 1,
@@ -2957,32 +2966,57 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
         torrentio: 6
     };
 
+    const getStreamTier = (s) => {
+        // Tier 3: Torrents P2P al final
+        if (s.infoHash) return 3;
+
+        // Tier 2: Archivos locales y Cloud CDN (Movie+ / Yandex CDN, Local CDN Rakun)
+        const isCloudOrLocal = s._prov === 'movieplus' ||
+            s._prov === 'local_cdn' ||
+            (s.name && /Movie\+|CDN Propio|Yandex/i.test(s.name)) ||
+            (s.title && /Cloud CDN|Rakun Cloud/i.test(s.title));
+        if (isCloudOrLocal) return 2;
+
+        // Tier 1: Reproducibles desde embed (servidores web resueltos a HLS o MP4 directo)
+        return 1;
+    };
+
     allStreams.sort((a, b) => {
-        const aIsHls = Boolean(a.url) ? 1 : 0;
-        const bIsHls = Boolean(b.url) ? 1 : 0;
-        if (bIsHls !== aIsHls) return bIsHls - aIsHls;
+        const aTier = getStreamTier(a);
+        const bTier = getStreamTier(b);
+        if (aTier !== bTier) {
+            return aTier - bTier;
+        }
 
         const aLangScore = langRank[a._lang] || 0;
         const bLangScore = langRank[b._lang] || 0;
 
-        if (aIsHls && bIsHls) {
+        // Tier 1 (Embeds reproducibles) o Tier 2 (Archivos locales / Yandex):
+        // Priorizar por idioma: Latino (40) > Castellano (30) > Multi (20) > Sub (10)
+        if (aTier === 1 || aTier === 2) {
+            if (bLangScore !== aLangScore) {
+                return bLangScore - aLangScore;
+            }
+            return 0;
+        }
+
+        // Tier 3 (Torrents P2P al final):
+        // 1° Prioridad estricta en Español Latino (Latino [40] > Castellano [30] > Multi [20] > Sub/Inglés [10])
+        if (bLangScore !== aLangScore) {
             return bLangScore - aLangScore;
         }
 
-        // En P2P: Español/Multi siempre arriba; luego agrupar proveedores dedicados (PirateBay, YTS, Nyaa) antes del resto de Torrentio
-        const aIsSpanishOrMulti = aLangScore >= 20 ? 1 : 0;
-        const bIsSpanishOrMulti = bLangScore >= 20 ? 1 : 0;
-        if (bIsSpanishOrMulti !== aIsSpanishOrMulti) return bIsSpanishOrMulti - aIsSpanishOrMulti;
-
-        if (aIsSpanishOrMulti && bIsSpanishOrMulti && bLangScore !== aLangScore) {
-            return bLangScore - aLangScore;
+        // 2° Para el mismo idioma: mayor cantidad de seeders reales (descendente)
+        const aSeeds = Number(a._seeders) || 0;
+        const bSeeds = Number(b._seeders) || 0;
+        if (bSeeds !== aSeeds) {
+            return bSeeds - aSeeds;
         }
 
+        // 3° Si empatan en seeders: agrupar proveedores dedicados antes de Torrentio
         const aProvOrder = provPriority[a._prov] || 99;
         const bProvOrder = provPriority[b._prov] || 99;
-        if (aProvOrder !== bProvOrder) return aProvOrder - bProvOrder;
-
-        return (b._seeders || 0) - (a._seeders || 0);
+        return aProvOrder - bProvOrder;
     });
 
     // Limpiar propiedades internas antes de enviar a Stremio

@@ -202,10 +202,42 @@ if ($action === 'stream') {
     );
 
     $resolverManager = new ResolverManager();
-    $stremioStreams = [];
+    $embedList = [];
+    $cloudList = [];
+    $torrentList = [];
     $seenHashes = [];
 
-    foreach ($rawStreams as $s) {
+    // Clasificar fuentes si vienen agrupadas o en lista plana
+    $items = [];
+    if (isset($rawStreams['streaming']) || isset($rawStreams['direct']) || isset($rawStreams['torrent'])) {
+        foreach ($rawStreams['streaming'] ?? [] as $it) {
+            $it['_group'] = 'streaming';
+            $items[] = $it;
+        }
+        foreach ($rawStreams['direct'] ?? [] as $it) {
+            $it['_group'] = 'direct';
+            $items[] = $it;
+        }
+        foreach ($rawStreams['torrent'] ?? [] as $it) {
+            $it['_group'] = 'torrent';
+            $items[] = $it;
+        }
+    } else {
+        foreach ($rawStreams as $it) {
+            $items[] = $it;
+        }
+    }
+
+    $getLangScore = function($langStr) {
+        $l = strtolower($langStr ?? '');
+        if (strpos($l, 'latino') !== false) return 40;
+        if (strpos($l, 'castellano') !== false || strpos($l, 'español') !== false || strpos($l, 'spanish') !== false) return 30;
+        if (strpos($l, 'multi') !== false || strpos($l, 'dual') !== false) return 20;
+        if (strpos($l, 'sub') !== false || strpos($l, 'ingles') !== false || strpos($l, 'english') !== false) return 10;
+        return 5;
+    };
+
+    foreach ($items as $s) {
         $url = $s['url'] ?? '';
         if (empty($url)) continue;
 
@@ -213,9 +245,10 @@ if ($action === 'stream') {
         $quality = $s['quality'] ?? 'HD';
         $lang = $s['language'] ?? 'Latino';
         $titleLabel = $s['title'] ?? $title;
+        $langScore = $getLangScore($lang);
 
-        // Caso A: Torrent / Magnet (P2P Nativo de Stremio)
-        if (str_starts_with($url, 'magnet:?')) {
+        // 3° LUGAR: Torrents P2P Magnet (al final, ordenados estrictamente por Latino > Castellano > Multi > Sub y Seeders)
+        if (str_starts_with($url, 'magnet:?') || ($s['_group'] ?? '') === 'torrent') {
             $infoHash = null;
             if (preg_match('/xt=urn(?::|%3a)btih(?::|%3a)([a-zA-Z0-9]+)/i', $url, $m)) {
                 $infoHash = strtolower($m[1]);
@@ -246,19 +279,19 @@ if ($action === 'stream') {
             $metaLine = implode(' ', $metaParts);
 
             $langFlag = '🇲🇽 Español Latino';
+            $flagIcon = '🇲🇽';
             if (stripos($lang, 'castellano') !== false) {
                 $langFlag = '🇪🇸 Spanish';
+                $flagIcon = '🇪🇸';
             } elseif (stripos($lang, 'multi') !== false || stripos($lang, 'dual') !== false) {
                 $langFlag = 'Dual Audio / 🇲🇽';
+                $flagIcon = '🌐';
             } elseif (stripos($lang, 'sub') !== false || stripos($lang, 'ingles') !== false) {
                 $langFlag = '🇺🇸 English';
+                $flagIcon = '🇺🇸';
             }
 
             $formattedTitle = "{$titleLabel}\n{$metaLine}\n{$langFlag}";
-
-            $flagIcon = '🇲🇽';
-            if (stripos($lang, 'castellano') !== false) $flagIcon = '🇪🇸';
-            elseif (stripos($lang, 'sub') !== false) $flagIcon = '🇺🇸';
 
             $sources = [
                 'tracker:udp://tracker.opentrackr.org:1337/announce',
@@ -281,11 +314,39 @@ if ($action === 'stream') {
             if ($fileIdx !== null) {
                 $streamObj['fileIdx'] = $fileIdx;
             }
-            $stremioStreams[] = $streamObj;
+            $torrentList[] = [
+                'stream' => $streamObj,
+                'langScore' => $langScore,
+                'seeds' => $seeds
+            ];
             continue;
         }
 
-        // Caso B: Direct Stream o Embed Web
+        // 2° LUGAR: Archivos locales y Cloud CDN (Movie+ / Yandex CDN, Local CDN Rakun)
+        $isLocalOrCloud = (($s['_group'] ?? '') === 'direct') ||
+            stripos($provName, 'movieplus') !== false ||
+            stripos($provName, 'yandex') !== false ||
+            stripos($provName, 'local') !== false ||
+            stripos($provName, 'propio') !== false ||
+            stripos($provName, 'rakun') !== false;
+
+        if ($isLocalOrCloud) {
+            $flagIcon = ($langScore === 40) ? '🇲🇽' : (($langScore === 30) ? '🇪🇸' : (($langScore === 20) ? '🌐' : '🇺🇸'));
+            $cloudList[] = [
+                'stream' => [
+                    'name' => "{$flagIcon} {$provName}\n{$quality}",
+                    'title' => "{$titleLabel}\n⚡ Cloud CDN Directo • {$lang}",
+                    'url' => $url,
+                    'behaviorHints' => [
+                        'notWebReady' => false
+                    ]
+                ],
+                'langScore' => $langScore
+            ];
+            continue;
+        }
+
+        // 1° LUGAR: Reproducibles desde embed (servidores web como StreamWish, Voe, VidHide, etc.)
         $resolved = $resolverManager->resolve($url);
         if (!empty($resolved['is_available']) === false && isset($resolved['is_available'])) {
             continue;
@@ -294,17 +355,48 @@ if ($action === 'stream') {
         $directUrl = $resolved['stream_url'] ?? $resolved['embed_url'] ?? $url;
         if (empty($directUrl)) continue;
 
-        $stremioStreams[] = [
-            'name' => "[HLS/MP4] {$provName}",
-            'title' => "{$titleLabel}\n⚡ {$quality} • 🇲🇽 {$lang}",
-            'url' => $directUrl,
-            'behaviorHints' => [
-                'notWebReady' => false
-            ]
+        $flagIcon = ($langScore === 40) ? '🇲🇽' : (($langScore === 30) ? '🇪🇸' : (($langScore === 20) ? '🌐' : '🇺🇸'));
+        $embedList[] = [
+            'stream' => [
+                'name' => "{$flagIcon} [HLS] {$provName}\n{$quality}",
+                'title' => "{$titleLabel}\n⚡ Servidor Web • {$lang}",
+                'url' => $directUrl,
+                'behaviorHints' => [
+                    'notWebReady' => false
+                ]
+            ],
+            'langScore' => $langScore
         ];
     }
 
-    echo json_encode(['streams' => $stremioStreams], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    // 1° Ordenar Embeds por prioridad de idioma (Latino: 40 > Castellano: 30 > Multi: 20 > Sub: 10)
+    usort($embedList, function($a, $b) {
+        return $b['langScore'] <=> $a['langScore'];
+    });
+
+    // 2° Ordenar Cloud/Locales por prioridad de idioma (Latino primero)
+    usort($cloudList, function($a, $b) {
+        return $b['langScore'] <=> $a['langScore'];
+    });
+
+    // 3° Ordenar Torrents P2P:
+    // a) Primero por idioma con prioridad en Latino
+    // b) A igualdad de idioma, por mayor cantidad de seeders reales descendente
+    usort($torrentList, function($a, $b) {
+        if ($b['langScore'] !== $a['langScore']) {
+            return $b['langScore'] <=> $a['langScore'];
+        }
+        return $b['seeds'] <=> $a['seeds'];
+    });
+
+    // Fusión estricta: 1° Embeds -> 2° Locales/Yandex -> 3° Torrents P2P
+    $finalStremioStreams = array_merge(
+        array_column($embedList, 'stream'),
+        array_column($cloudList, 'stream'),
+        array_column($torrentList, 'stream')
+    );
+
+    echo json_encode(['streams' => $finalStremioStreams], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
