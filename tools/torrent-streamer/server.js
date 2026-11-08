@@ -789,6 +789,35 @@ const server = http.createServer(async (req, res) => {
         }
 
         try {
+            let directUrl = targetUrl;
+            if (targetUrl.includes('yadi.sk') || targetUrl.includes('disk.yandex')) {
+                try {
+                    const apiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(targetUrl)}`;
+                    const yRes = await fetch(apiUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                            'Accept': 'application/json'
+                        },
+                        signal: AbortSignal.timeout(6000)
+                    });
+                    if (yRes.ok) {
+                        const yData = await yRes.json();
+                        if (yData?.href) {
+                            directUrl = yData.href;
+                            res.writeHead(302, {
+                                'Location': directUrl,
+                                'Access-Control-Allow-Origin': '*',
+                                'Cache-Control': 'public, max-age=1800'
+                            });
+                            res.end();
+                            return;
+                        }
+                    }
+                } catch (yErr) {
+                    console.warn('[MoviePlus Stream] Yandex on-demand resolve warning:', yErr.message);
+                }
+            }
+
             const clientReqHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 'Accept': '*/*'
@@ -797,7 +826,7 @@ const server = http.createServer(async (req, res) => {
                 clientReqHeaders['Range'] = req.headers['range'];
             }
 
-            const upstreamRes = await fetch(targetUrl, {
+            const upstreamRes = await fetch(directUrl, {
                 headers: clientReqHeaders,
                 redirect: 'follow'
             });

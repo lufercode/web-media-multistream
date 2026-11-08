@@ -5,16 +5,18 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 export const ALL_STREMIO_PROVIDERS = [
     { id: 'movieplus', name: 'Movie+ (Cloud CDN / Yandex / Mega)', category: 'streaming', default: true },
+    { id: 'local_cdn', name: 'CDN Propio (Rakun Cloud Directo)', category: 'direct', default: true },
     { id: 'lamovie', name: 'LaMovie / AllCalidad (HLS Directo)', category: 'streaming', default: true },
-    { id: 'latanime', name: 'LatAnime (Anime Español Latino)', category: 'streaming', default: true },
-    { id: 'jkanime', name: 'JKAnime (Anime Latino/Sub — HLS Directo)', category: 'streaming', default: true },
-    { id: 'animeflv', name: 'AnimeFLV (Anime Latino/Sub — HLS Directo)', category: 'streaming', default: true },
+    { id: 'pelisforte', name: 'PelisForte (Películas y Series HD)', category: 'streaming', default: true },
+    { id: 'pelispedia', name: 'PelisPedia (Películas y Series HD)', category: 'streaming', default: true },
     { id: 'serieskao', name: 'SeriesKao (Embed69 HLS Directo)', category: 'streaming', default: true },
     { id: 'pelisplus', name: 'PelisPlusHD (Películas, Series y Anime)', category: 'streaming', default: true },
     { id: 'cuevana', name: 'Cuevana 3 (Multi-Servidor HLS)', category: 'streaming', default: true },
     { id: 'poseidonhd', name: 'PoseidonHD (Películas y Series)', category: 'streaming', default: true },
     { id: 'cinecalidad', name: 'Cinecalidad (Latino Dual 1080p/4K)', category: 'mixed', default: true },
-    { id: 'local_cdn', name: 'CDN Propio (Rakun Cloud Directo)', category: 'direct', default: true },
+    { id: 'latanime', name: 'LatAnime (Anime Español Latino)', category: 'streaming', default: true },
+    { id: 'jkanime', name: 'JKAnime (Anime Latino/Sub — HLS Directo)', category: 'streaming', default: true },
+    { id: 'animeflv', name: 'AnimeFLV (Anime Latino/Sub — HLS Directo)', category: 'streaming', default: true },
     { id: 'torrentio', name: 'Torrentio Multi-Indexer (Latino/Multi)', category: 'torrent', default: true },
     { id: 'tpb', name: 'ThePirateBay (Torrents P2P)', category: 'torrent', default: true },
     { id: 'yts', name: 'YTS (Películas 1080p / 4K P2P)', category: 'torrent', default: true },
@@ -299,6 +301,38 @@ export async function resolveEmbedToHls(embedUrl, customReferer = '') {
 
         const parsed = new URL(embedUrl);
         const host = `${parsed.protocol}//${parsed.host}`;
+
+        // 0.1 Vidara (as9u7bgh9.com / vidara.to / vidara.so / vidara.cc / vidara.net)
+        if (/(?:as9u7bgh9\.com|vidara\.(?:to|so|cc|net))/i.test(lower)) {
+            const m = embedUrl.match(/\/(?:e|v)\/([a-zA-Z0-9]+)/i);
+            const filecode = m ? m[1] : '';
+            if (filecode) {
+                const vidaraHosts = Array.from(new Set([host, 'https://vidara.to', 'https://as9u7bgh9.com']));
+                for (const vHost of vidaraHosts) {
+                    try {
+                        const vRes = await fetch(`${vHost}/api/stream`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Referer': `${vHost}/e/${filecode}`,
+                                'User-Agent': UA
+                            },
+                            body: JSON.stringify({ filecode, device: 'desktop', codecs: ['h264', 'aac'] }),
+                            signal: AbortSignal.timeout(3500)
+                        });
+                        if (vRes.ok) {
+                            const vData = await vRes.json();
+                            if (vData?.streaming_url && vData.streaming_url.startsWith('http')) {
+                                return {
+                                    url: vData.streaming_url,
+                                    referer: `${vHost}/`
+                                };
+                            }
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
 
         // 1. Vimeos / StreamWish / VidHide / Goodstream / Fastream
         if (/(?:vimeos|streamwish|hlswish|sfastwish|wishfast|strwish|swhoi|wishembed|embedwish|hglink|dwish|awish|mwish|flaswish|obeywish|cdnwish|asnwish|luluvdoo|vide0|vidhide|vidhidevip|vidguard|filelions|streamhide|morencius|kinotv|dramiyos|earnvids|smoothpre|dhtpre|peytonepre|ryderjet|goodstream|fastream)/i.test(lower)) {
@@ -1675,13 +1709,20 @@ async function scrapeMoviePlus(meta, baseUrl = '') {
                 let directDownloadUrl = decryptedUrl;
                 let serverLabel = 'Directo';
 
-                if (decryptedUrl.includes('yadi.sk')) {
+                if (decryptedUrl.includes('yadi.sk') || decryptedUrl.includes('disk.yandex')) {
                     serverLabel = 'Yandex CDN';
-                    const resolved = await resolveYandexDownloadUrl(decryptedUrl);
-                    if (resolved) {
-                        directDownloadUrl = resolved;
+                    const cached = getCached(yandexDownloadCache, decryptedUrl, 30 * 60 * 1000);
+                    if (cached) {
+                        directDownloadUrl = cached;
+                    } else if (effectiveBaseUrl) {
+                        directDownloadUrl = `${effectiveBaseUrl}/movieplus-stream?url=${encodeURIComponent(decryptedUrl)}`;
                     } else {
-                        continue; // No enviar URL de página web HTML a Stremio si no hay stream directo
+                        const resolved = await resolveYandexDownloadUrl(decryptedUrl);
+                        if (resolved) {
+                            directDownloadUrl = resolved;
+                        } else {
+                            continue;
+                        }
                     }
                 } else if (decryptedUrl.includes('mega.nz')) {
                     continue; // Stremio no reproduce enlaces de página web de mega.nz
@@ -1751,13 +1792,20 @@ async function scrapeMoviePlus(meta, baseUrl = '') {
                     let directDownloadUrl = decryptedUrl;
                     let serverLabel = 'Directo';
 
-                    if (decryptedUrl.includes('yadi.sk')) {
+                    if (decryptedUrl.includes('yadi.sk') || decryptedUrl.includes('disk.yandex')) {
                         serverLabel = 'Yandex CDN';
-                        const resolved = await resolveYandexDownloadUrl(decryptedUrl);
-                        if (resolved) {
-                            directDownloadUrl = resolved;
+                        const cached = getCached(yandexDownloadCache, decryptedUrl, 30 * 60 * 1000);
+                        if (cached) {
+                            directDownloadUrl = cached;
+                        } else if (effectiveBaseUrl) {
+                            directDownloadUrl = `${effectiveBaseUrl}/movieplus-stream?url=${encodeURIComponent(decryptedUrl)}`;
                         } else {
-                            continue; // No enviar URL de página web HTML a Stremio si no hay stream directo
+                            const resolved = await resolveYandexDownloadUrl(decryptedUrl);
+                            if (resolved) {
+                                directDownloadUrl = resolved;
+                            } else {
+                                continue;
+                            }
                         }
                     } else if (decryptedUrl.includes('mega.nz')) {
                         continue; // Stremio no reproduce enlaces de página web de mega.nz
@@ -2458,10 +2506,235 @@ async function scrapeTpb(meta) {
 }
 
 /**
+ * 9.1 Scraper: PelisForte (Películas y Series HD)
+ * Busca en https://www2.pelisforte.se y https://pelisforte.se
+ * Resuelve Vidara (as9u7bgh9.com / vidara.to) y otros embeds vía resolveEmbedToHls
+ */
+async function scrapePelisForte(meta, baseUrl = '') {
+    if (!meta.title) return [];
+    const streams = [];
+    const candidateHosts = ['https://www2.pelisforte.se', 'https://pelisforte.se'];
+    const searchTerms = Array.from(new Set([
+        meta.title,
+        meta.originalTitle,
+        String(meta.title || '').replace(/^(?:the|los|las|el|la)\s+/i, '')
+    ].filter(Boolean)));
+
+    let detailUrl = null;
+    let successfulHost = candidateHosts[0];
+
+    for (const host of candidateHosts) {
+        for (const term of searchTerms.slice(0, 2)) {
+            const searchUrl = `${host}/?s=${encodeURIComponent(term)}`;
+            const html = await httpGet(searchUrl, { timeout: 3500 });
+            if (!html || html.length < 500) continue;
+
+            const articles = [...html.matchAll(/<article[^>]*>([\s\S]*?)<\/article>/gi)];
+            for (const art of articles) {
+                const u = art[1].match(/<a[^>]+href="([^"]+)"/i)?.[1];
+                const t = art[1].match(/class="entry-title">([^<]+)<\//i)?.[1]?.trim();
+                const y = art[1].match(/<span class="Year">([^<]+)<\/span>/i)?.[1]?.trim();
+
+                if (u && t && isTitleMatch(meta.title, t, meta.year, y)) {
+                    detailUrl = u;
+                    successfulHost = host;
+                    break;
+                }
+            }
+            if (detailUrl) break;
+        }
+        if (detailUrl) break;
+    }
+
+    if (!detailUrl) return [];
+
+    const detHtml = await httpGet(detailUrl, { timeout: 4000 });
+    if (!detHtml) return [];
+
+    const optMatches = [...detHtml.matchAll(/href="#options-(\d+)">.*?<span class="server">([^<]+)<\/span>/gis)];
+    const embedTasks = [];
+
+    for (const om of optMatches) {
+        const optId = om[1];
+        const rawServerInfo = om[2].trim();
+
+        let lang = 'latino';
+        let flag = '🇲🇽';
+        let langLabel = 'Español Latino';
+        if (/castellano/i.test(rawServerInfo)) {
+            lang = 'castellano';
+            flag = '🇪🇸';
+            langLabel = 'Español Castellano';
+        } else if (/subtitulado|vose/i.test(rawServerInfo)) {
+            lang = 'sub';
+            flag = '💬';
+            langLabel = 'Subtitulado (VOSE)';
+        }
+
+        const srcRe = new RegExp(`<div[^>]+id="options-${optId}"[^>]*>.*?src="([^"]+)"`, 'is');
+        const srcM = detHtml.match(srcRe);
+        if (!srcM) continue;
+
+        const rawUrl = srcM[1].trim();
+        embedTasks.push((async () => {
+            try {
+                let targetEmbed = rawUrl;
+                if (targetEmbed.includes('/mp4.nu/')) {
+                    const rUrl = targetEmbed.replace('/mp4.nu/?h=', '/mp4.nu/r.php?h=');
+                    try {
+                        const headRes = await fetch(rUrl, {
+                            method: 'HEAD',
+                            headers: { 'User-Agent': UA, 'Referer': `${successfulHost}/` },
+                            redirect: 'manual',
+                            signal: AbortSignal.timeout(3000)
+                        });
+                        const loc = headRes.headers.get('location');
+                        if (loc) targetEmbed = loc;
+                    } catch {}
+                }
+
+                const resolved = await resolveEmbedToHls(targetEmbed, `${successfulHost}/`);
+                if (resolved?.url) {
+                    let sName = 'Vidara';
+                    if (targetEmbed.includes('wish')) sName = 'StreamWish';
+                    else if (targetEmbed.includes('voe')) sName = 'Voe';
+                    else if (targetEmbed.includes('vidhide')) sName = 'VidHide';
+                    else if (targetEmbed.includes('fastream')) sName = 'Fastream';
+
+                    return {
+                        name: `${flag} PelisForte\n1080p HD`,
+                        title: `${meta.title} (${meta.year || 'HD'})\n⚡ ${sName} HLS • ${langLabel}`,
+                        url: resolved.url,
+                        _lang: lang,
+                        _prov: 'pelisforte',
+                        behaviorHints: {
+                            notWebReady: false,
+                            proxyHeaders: { request: { 'Referer': resolved.referer || `${successfulHost}/`, 'User-Agent': UA } }
+                        }
+                    };
+                }
+            } catch (e) {}
+            return null;
+        })());
+    }
+
+    const settled = await Promise.all(embedTasks);
+    streams.push(...settled.filter(Boolean));
+    return streams;
+}
+
+/**
+ * 9.2 Scraper: PelisPedia (Películas y Series HD)
+ * Busca en https://pelispedia.is
+ * Extrae iframes trembed y resuelve Fastream / StreamWish / Voe vía resolveEmbedToHls
+ */
+async function scrapePelisPedia(meta, baseUrl = '') {
+    if (!meta.title) return [];
+    const streams = [];
+    const host = 'https://pelispedia.is';
+    const searchTerms = Array.from(new Set([
+        meta.title,
+        meta.originalTitle,
+        String(meta.title || '').replace(/^(?:the|los|las|el|la)\s+/i, '')
+    ].filter(Boolean)));
+
+    let detailUrl = null;
+
+    if (meta.type === 'movie') {
+        for (const term of searchTerms.slice(0, 2)) {
+            const html = await httpGet(`${host}/?s=${encodeURIComponent(term)}`, { timeout: 3500 });
+            if (!html || html.length < 500) continue;
+
+            const movieLinks = [...html.matchAll(/<a[^>]+href="(https:\/\/pelispedia\.is\/pelicula\/[^"]+)"/gi)].map(m => m[1]);
+            for (const link of Array.from(new Set(movieLinks)).slice(0, 4)) {
+                const slug = link.replace(/\/+$/, '').split('/').pop();
+                const candTitle = slug.replace(/-/g, ' ');
+                const ym = slug.match(/\b(19\d{2}|20\d{2})\b/);
+                const candYear = ym ? ym[1] : null;
+
+                if (isTitleMatch(meta.title, candTitle, meta.year, candYear)) {
+                    detailUrl = link;
+                    break;
+                }
+            }
+            if (detailUrl) break;
+        }
+    } else if (meta.type === 'series') {
+        for (const term of searchTerms.slice(0, 2)) {
+            const html = await httpGet(`${host}/?s=${encodeURIComponent(term)}`, { timeout: 3500 });
+            if (!html || html.length < 500) continue;
+
+            const articles = [...html.matchAll(/<article[^>]*>([\s\S]*?)<\/article>/gi)];
+            for (const art of articles) {
+                const sm = art[1].match(/href="(https:\/\/pelispedia\.is\/(?:serie|series|anime)\/([^"\/]+)\/?)"/i);
+                if (!sm) continue;
+                const slug = sm[2];
+                const candTitle = slug.replace(/-/g, ' ');
+                if (isTitleMatch(meta.title, candTitle)) {
+                    detailUrl = `${host}/capitulo/${slug}-temporada-${meta.season}-capitulo-${meta.episode}/`;
+                    break;
+                }
+            }
+            if (detailUrl) break;
+        }
+    }
+
+    if (!detailUrl) return [];
+
+    const detHtml = await httpGet(detailUrl, { timeout: 4000 });
+    if (!detHtml) return [];
+
+    const trembeds = [...detHtml.matchAll(/<iframe[^>]+src="([^"]*trembed=[^"]*)"/gi)].map(m => m[1]);
+    const embedTasks = [];
+
+    for (const rawTrembed of Array.from(new Set(trembeds)).slice(0, 5)) {
+        const cleanTrembed = rawTrembed.replace(/&#038;|&amp;/g, '&');
+        embedTasks.push((async () => {
+            try {
+                const ifrHtml = await httpGet(cleanTrembed, {
+                    timeout: 3500,
+                    headers: { Referer: detailUrl }
+                });
+                if (!ifrHtml) return null;
+
+                const srcM = ifrHtml.match(/<iframe[^>]+src="([^"]+)"/i);
+                if (!srcM) return null;
+
+                const embedUrl = srcM[1];
+                const resolved = await resolveEmbedToHls(embedUrl, detailUrl);
+                if (resolved?.url) {
+                    let sName = 'Fastream';
+                    if (embedUrl.includes('wish')) sName = 'StreamWish';
+                    else if (embedUrl.includes('voe')) sName = 'Voe';
+                    else if (embedUrl.includes('vidhide')) sName = 'VidHide';
+
+                    return {
+                        name: `🇲🇽 PelisPedia\n1080p HD`,
+                        title: `${meta.title} (${meta.year || 'HD'})\n⚡ ${sName} HLS • 🇲🇽 Audio Español Latino`,
+                        url: resolved.url,
+                        _lang: 'latino',
+                        _prov: 'pelispedia',
+                        behaviorHints: {
+                            notWebReady: false,
+                            proxyHeaders: { request: { 'Referer': resolved.referer || 'https://pelispedia.is/', 'User-Agent': UA } }
+                        }
+                    };
+                }
+            } catch (e) {}
+            return null;
+        })());
+    }
+
+    const settled = await Promise.all(embedTasks);
+    streams.push(...settled.filter(Boolean));
+    return streams;
+}
+
+/**
  * 10. Scraper: Cinecalidad (Torrents Dual Latino y Embeds HLS — Soporte multi-espejo según Balandro)
  */
 async function scrapeCinecalidad(meta) {
-    const candidateHosts = ['https://cine-calidad.mx', 'https://www.cinecalidad.vg', 'https://www.cinecalidad.am', 'https://www.cinecalidad.ro'];
+    const candidateHosts = ['https://www.cinecalidad.vg', 'https://cine-calidad.mx', 'https://www.cinecalidad.am', 'https://www.cinecalidad.ro'];
     const searchTerms = Array.from(new Set([
         meta.title,
         meta.originalTitle,
@@ -2641,10 +2914,10 @@ async function scrapeCinecalidad(meta) {
             title: `${labelTitle}\n⚡ HLS Directo • 🇲🇽 Audio Español Latino`,
             url: r.url,
             _lang: 'latino',
-            _prov: 'cinecalidad_embed',
+            _prov: 'cinecalidad',
             behaviorHints: {
                 notWebReady: false,
-                proxyHeaders: { request: { 'Referer': r.referer || `${host}/`, 'User-Agent': UA } }
+                proxyHeaders: { request: { 'Referer': r.referer || `${successfulHost}/`, 'User-Agent': UA } }
             }
         };
     }));
@@ -2993,6 +3266,8 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
     if (cfg.providers.has('movieplus')) tasks.push(scrapeMoviePlus(meta, baseUrl));
     if (cfg.providers.has('local_cdn')) tasks.push(scrapeLocalCdn(meta, baseUrl));
     if (cfg.providers.has('lamovie')) tasks.push(scrapeLaMovie(meta));
+    if (cfg.providers.has('pelisforte')) tasks.push(scrapePelisForte(meta, baseUrl));
+    if (cfg.providers.has('pelispedia')) tasks.push(scrapePelisPedia(meta, baseUrl));
     if (cfg.providers.has('latanime')) tasks.push(scrapeLatAnime(meta));
     if (cfg.providers.has('jkanime')) tasks.push(scrapeJkAnime(meta));
     if (cfg.providers.has('animeflv')) tasks.push(scrapeAnimeFLV(meta));
@@ -3187,6 +3462,8 @@ export async function scrapeSingleProvider(providerId, meta) {
         if (p === 'poseidonhd' || p === 'cuevana') return await scrapeCuevanaOrPoseidon(meta, p);
         if (p === 'serieskao' || p === 'pelisplus') return await scrapeKaoOrPelisPlus(meta, p);
         if (p === 'lamovie') return await scrapeLaMovie(meta);
+        if (p === 'pelisforte') return await scrapePelisForte(meta);
+        if (p === 'pelispedia') return await scrapePelisPedia(meta);
         if (p === 'latanime') return await scrapeLatAnime(meta);
         if (p === 'animeflv') return await scrapeAnimeFLV(meta);
         if (p === 'jkanime') return await scrapeJkAnime(meta);
