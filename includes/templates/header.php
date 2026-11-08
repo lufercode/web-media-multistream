@@ -51,7 +51,7 @@ $has_google_client_id = defined('GOOGLE_CLIENT_ID') && strpos(GOOGLE_CLIENT_ID, 
                     <a href="index.php#section-popular-movies" class="nav-pill-link text-nowrap"><i class="bi bi-film me-1"></i> Películas</a>
                     <a href="index.php#section-popular-series" class="nav-pill-link text-nowrap"><i class="bi bi-tv me-1"></i> Series</a>
                     <a href="index.php#section-animation-movies" class="nav-pill-link text-nowrap"><i class="bi bi-stars me-1"></i> Animación</a>
-                    <a href="index.php#watchlist-container" class="nav-pill-link text-nowrap">
+                    <a href="watchlist.php" class="nav-pill-link text-nowrap">
                         <i class="bi bi-bookmark-fill me-1"></i> Mi Lista
                         <span class="badge bg-danger rounded-pill ms-1 nav-watchlist-count" style="display:none; font-size: 0.68rem;">0</span>
                     </a>
@@ -128,7 +128,7 @@ $stremio_remote_base_url = defined('TORRENT_STREAMER_REMOTE_URL') && !empty(TORR
                                 </li>
                                 <li><hr class="dropdown-divider border-secondary my-1"></li>
                                 <li>
-                                    <a class="dropdown-item py-1" href="index.php#watchlist-container">
+                                    <a class="dropdown-item py-1" href="watchlist.php">
                                         <i class="bi bi-bookmark-fill me-2 text-danger"></i>Mi Lista
                                     </a>
                                 </li>

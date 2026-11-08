@@ -1,9 +1,11 @@
 <?php
 require_once 'includes/bootstrap.php';
+require_once 'lib/RakunService.php';
 require_once 'includes/templates/header.php';
 
-// Obtener datos destacados y populares de TMDB
+// Obtener datos destacados y populares de TMDB y Rakun CDN
 $hero = get_hero_featured_content();
+$popular_rakun = RakunService::getPopularContent(15);
 $popular_movies = get_popular_content('movie', 15);
 $popular_series = get_popular_content('tv', 15);
 $popular_animation = get_popular_animation(15);
@@ -86,6 +88,17 @@ foreach ($recently_watched_series_ids as $item_info) {
             $recent_cards_html .= render_content_card($recent_item['details'], $recent_item['type'], true);
         }
         echo render_carousel_row('Continuar Viendo', 'recent-watched', $recent_cards_html, 'Historial');
+        ?>
+    <?php endif; ?>
+
+    <!-- Carrusel: Popular en Rakun (Cloud CDN Latino) -->
+    <?php if (!empty($popular_rakun)): ?>
+        <?php
+        $rakun_cards_html = '';
+        foreach ($popular_rakun as $r_item) {
+            $rakun_cards_html .= render_content_card($r_item, $r_item['type'], true);
+        }
+        echo render_carousel_row('Popular en Rakun', 'popular-rakun', $rakun_cards_html, 'Cloud CDN Latino');
         ?>
     <?php endif; ?>
 

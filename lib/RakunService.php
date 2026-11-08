@@ -438,6 +438,119 @@ class RakunService
         return false;
     }
 
+    /**
+     * Retorna los contenidos más populares de Rakun (Top 10 / Trending)
+     * adaptados con sus TMDB IDs para visualización inmediata en Home.
+     */
+    public static function getPopularContent(int $limit = 15): array
+    {
+        $cacheKey = 'rakun_popular_home';
+        $cached = self::getCache($cacheKey);
+        if ($cached !== null && is_array($cached) && !empty($cached)) {
+            return array_slice($cached, 0, $limit);
+        }
+
+        $items = [];
+        $remote = self::fetchRemote('content/popular-rows', 3);
+        if (!empty($remote['top10']) && is_array($remote['top10'])) {
+            $items = $remote['top10'];
+        } elseif (!empty($remote['rows'][0]['items']) && is_array($remote['rows'][0]['items'])) {
+            $items = $remote['rows'][0]['items'];
+        }
+
+        if (empty($items)) {
+            $catalog = self::getLocalCatalog();
+            if (!empty($catalog)) {
+                // Priorizar elementos con top10, luego featured, luego con más vistas
+                $top10 = array_values(array_filter($catalog, fn($i) => !empty($i['top10'])));
+                $featured = array_values(array_filter($catalog, fn($i) => !empty($i['featured']) && empty($i['top10'])));
+                $merged = array_merge($top10, $featured);
+
+                if (count($merged) < $limit) {
+                    $others = array_values(array_filter($catalog, fn($i) => empty($i['top10']) && empty($i['featured'])));
+                    usort($others, fn($a, $b) => ($b['views'] ?? 0) <=> ($a['views'] ?? 0));
+                    $merged = array_merge($merged, array_slice($others, 0, $limit - count($merged)));
+                }
+                $items = $merged;
+            }
+        }
+
+        $customMap = [
+            'c_v872k399g2' => ['id' => 200875, 'type' => 'tv'],     // IT: Bienvenidos a Derry
+            'c_3d8l7ewcnq' => ['id' => 1318413, 'type' => 'movie'], // El Día D: Bajo presión
+            'c_xq65wtzxir' => ['id' => 1128204, 'type' => 'movie'], // Devorador de Almas
+            'c_dwqx1ssbjq' => ['id' => 390061, 'type' => 'movie'],  // El Informante (2017)
+            'c_g01x2i8tvk' => ['id' => 354912, 'type' => 'movie'],  // Coco
+            'c_bf1wb9cv1f' => ['id' => 66732, 'type' => 'tv'],     // Stranger Things
+            's_arcane_s2'  => ['id' => 94605, 'type' => 'tv'],     // Arcane
+        ];
+
+        $results = [];
+        $seen = [];
+
+        foreach ($items as $it) {
+            $rawId = $it['id'] ?? '';
+            $cat = $it['category'] ?? 'movies';
+            $type = ($cat === 'series') ? 'tv' : 'movie';
+            $tmdbId = null;
+
+            if (isset($customMap[$rawId])) {
+                $tmdbId = $customMap[$rawId]['id'];
+                $type = $customMap[$rawId]['type'];
+            } elseif (preg_match('/^mv_(\d+)$/', $rawId, $m)) {
+                $tmdbId = (int)$m[1];
+                $type = 'movie';
+            } elseif (preg_match('/^sr_(\d+)$/', $rawId, $m)) {
+                $tmdbId = (int)$m[1];
+                $type = 'tv';
+            } elseif (!empty($it['tmdbId'])) {
+                $tmdbId = (int)$it['tmdbId'];
+            } elseif (!empty($it['tmdb_id'])) {
+                $tmdbId = (int)$it['tmdb_id'];
+            }
+
+            if (!$tmdbId) {
+                continue;
+            }
+
+            $key = "{$type}_{$tmdbId}";
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $poster = $it['poster'] ?? ($it['thumbnail'] ?? '');
+            $backdrop = $it['backdrop'] ?? '';
+            $title = $it['title'] ?? 'Sin título';
+            $year = !empty($it['year']) ? (string)$it['year'] : '2024';
+            $rating = isset($it['rating']) ? (float)$it['rating'] : 8.0;
+
+            $results[] = [
+                'id'             => $tmdbId,
+                'title'          => $title,
+                'name'           => $title,
+                'type'           => $type,
+                'poster_path'    => $poster,
+                'backdrop_path'  => $backdrop,
+                'release_date'   => "{$year}-01-01",
+                'first_air_date' => "{$year}-01-01",
+                'vote_average'   => $rating,
+                'original_title' => $it['original_title'] ?? $title,
+                'rakun_badge'    => true
+            ];
+
+            if (count($results) >= $limit) {
+                break;
+            }
+        }
+
+        if (!empty($results)) {
+            self::setCache($cacheKey, $results, 21600); // 6 horas
+        }
+
+        return $results;
+    }
+
     // -------------------------------------------------------------------------
     // SISTEMA DE CACHÉ DE RESPUESTAS (data/cache/rakun_*.json)
     // -------------------------------------------------------------------------

@@ -144,12 +144,20 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
     $type_label = $type === 'movie' ? 'Película' : 'Serie';
     $wrapper_class = $is_carousel ? 'carousel-card-item' : 'col';
 
+    $imgSrc = (str_starts_with($item['poster_path'] ?? '', 'http://') || str_starts_with($item['poster_path'] ?? '', 'https://'))
+        ? htmlspecialchars($item['poster_path'])
+        : "https://image.tmdb.org/t/p/w500{$posterPath}";
+
+    $rakun_badge = !empty($item['rakun_badge'])
+        ? '<span class="media-badge" style="top: 8px; left: 8px; right: auto; background: rgba(16, 185, 129, 0.92); color: #fff; font-size: 0.68rem; font-weight: 700; border-radius: 4px; padding: 2px 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.4);"><i class="fas fa-cloud me-1"></i>Rakun</span>'
+        : '';
+
     return <<<HTML
     <div class="{$wrapper_class}" data-query="{$title}" data-original-title="{$original_title}" data-type="{$type}" data-id="{$id}" data-year="{$year}">
         <div class="media-card card h-100 bg-transparent border-0 position-relative">
             <div class="media-poster-wrap position-relative overflow-hidden rounded">
                 <a href="details.php?id={$id}&type={$type}" class="poster-main-link" aria-label="Ver {$title}">
-                    <img src="https://image.tmdb.org/t/p/w500{$posterPath}" 
+                    <img src="{$imgSrc}" 
                          class="card-img-top media-poster" 
                          alt="{$title}" 
                          loading="lazy"
@@ -159,6 +167,7 @@ function render_content_card(array $item, string $type, bool $is_carousel = fals
                 {$rating_badge}
                 {$year_badge}
                 {$watched_indicator}
+                {$rakun_badge}
 
                 <span class="badge-availability" style="display: none;">
                     <i class="fas fa-spinner fa-spin me-1"></i>Buscando...
