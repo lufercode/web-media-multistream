@@ -67,20 +67,37 @@ class MoviePlusProvider implements ProviderInterface
             if (empty($url)) continue;
 
             $serverName = 'Yandex CDN ' . $quality;
+            $dlServerName = 'Yandex Disk';
             if (str_contains($url, 'mega.nz')) {
                 $serverName = 'Mega.nz ' . $quality;
+                $dlServerName = 'Mega';
             } elseif (str_contains($url, 'google')) {
                 $serverName = 'Google Drive ' . $quality;
+                $dlServerName = 'Google Drive';
             }
 
             $size = !empty($u['size']) && $u['size'] !== 'N/A' ? $u['size'] : null;
 
+            // 1. Streaming para reproductor online
             $results[] = [
                 'provider'      => $this->getId(),
-                'provider_name' => $this->getName(),
+                'provider_name' => 'Movie+',
                 'type'          => 'streaming',
                 'title'         => $itemTitle,
                 'server'        => $serverName,
+                'quality'       => $quality,
+                'language'      => $langName,
+                'url'           => $url,
+                'size'          => $size
+            ];
+
+            // 2. Descarga directa en "Servidor Propio (Descarga / Dispositivo)"
+            $results[] = [
+                'provider'      => $this->getId(),
+                'provider_name' => 'Movie+',
+                'type'          => 'direct',
+                'title'         => $itemTitle,
+                'server'        => $dlServerName,
                 'quality'       => $quality,
                 'language'      => $langName,
                 'url'           => $url,
@@ -155,20 +172,41 @@ class MoviePlusProvider implements ProviderInterface
                     $langName = $langInfo['name'] ?? 'Subtitulado';
 
                     $serverName = 'Yandex CDN ' . $quality;
+                    $dlServerName = 'Yandex Disk';
                     if (str_contains($url, 'mega.nz')) {
                         $serverName = 'Mega.nz ' . $quality;
+                        $dlServerName = 'Mega';
+                    } elseif (str_contains($url, 'google')) {
+                        $serverName = 'Google Drive ' . $quality;
+                        $dlServerName = 'Google Drive';
                     }
 
+                    $epSize = !empty($ep['size']) && $ep['size'] !== 'N/A' ? $ep['size'] : null;
+
+                    // 1. Streaming para reproductor online
                     $results[] = [
                         'provider'      => $this->getId(),
-                        'provider_name' => $this->getName(),
+                        'provider_name' => 'Movie+',
                         'type'          => 'streaming',
                         'title'         => $epTitle,
                         'server'        => $serverName,
                         'quality'       => $quality,
                         'language'      => $langName,
                         'url'           => $url,
-                        'size'          => !empty($ep['size']) && $ep['size'] !== 'N/A' ? $ep['size'] : null
+                        'size'          => $epSize
+                    ];
+
+                    // 2. Descarga directa en "Servidor Propio (Descarga / Dispositivo)"
+                    $results[] = [
+                        'provider'      => $this->getId(),
+                        'provider_name' => 'Movie+',
+                        'type'          => 'direct',
+                        'title'         => $epTitle,
+                        'server'        => $dlServerName,
+                        'quality'       => $quality,
+                        'language'      => $langName,
+                        'url'           => $url,
+                        'size'          => $epSize
                     ];
                 }
             }

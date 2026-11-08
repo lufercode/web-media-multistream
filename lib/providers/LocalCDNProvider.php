@@ -46,12 +46,28 @@ class LocalCDNProvider implements ProviderInterface
             $itemTitle = $title . ($year ? " ({$year})" : '');
 
             foreach ($streams as $s) {
+                // 1. Streaming para reproductor online
                 $results[] = [
                     'provider'      => $this->getId(),
-                    'provider_name' => $this->getName(),
+                    'provider_name' => 'Rakun',
                     'type'          => 'streaming',
                     'title'         => $itemTitle,
                     'server'        => $s['server'] ?? 'Rakun Cloud CDN',
+                    'quality'       => $s['quality'] ?? '1080p FHD',
+                    'language'      => $s['language'] ?? 'Latino',
+                    'url'           => $s['url'],
+                    'size'          => null
+                ];
+
+                // 2. Descarga directa en "Servidor Propio (Descarga / Dispositivo)"
+                $isVip = $s['is_vip'] ?? false;
+                $serverLabel = $isVip ? 'Bunny VIP' : 'Cloud CDN';
+                $results[] = [
+                    'provider'      => $this->getId(),
+                    'provider_name' => 'Rakun',
+                    'type'          => 'direct',
+                    'title'         => $itemTitle,
+                    'server'        => $serverLabel,
                     'quality'       => $s['quality'] ?? '1080p FHD',
                     'language'      => $s['language'] ?? 'Latino',
                     'url'           => $s['url'],
@@ -84,12 +100,28 @@ class LocalCDNProvider implements ProviderInterface
 
             $results = [];
             foreach ($streams as $s) {
+                // 1. Streaming para reproductor online
                 $results[] = [
                     'provider'      => $this->getId(),
-                    'provider_name' => $this->getName(),
+                    'provider_name' => 'Rakun',
                     'type'          => 'streaming',
                     'title'         => $itemTitle,
                     'server'        => $s['server'] ?? 'Rakun Cloud CDN',
+                    'quality'       => $s['quality'] ?? '1080p FHD',
+                    'language'      => $s['language'] ?? 'Latino',
+                    'url'           => $s['url'],
+                    'size'          => null
+                ];
+
+                // 2. Descarga directa en "Servidor Propio (Descarga / Dispositivo)"
+                $isVip = $s['is_vip'] ?? false;
+                $serverLabel = $isVip ? 'Bunny VIP' : 'Cloud CDN';
+                $results[] = [
+                    'provider'      => $this->getId(),
+                    'provider_name' => 'Rakun',
+                    'type'          => 'direct',
+                    'title'         => $itemTitle,
+                    'server'        => $serverLabel,
                     'quality'       => $s['quality'] ?? '1080p FHD',
                     'language'      => $s['language'] ?? 'Latino',
                     'url'           => $s['url'],

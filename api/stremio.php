@@ -237,9 +237,15 @@ if ($action === 'stream') {
         return 5;
     };
 
+    $seenUrls = [];
+
     foreach ($items as $s) {
         $url = $s['url'] ?? '';
         if (empty($url)) continue;
+
+        $cleanUrlKey = explode('?', $url)[0];
+        if (isset($seenUrls[$cleanUrlKey])) continue;
+        $seenUrls[$cleanUrlKey] = true;
 
         $provName = $s['provider_name'] ?? 'Proveedor';
         $quality = $s['quality'] ?? 'HD';

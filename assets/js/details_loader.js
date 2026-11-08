@@ -3032,7 +3032,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const qlt = src.quality || 'HD';
                 const provName = src.provider_name || 'CDN Propio';
                 html += `
-                    <a href="${url}" target="_blank" class="btn btn-sm btn-primary shadow-sm d-inline-flex align-items-center">
+                    <a href="${url}" download target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary shadow-sm d-inline-flex align-items-center">
                         <span class="badge bg-dark text-info me-1"><i class="fas fa-cloud me-1"></i>${provName}</span>
                         <i class="fas fa-download me-1"></i> ${srv} <span class="badge bg-black ms-1">${qlt}</span>
                     </a>
@@ -3382,6 +3382,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const a = document.createElement('a');
             a.href = url;
             a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.setAttribute('download', '');
             a.className = 'btn btn-sm btn-primary shadow-sm d-inline-flex align-items-center pop-in-card';
             a.innerHTML = `
                 <span class="badge bg-dark text-info me-1"><i class="fas fa-cloud me-1"></i>${provName}</span>
