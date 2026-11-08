@@ -496,14 +496,13 @@ export async function resolveEmbedToHls(embedUrl, customReferer = '') {
 }
 
 /**
- * Enruta la URL de video a través del Universal Stream Proxy de Stremio
- * para asegurar reproducción directa sin errores de CORS o Referer.
+ * Devuelve la URL directa de video para reproducción nativa en Stremio sin pasar por proxies.
+ * Stremio cuenta con su propio reproductor nativo (ExoPlayer en Android TV/móvil, MPV/VLC en PC)
+ * que reproduce HLS (.m3u8), MP4 y MKV directamente pasando los encabezados de behaviorHints.proxyHeaders.
  */
 export function makeStreamUrl(rawUrl, referer = '', baseUrl = '') {
     if (!rawUrl) return '';
-    const effectiveBaseUrl = (baseUrl || '').replace(/\/+$/, '');
-    if (!effectiveBaseUrl) return rawUrl;
-    return `${effectiveBaseUrl}/stream-proxy?url=${encodeURIComponent(rawUrl)}&referer=${encodeURIComponent(referer || '')}`;
+    return rawUrl;
 }
 
 /**
@@ -1278,7 +1277,7 @@ async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana', baseUrl = '
 /**
  * 5. Scraper: CDN Propio (Rakun Cloud & Bunny CDN VIP)
  */
-async function scrapeLocalCdn(meta, baseUrl = '') {
+export async function scrapeLocalCdn(meta, baseUrl = '') {
     const streams = [];
     const headers = {
         'User-Agent': 'RakunTv/2.0 (Android TV; OkHttp/4.9.2)',
@@ -1304,43 +1303,79 @@ async function scrapeLocalCdn(meta, baseUrl = '') {
         if (meta.type === 'movie') {
             let targetId = meta.tmdbId ? tmdbToRakun[meta.tmdbId] : null;
 
-            if (!targetId && meta.title) {
-                const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(meta.title)}`, { json: true, headers, timeout: 4000 });
-                if (Array.isArray(searchRes)) {
-                    const match = searchRes.find(i => 
-                        (i.category === 'movies' || i.category === 'kids') && 
-                        (isTitleMatch(meta.title, i.title || '') || (meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId)))
-                    );
-                    if (match?.id) targetId = match.id;
+            // 1. Probar consulta directa por TMDB ID (mv_{tmdbId})
+            if (!targetId && meta.tmdbId) {
+                const directCheck = await httpGet(`https://api.rakun.lat/api/content/mv_${meta.tmdbId}`, { json: true, headers, timeout: 3500 });
+                if (directCheck?.id && (directCheck.streamLinks?.length || directCheck.streamUrl)) {
+                    contentData = directCheck;
                 }
             }
 
-            // OBTENER SIEMPRE EL DETALLE FRESCO POR ID (content/{id}) PARA OBTENER ENLACES CON TOKENS REALES VÁLIDOS
-            if (targetId) {
+            // 2. Si no se resolvió directo, buscar por títulos (español, original, inglés)
+            if (!contentData && !targetId) {
+                const searchQueries = Array.from(new Set([meta.title, meta.originalTitle, meta.englishTitle].filter(Boolean)));
+                for (const q of searchQueries.slice(0, 2)) {
+                    const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(q)}`, { json: true, headers, timeout: 4000 });
+                    if (Array.isArray(searchRes) && searchRes.length > 0) {
+                        const match = searchRes.find(i => 
+                            (i.category === 'movies' || i.category === 'kids') && 
+                            ((meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId)) ||
+                             isTitleMatch(meta.title, i.title || '') ||
+                             (meta.originalTitle && isTitleMatch(meta.originalTitle, i.title || '')))
+                        );
+                        if (match?.id) {
+                            targetId = match.id;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 3. OBTENER SIEMPRE EL DETALLE FRESCO POR ID (content/{id}) PARA OBTENER ENLACES CON TOKENS REALES VÁLIDOS
+            if (!contentData && targetId) {
                 contentData = await httpGet(`https://api.rakun.lat/api/content/${targetId}`, { json: true, headers, timeout: 4500 });
             }
         } else if (meta.type === 'series') {
             let targetId = meta.tmdbId ? tmdbToRakun[meta.tmdbId] : null;
+            let seriesDetail = null;
 
-            if (!targetId && meta.title) {
-                const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(meta.title)}`, { json: true, headers, timeout: 4000 });
-                if (Array.isArray(searchRes)) {
-                    const match = searchRes.find(i => 
-                        (i.category === 'series' || i.category === 'anime' || i.seasons) && 
-                        (isTitleMatch(meta.title, i.title || '') || (meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId)))
-                    );
-                    if (match?.id) targetId = match.id;
+            // 1. Probar consulta directa por TMDB ID (sr_{tmdbId})
+            if (!targetId && meta.tmdbId) {
+                const directCheck = await httpGet(`https://api.rakun.lat/api/content/sr_${meta.tmdbId}`, { json: true, headers, timeout: 3500 });
+                if (directCheck?.id && Array.isArray(directCheck.seasons) && directCheck.seasons.length > 0) {
+                    seriesDetail = directCheck;
                 }
             }
 
-            // OBTENER SIEMPRE EL DETALLE FRESCO POR ID (content/{id}) PARA OBTENER TODAS LAS TEMPORADAS CON TOKENS VÁLIDOS
-            if (targetId) {
-                const seriesDetail = await httpGet(`https://api.rakun.lat/api/content/${targetId}`, { json: true, headers, timeout: 4500 });
-                if (seriesDetail?.seasons && Array.isArray(seriesDetail.seasons)) {
-                    const seasonObj = seriesDetail.seasons.find(s => Number(s.season_number || s.number) === Number(meta.season));
-                    if (seasonObj?.episodes && Array.isArray(seasonObj.episodes)) {
-                        contentData = seasonObj.episodes.find(e => Number(e.episode || e.episode_number) === Number(meta.episode));
+            // 2. Si no se resolvió directo, buscar por títulos
+            if (!seriesDetail && !targetId) {
+                const searchQueries = Array.from(new Set([meta.title, meta.originalTitle, meta.englishTitle].filter(Boolean)));
+                for (const q of searchQueries.slice(0, 2)) {
+                    const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(q)}`, { json: true, headers, timeout: 4000 });
+                    if (Array.isArray(searchRes) && searchRes.length > 0) {
+                        const match = searchRes.find(i => 
+                            (i.category === 'series' || i.category === 'anime' || i.seasons) && 
+                            ((meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId)) ||
+                             isTitleMatch(meta.title, i.title || '') ||
+                             (meta.originalTitle && isTitleMatch(meta.originalTitle, i.title || '')))
+                        );
+                        if (match?.id) {
+                            targetId = match.id;
+                            break;
+                        }
                     }
+                }
+            }
+
+            // 3. OBTENER SIEMPRE EL DETALLE FRESCO POR ID (content/{id}) PARA OBTENER TODAS LAS TEMPORADAS CON TOKENS VÁLIDOS
+            if (!seriesDetail && targetId) {
+                seriesDetail = await httpGet(`https://api.rakun.lat/api/content/${targetId}`, { json: true, headers, timeout: 4500 });
+            }
+
+            if (seriesDetail?.seasons && Array.isArray(seriesDetail.seasons)) {
+                const seasonObj = seriesDetail.seasons.find(s => Number(s.season_number || s.number) === Number(meta.season));
+                if (seasonObj?.episodes && Array.isArray(seasonObj.episodes)) {
+                    contentData = seasonObj.episodes.find(e => Number(e.episode || e.episode_number) === Number(meta.episode));
                 }
             }
         }
@@ -1385,7 +1420,13 @@ async function scrapeLocalCdn(meta, baseUrl = '') {
                 _prov: 'local_cdn',
                 behaviorHints: {
                     notWebReady: false,
-                    bingeGroup: `streammedia-rakun-latino`
+                    bingeGroup: `streammedia-rakun-latino`,
+                    proxyHeaders: {
+                        request: {
+                            'User-Agent': 'RakunTv/2.0 (Android TV; OkHttp/4.9.2)',
+                            'Accept': '*/*'
+                        }
+                    }
                 }
             });
         }
@@ -1639,17 +1680,18 @@ async function scrapeMoviePlus(meta, baseUrl = '') {
                     const resolved = await resolveYandexDownloadUrl(decryptedUrl);
                     if (resolved) {
                         directDownloadUrl = resolved;
+                    } else {
+                        continue; // No enviar URL de página web HTML a Stremio si no hay stream directo
                     }
                 } else if (decryptedUrl.includes('mega.nz')) {
-                    serverLabel = 'Mega.nz';
+                    continue; // Stremio no reproduce enlaces de página web de mega.nz
                 }
 
                 const langInfo = parseMoviePlusLanguage(rawQuality);
                 const cleanQ = cleanMoviePlusQuality(rawQuality);
 
-                const streamUrl = effectiveBaseUrl
-                    ? `${effectiveBaseUrl}/movieplus-stream?url=${encodeURIComponent(directDownloadUrl)}`
-                    : directDownloadUrl;
+                // Entrega de URL directa del CDN (ej: Yandex CDN) para reproducción nativa sin sobrecargar el servidor
+                const streamUrl = directDownloadUrl;
 
                 streams.push({
                     name: `${langInfo.flag} Movie+\n${cleanQ}`,
@@ -1714,13 +1756,16 @@ async function scrapeMoviePlus(meta, baseUrl = '') {
                         const resolved = await resolveYandexDownloadUrl(decryptedUrl);
                         if (resolved) {
                             directDownloadUrl = resolved;
+                        } else {
+                            continue; // No enviar URL de página web HTML a Stremio si no hay stream directo
                         }
+                    } else if (decryptedUrl.includes('mega.nz')) {
+                        continue; // Stremio no reproduce enlaces de página web de mega.nz
                     }
 
                     const langInfo = parseMoviePlusLanguage(epTitle);
-                    const streamUrl = effectiveBaseUrl
-                        ? `${effectiveBaseUrl}/movieplus-stream?url=${encodeURIComponent(directDownloadUrl)}`
-                        : directDownloadUrl;
+                    // Entrega de URL directa del CDN (ej: Yandex CDN) para reproducción nativa sin sobrecargar el servidor
+                    const streamUrl = directDownloadUrl;
 
                     streams.push({
                         name: `${langInfo.flag} Movie+\n1080p HD`,

@@ -205,19 +205,31 @@ class RakunService
     {
         $cacheKey = "rakun_mv_" . ($tmdbId ?: md5($title . ($year ?: '')));
         $cached = self::getCache($cacheKey);
-        if ($cached !== null && is_array($cached) && !empty($cached)) {
+        if ($cached !== null && is_array($cached) && isset($cached[0]['url'])) {
             return $cached;
         }
 
         $itemTarget = null;
 
-        // 1. Buscar en catálogo local (mapea TMDB IDs y títulos a IDs internos de Rakun)
+        // 1. Probar consulta directa por TMDB ID (mv_{tmdbId})
+        if ($tmdbId !== null && $tmdbId > 0) {
+            $directMv = self::fetchRemote("content/mv_{$tmdbId}", 3);
+            if (!empty($directMv['id']) && (!empty($directMv['streamLinks']) || !empty($directMv['streamUrl']))) {
+                $streams = self::extractStreamLinks($directMv);
+                if (!empty($streams)) {
+                    self::setCache($cacheKey, $streams, 10800);
+                    return $streams;
+                }
+            }
+        }
+
+        // 2. Buscar en catálogo local (mapea TMDB IDs y títulos a IDs internos de Rakun)
         $local = self::findInLocalCatalog($title, $year, 'movies', $tmdbId);
         if ($local && !empty($local['id'])) {
             $itemTarget = $local;
         }
 
-        // 2. Si no se encontró en local, buscar upstream en la API por título
+        // 3. Si no se encontró en local, buscar upstream en la API por título
         if (!$itemTarget && mb_strlen($title) >= 2) {
             $searchData = self::fetchRemote('content?search=' . urlencode($title), 4);
             if (is_array($searchData)) {
@@ -262,19 +274,29 @@ class RakunService
     {
         $cacheKey = "rakun_sr_" . ($tmdbId ?: md5($title)) . "_s{$season}e{$episode}";
         $cached = self::getCache($cacheKey);
-        if ($cached !== null && is_array($cached) && !empty($cached)) {
+        if ($cached !== null && is_array($cached) && isset($cached[0]['url'])) {
             return $cached;
         }
 
         $seriesTarget = null;
 
-        // 1. Buscar en catálogo local
-        $local = self::findInLocalCatalog($title, null, 'series', $tmdbId);
-        if ($local && !empty($local['id'])) {
-            $seriesTarget = $local;
+        // 1. Probar consulta directa por TMDB ID (sr_{tmdbId})
+        if ($tmdbId !== null && $tmdbId > 0) {
+            $directSr = self::fetchRemote("content/sr_{$tmdbId}", 3);
+            if (!empty($directSr['id']) && !empty($directSr['seasons']) && is_array($directSr['seasons'])) {
+                $seriesTarget = $directSr;
+            }
         }
 
-        // 2. Si no se encontró en local, buscar upstream en la API por título
+        // 2. Buscar en catálogo local
+        if (!$seriesTarget) {
+            $local = self::findInLocalCatalog($title, null, 'series', $tmdbId);
+            if ($local && !empty($local['id'])) {
+                $seriesTarget = $local;
+            }
+        }
+
+        // 3. Si no se encontró en local, buscar upstream en la API por título
         if (!$seriesTarget && mb_strlen($title) >= 2) {
             $searchData = self::fetchRemote('content?search=' . urlencode($title), 4);
             if (is_array($searchData)) {
