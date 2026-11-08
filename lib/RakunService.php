@@ -439,6 +439,141 @@ class RakunService
     }
 
     /**
+     * Retorna los contenidos populares de Rakun divididos por subsecciones:
+     * - 'movies': Películas
+     * - 'series': Series
+     * - 'anime': Anime
+     * - 'kids': Infantil y Familiar
+     */
+    public static function getPopularSections(int $limit = 12): array
+    {
+        $cacheKey = 'rakun_popular_sections_v2';
+        $cached = self::getCache($cacheKey);
+        if ($cached !== null && is_array($cached) && !empty($cached)) {
+            return $cached;
+        }
+
+        $catalog = self::getLocalCatalog();
+        if (empty($catalog)) {
+            return ['movies' => [], 'series' => [], 'anime' => [], 'kids' => []];
+        }
+
+        $customMap = [
+            // Películas
+            'c_3d8l7ewcnq' => ['id' => 1318413, 'type' => 'movie'], // El Día D: Bajo presión
+            'c_xq65wtzxir' => ['id' => 1128204, 'type' => 'movie'], // Devorador de Almas
+            'c_dwqx1ssbjq' => ['id' => 390061, 'type' => 'movie'],  // El Informante (2017)
+            'c_g01x2i8tvk' => ['id' => 354912, 'type' => 'movie'],  // Coco
+            'c_l9y3k4s9ly' => ['id' => 404368, 'type' => 'movie'],  // Wifi Ralph
+            'c_9ioyoi9kdv' => ['id' => 82690, 'type' => 'movie'],   // Ralph el demoledor
+            'c_oxjod1jgnj' => ['id' => 49519, 'type' => 'movie'],   // Los Croods
+            'c_5w1gnqdgxw' => ['id' => 38055, 'type' => 'movie'],   // Megamente
+            'c_bg3v7djvr1' => ['id' => 269149, 'type' => 'movie'],  // Mi Villano Favorito 3
+            'c_gmo95z7uaq' => ['id' => 93456, 'type' => 'movie'],   // Mi Villano Favorito 2
+            // Series
+            'c_fzp45tihaf' => ['id' => 1399, 'type' => 'tv'],       // Juego de Tronos
+            'c_bf1wb9cv1f' => ['id' => 66732, 'type' => 'tv'],      // Stranger Things
+            'c_v872k399g2' => ['id' => 200875, 'type' => 'tv'],     // IT: Bienvenidos a Derry
+            's_arcane_s2'  => ['id' => 94605, 'type' => 'tv'],      // Arcane
+            'c_4x3ngzq8gl' => ['id' => 218896, 'type' => 'tv'],     // Linternas (Lanterns)
+            'c_5hi0qhdfia' => ['id' => 213713, 'type' => 'tv'],     // Crystal Lake
+            // Anime
+            'c_d6j9dg52lx' => ['id' => 258903, 'type' => 'tv'],     // Tougen Anki
+            'c_ftt65kqn4t' => ['id' => 263622, 'type' => 'tv'],     // Kill Blue
+        ];
+
+        $categories = [
+            'movies' => 'movies',
+            'series' => 'series',
+            'anime'  => 'anime',
+            'kids'   => 'kids'
+        ];
+
+        $sections = [];
+
+        foreach ($categories as $secKey => $catFilter) {
+            $catItems = array_values(array_filter($catalog, function($it) use ($catFilter) {
+                $c = $it['category'] ?? '';
+                if ($catFilter === 'movies') return ($c === 'movies');
+                if ($catFilter === 'series') return ($c === 'series');
+                if ($catFilter === 'anime')  return ($c === 'anime');
+                if ($catFilter === 'kids')   return ($c === 'kids');
+                return false;
+            }));
+
+            // Ordenar: primero top10 / featured, luego views desc
+            usort($catItems, function($a, $b) {
+                $scoreA = (!empty($a['top10']) ? 200000 : 0) + (!empty($a['featured']) ? 100000 : 0) + ($a['views'] ?? 0);
+                $scoreB = (!empty($b['top10']) ? 200000 : 0) + (!empty($b['featured']) ? 100000 : 0) + ($b['views'] ?? 0);
+                return $scoreB <=> $scoreA;
+            });
+
+            $secResults = [];
+            $seen = [];
+
+            foreach ($catItems as $it) {
+                $rawId = $it['id'] ?? '';
+                $type = ($secKey === 'series' || $secKey === 'anime') ? 'tv' : 'movie';
+                $tmdbId = null;
+
+                if (isset($customMap[$rawId])) {
+                    $tmdbId = $customMap[$rawId]['id'];
+                    $type = $customMap[$rawId]['type'];
+                } elseif (preg_match('/^mv_(\d+)$/', $rawId, $m)) {
+                    $tmdbId = (int)$m[1];
+                    $type = 'movie';
+                } elseif (preg_match('/^(?:sr|an)_(\d+)$/', $rawId, $m)) {
+                    $tmdbId = (int)$m[1];
+                    $type = 'tv';
+                } elseif (!empty($it['tmdbId'])) {
+                    $tmdbId = (int)$it['tmdbId'];
+                } elseif (!empty($it['tmdb_id'])) {
+                    $tmdbId = (int)$it['tmdb_id'];
+                }
+
+                if (!$tmdbId) {
+                    continue;
+                }
+
+                $key = "{$type}_{$tmdbId}";
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+
+                $poster = $it['poster'] ?? ($it['thumbnail'] ?? '');
+                $backdrop = $it['backdrop'] ?? '';
+                $title = $it['title'] ?? 'Sin título';
+                $year = !empty($it['year']) ? (string)$it['year'] : '2024';
+                $rating = isset($it['rating']) ? (float)$it['rating'] : 8.0;
+
+                $secResults[] = [
+                    'id'             => $tmdbId,
+                    'title'          => $title,
+                    'name'           => $title,
+                    'type'           => $type,
+                    'poster_path'    => $poster,
+                    'backdrop_path'  => $backdrop,
+                    'release_date'   => "{$year}-01-01",
+                    'first_air_date' => "{$year}-01-01",
+                    'vote_average'   => $rating,
+                    'original_title' => $it['original_title'] ?? $title,
+                    'rakun_badge'    => true
+                ];
+
+                if (count($secResults) >= $limit) {
+                    break;
+                }
+            }
+
+            $sections[$secKey] = $secResults;
+        }
+
+        self::setCache($cacheKey, $sections, 21600); // 6 horas
+        return $sections;
+    }
+
+    /**
      * Retorna los contenidos más populares de Rakun (Top 10 / Trending)
      * adaptados con sus TMDB IDs para visualización inmediata en Home.
      */

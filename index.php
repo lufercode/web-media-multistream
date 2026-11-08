@@ -5,7 +5,7 @@ require_once 'includes/templates/header.php';
 
 // Obtener datos destacados y populares de TMDB y Rakun CDN
 $hero = get_hero_featured_content();
-$popular_rakun = RakunService::getPopularContent(15);
+$rakun_sections = RakunService::getPopularSections(15);
 $popular_movies = get_popular_content('movie', 15);
 $popular_series = get_popular_content('tv', 15);
 $popular_animation = get_popular_animation(15);
@@ -91,15 +91,82 @@ foreach ($recently_watched_series_ids as $item_info) {
         ?>
     <?php endif; ?>
 
-    <!-- Carrusel: Popular en Rakun (Cloud CDN Latino) -->
-    <?php if (!empty($popular_rakun)): ?>
-        <?php
-        $rakun_cards_html = '';
-        foreach ($popular_rakun as $r_item) {
-            $rakun_cards_html .= render_content_card($r_item, $r_item['type'], true);
-        }
-        echo render_carousel_row('Popular en Rakun', 'popular-rakun', $rakun_cards_html, 'Cloud CDN Latino');
-        ?>
+    <!-- SECCIÓN POPULAR EN RAKUN CON SUBSECCIONES (Películas, Series, Anime, Infantil) -->
+    <?php if (!empty($rakun_sections) && (!empty($rakun_sections['movies']) || !empty($rakun_sections['series']) || !empty($rakun_sections['anime']) || !empty($rakun_sections['kids']))): ?>
+        <div class="rakun-popular-container mb-4 mt-2 p-3 p-md-4 rounded-4" style="background: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, rgba(10, 14, 23, 0) 100%); border: 1px solid rgba(16, 185, 129, 0.22); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 pb-2 border-bottom border-success border-opacity-25">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-success bg-opacity-75 text-white p-2 rounded-circle shadow-sm">
+                        <i class="fas fa-cloud fs-5"></i>
+                    </span>
+                    <div>
+                        <h2 class="text-white fs-4 fw-bold mb-0 d-flex align-items-center gap-2 flex-wrap">
+                            <span>Popular en Rakun</span>
+                            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 fs-6 fw-normal py-1 px-2">Cloud CDN Latino</span>
+                        </h2>
+                        <small class="text-secondary">Servidores directos de alta velocidad en 1080p FHD con audio latino</small>
+                    </div>
+                </div>
+                <div class="d-none d-md-flex align-items-center gap-1">
+                    <?php if (!empty($rakun_sections['movies'])): ?>
+                        <a href="#section-popular-rakun-movies" class="btn btn-dark btn-sm rounded-pill text-light border-secondary"><i class="bi bi-film me-1 text-danger"></i>Películas</a>
+                    <?php endif; ?>
+                    <?php if (!empty($rakun_sections['series'])): ?>
+                        <a href="#section-popular-rakun-series" class="btn btn-dark btn-sm rounded-pill text-light border-secondary"><i class="bi bi-tv me-1 text-info"></i>Series</a>
+                    <?php endif; ?>
+                    <?php if (!empty($rakun_sections['anime'])): ?>
+                        <a href="#section-popular-rakun-anime" class="btn btn-dark btn-sm rounded-pill text-light border-secondary"><i class="fas fa-dragon me-1 text-warning"></i>Anime</a>
+                    <?php endif; ?>
+                    <?php if (!empty($rakun_sections['kids'])): ?>
+                        <a href="#section-popular-rakun-kids" class="btn btn-dark btn-sm rounded-pill text-light border-secondary"><i class="bi bi-emoji-smile me-1 text-success"></i>Infantil</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- Subsección 1: Películas Populares en Rakun -->
+            <?php if (!empty($rakun_sections['movies'])): ?>
+                <?php
+                $cards = '';
+                foreach ($rakun_sections['movies'] as $r) {
+                    $cards .= render_content_card($r, $r['type'], true);
+                }
+                echo render_carousel_row('Películas en Rakun', 'popular-rakun-movies', $cards, 'Películas 1080p');
+                ?>
+            <?php endif; ?>
+
+            <!-- Subsección 2: Series Populares en Rakun -->
+            <?php if (!empty($rakun_sections['series'])): ?>
+                <?php
+                $cards = '';
+                foreach ($rakun_sections['series'] as $r) {
+                    $cards .= render_content_card($r, $r['type'], true);
+                }
+                echo render_carousel_row('Series en Rakun', 'popular-rakun-series', $cards, 'Series Completas');
+                ?>
+            <?php endif; ?>
+
+            <!-- Subsección 3: Anime Destacado en Rakun -->
+            <?php if (!empty($rakun_sections['anime'])): ?>
+                <?php
+                $cards = '';
+                foreach ($rakun_sections['anime'] as $r) {
+                    $cards .= render_content_card($r, $r['type'], true);
+                }
+                echo render_carousel_row('Anime en Rakun', 'popular-rakun-anime', $cards, 'Anime HD');
+                ?>
+            <?php endif; ?>
+
+            <!-- Subsección 4: Infantil & Familiar en Rakun -->
+            <?php if (!empty($rakun_sections['kids'])): ?>
+                <?php
+                $cards = '';
+                foreach ($rakun_sections['kids'] as $r) {
+                    $cards .= render_content_card($r, $r['type'], true);
+                }
+                echo render_carousel_row('Infantil & Familiar en Rakun', 'popular-rakun-kids', $cards, 'Para Todos');
+                ?>
+            <?php endif; ?>
+        </div>
     <?php endif; ?>
 
     <!-- Carrusel: Películas Populares -->
