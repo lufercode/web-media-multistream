@@ -1285,38 +1285,62 @@ async function scrapeLocalCdn(meta, baseUrl = '') {
         'Accept': 'application/json'
     };
 
+    // Mapeo directo de TMDB IDs a IDs de Rakun para títulos populares
+    const tmdbToRakun = {
+        // Películas
+        1318413: 'c_3d8l7ewcnq', 1128204: 'c_xq65wtzxir', 390061: 'c_dwqx1ssbjq',
+        354912: 'c_g01x2i8tvk',  404368: 'c_l9y3k4s9ly',  82690: 'c_9ioyoi9kdv',
+        49519: 'c_oxjod1jgnj',   38055: 'c_5w1gnqdgxw',   269149: 'c_bg3v7djvr1',
+        93456: 'c_gmo95z7uaq',
+        // Series
+        1399: 'c_fzp45tihaf',    66732: 'c_bf1wb9cv1f',   200875: 'c_v872k399g2',
+        94605: 's_arcane_s2',    218896: 'c_4x3ngzq8gl',  213713: 'c_5hi0qhdfia',
+        258903: 'c_d6j9dg52lx',  263622: 'c_ftt65kqn4t'
+    };
+
     try {
         let contentData = null;
 
         if (meta.type === 'movie') {
-            if (meta.tmdbId) {
-                contentData = await httpGet(`https://api.rakun.lat/api/content/mv_${meta.tmdbId}`, { json: true, headers, timeout: 3500 });
-            }
-            if (!contentData?.streamLinks?.length && !contentData?.streamUrl && meta.title) {
-                const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(meta.title)}`, { json: true, headers, timeout: 3500 });
+            let targetId = meta.tmdbId ? tmdbToRakun[meta.tmdbId] : null;
+
+            if (!targetId && meta.title) {
+                const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(meta.title)}`, { json: true, headers, timeout: 4000 });
                 if (Array.isArray(searchRes)) {
-                    contentData = searchRes.find(i => (i.category === 'movies' || i.category === 'kids') && (isTitleMatch(meta.title, i.title || '') || (meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId))));
-                }
-            }
-        } else if (meta.type === 'series') {
-            let seriesDetail = null;
-            if (meta.tmdbId) {
-                seriesDetail = await httpGet(`https://api.rakun.lat/api/content/sr_${meta.tmdbId}`, { json: true, headers, timeout: 3500 });
-            }
-            if (!seriesDetail?.seasons?.length && meta.title) {
-                const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(meta.title)}`, { json: true, headers, timeout: 3500 });
-                if (Array.isArray(searchRes)) {
-                    const match = searchRes.find(i => (i.category === 'series' || i.seasons) && (isTitleMatch(meta.title, i.title || '') || (meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId))));
-                    if (match?.id) {
-                        seriesDetail = await httpGet(`https://api.rakun.lat/api/content/${match.id}`, { json: true, headers, timeout: 3500 });
-                    }
+                    const match = searchRes.find(i => 
+                        (i.category === 'movies' || i.category === 'kids') && 
+                        (isTitleMatch(meta.title, i.title || '') || (meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId)))
+                    );
+                    if (match?.id) targetId = match.id;
                 }
             }
 
-            if (seriesDetail?.seasons && Array.isArray(seriesDetail.seasons)) {
-                const seasonObj = seriesDetail.seasons.find(s => Number(s.season_number || s.number) === Number(meta.season));
-                if (seasonObj?.episodes && Array.isArray(seasonObj.episodes)) {
-                    contentData = seasonObj.episodes.find(e => Number(e.episode || e.episode_number) === Number(meta.episode));
+            // OBTENER SIEMPRE EL DETALLE FRESCO POR ID (content/{id}) PARA OBTENER ENLACES CON TOKENS REALES VÁLIDOS
+            if (targetId) {
+                contentData = await httpGet(`https://api.rakun.lat/api/content/${targetId}`, { json: true, headers, timeout: 4500 });
+            }
+        } else if (meta.type === 'series') {
+            let targetId = meta.tmdbId ? tmdbToRakun[meta.tmdbId] : null;
+
+            if (!targetId && meta.title) {
+                const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(meta.title)}`, { json: true, headers, timeout: 4000 });
+                if (Array.isArray(searchRes)) {
+                    const match = searchRes.find(i => 
+                        (i.category === 'series' || i.category === 'anime' || i.seasons) && 
+                        (isTitleMatch(meta.title, i.title || '') || (meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId)))
+                    );
+                    if (match?.id) targetId = match.id;
+                }
+            }
+
+            // OBTENER SIEMPRE EL DETALLE FRESCO POR ID (content/{id}) PARA OBTENER TODAS LAS TEMPORADAS CON TOKENS VÁLIDOS
+            if (targetId) {
+                const seriesDetail = await httpGet(`https://api.rakun.lat/api/content/${targetId}`, { json: true, headers, timeout: 4500 });
+                if (seriesDetail?.seasons && Array.isArray(seriesDetail.seasons)) {
+                    const seasonObj = seriesDetail.seasons.find(s => Number(s.season_number || s.number) === Number(meta.season));
+                    if (seasonObj?.episodes && Array.isArray(seasonObj.episodes)) {
+                        contentData = seasonObj.episodes.find(e => Number(e.episode || e.episode_number) === Number(meta.episode));
+                    }
                 }
             }
         }
@@ -1341,22 +1365,13 @@ async function scrapeLocalCdn(meta, baseUrl = '') {
             if (seenUrls.has(cleanBase)) continue;
             seenUrls.add(cleanBase);
 
-            // Firmar la URL si no viene con token activo
-            if (!directUrl.includes('token=')) {
-                const sign = await httpGet(`https://api.rakun.lat/api/content/sign-url?url=${encodeURIComponent(directUrl)}`, { json: true, headers, timeout: 3000 });
-                if (sign?.signedUrl) {
-                    directUrl = sign.signedUrl;
-                }
-            }
-
             const isVip = directUrl.includes('b-cdn.net') || lnk.type === 'premium';
             const serverLabel = isVip ? 'Rakun VIP (Bunny CDN)' : 'Rakun Cloud CDN';
             const labelQuality = (lnk.quality && lnk.quality !== 'SD') ? `${lnk.quality.toUpperCase()} HD` : '1080p FHD';
             const flag = '🇲🇽';
 
-            const streamUrl = effectiveBaseUrl
-                ? `${effectiveBaseUrl}/stream-proxy?url=${encodeURIComponent(directUrl)}`
-                : directUrl;
+            // Entregar la URL directa firmada por el CDN para máxima velocidad de reproducción nativa en Stremio
+            const streamUrl = directUrl;
 
             const labelTitle = meta.type === 'movie'
                 ? `${meta.title} (${meta.year || 'HD'})`

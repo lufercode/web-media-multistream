@@ -121,7 +121,7 @@ class RakunService
             return '';
         }
 
-        // Si ya tiene un token y vence en más de 5 minutos, devolver tal cual
+        // Si ya tiene un token vigente (vence en más de 5 minutos), devolver tal cual
         if (str_contains($targetUrl, 'token=') && preg_match('/expires=(\d+)/', $targetUrl, $m)) {
             $exp = (int)$m[1];
             if ($exp > time() + 300) {
@@ -129,17 +129,9 @@ class RakunService
             }
         }
 
-        // Intentar firmar vía API upstream
-        $signResp = self::fetchRemote('content/sign-url?url=' . urlencode($targetUrl), 3);
-        if (!empty($signResp['signedUrl'])) {
-            return $signResp['signedUrl'];
-        }
-
-        // Fallback de firma HMAC/timestamp segura local
-        $token = bin2hex(random_bytes(16));
-        $expires = time() + 14400; // 4 horas
-        $sep = str_contains($targetUrl, '?') ? '&' : '?';
-        return $targetUrl . $sep . 'token=' . $token . '&expires=' . $expires;
+        // Si no tiene token o ya expiró, NO inyectar un token aleatorio con random_bytes.
+        // Los CDNs (Bunny CDN y Cloudflare) rechazan firmas inválidas con 403 Forbidden y 401 Unauthorized.
+        return $targetUrl;
     }
 
     /**
@@ -211,40 +203,23 @@ class RakunService
      */
     public static function searchMovie(string $title, ?string $year = null, ?int $tmdbId = null): array
     {
-        $movieData = null;
-
-        // 1. Búsqueda directa por TMDB ID (mv_{tmdbId})
-        if ($tmdbId !== null && $tmdbId > 0) {
-            $cacheKey = "rakun_mv_{$tmdbId}";
-            $cached = self::getCache($cacheKey);
-            if ($cached !== null) {
-                $movieData = $cached;
-            } else {
-                $res = self::fetchRemote("content/mv_{$tmdbId}");
-                if (!empty($res['id']) || !empty($res['streamLinks']) || !empty($res['streamUrl'])) {
-                    $movieData = $res;
-                    self::setCache($cacheKey, $res, 21600); // 6 horas
-                }
-            }
+        $cacheKey = "rakun_mv_" . ($tmdbId ?: md5($title . ($year ?: '')));
+        $cached = self::getCache($cacheKey);
+        if ($cached !== null && is_array($cached) && !empty($cached)) {
+            return $cached;
         }
 
-        // 2. Si no se encontró por ID, buscar en catálogo local
-        if (!$movieData) {
-            $local = self::findInLocalCatalog($title, $year, 'movies', $tmdbId);
-            if ($local) {
-                // Si el item local no tiene streamLinks actualizados, re-consultar upstream por su ID
-                if (!empty($local['id'])) {
-                    $rem = self::fetchRemote("content/{$local['id']}");
-                    $movieData = $rem ?: $local;
-                } else {
-                    $movieData = $local;
-                }
-            }
+        $itemTarget = null;
+
+        // 1. Buscar en catálogo local (mapea TMDB IDs y títulos a IDs internos de Rakun)
+        $local = self::findInLocalCatalog($title, $year, 'movies', $tmdbId);
+        if ($local && !empty($local['id'])) {
+            $itemTarget = $local;
         }
 
-        // 3. Respaldo por búsqueda upstream en Rakun
-        if (!$movieData && mb_strlen($title) >= 2) {
-            $searchData = self::fetchRemote('content?search=' . urlencode($title));
+        // 2. Si no se encontró en local, buscar upstream en la API por título
+        if (!$itemTarget && mb_strlen($title) >= 2) {
+            $searchData = self::fetchRemote('content?search=' . urlencode($title), 4);
             if (is_array($searchData)) {
                 foreach ($searchData as $item) {
                     $cat = $item['category'] ?? '';
@@ -252,23 +227,32 @@ class RakunService
 
                     $itemTmdb = (int)($item['tmdbId'] ?? ($item['tmdb_id'] ?? 0));
                     if ($tmdbId !== null && $itemTmdb === $tmdbId) {
-                        $movieData = $item;
+                        $itemTarget = $item;
                         break;
                     }
 
                     if (self::isTitleMatch($title, $item['title'] ?? '')) {
-                        $movieData = $item;
+                        $itemTarget = $item;
                         break;
                     }
                 }
             }
         }
 
-        if (!$movieData) {
+        if (!$itemTarget || empty($itemTarget['id'])) {
             return [];
         }
 
-        return self::extractStreamLinks($movieData);
+        // 3. CONSULTAR SIEMPRE EL DETALLE FRESCO POR ID (content/{id}) PARA OBTENER ENLACES CON TOKENS REALES VÁLIDOS
+        $fresh = self::fetchRemote("content/{$itemTarget['id']}", 5);
+        $movieData = $fresh ?: $itemTarget;
+
+        $streams = self::extractStreamLinks($movieData);
+        if (!empty($streams)) {
+            self::setCache($cacheKey, $streams, 10800); // 3 horas de caché
+        }
+
+        return $streams;
     }
 
     /**
@@ -276,62 +260,51 @@ class RakunService
      */
     public static function searchSeries(string $title, int $season, int $episode, ?int $tmdbId = null): array
     {
-        $seriesData = null;
-
-        // 1. Búsqueda directa por TMDB ID (sr_{tmdbId})
-        if ($tmdbId !== null && $tmdbId > 0) {
-            $cacheKey = "rakun_sr_{$tmdbId}";
-            $cached = self::getCache($cacheKey);
-            if ($cached !== null) {
-                $seriesData = $cached;
-            } else {
-                $res = self::fetchRemote("content/sr_{$tmdbId}");
-                if (!empty($res['id']) || !empty($res['seasons'])) {
-                    $seriesData = $res;
-                    self::setCache($cacheKey, $res, 21600); // 6 horas
-                }
-            }
+        $cacheKey = "rakun_sr_" . ($tmdbId ?: md5($title)) . "_s{$season}e{$episode}";
+        $cached = self::getCache($cacheKey);
+        if ($cached !== null && is_array($cached) && !empty($cached)) {
+            return $cached;
         }
 
-        // 2. Si no se encontró por ID, buscar en catálogo local
-        if (!$seriesData) {
-            $local = self::findInLocalCatalog($title, null, 'series', $tmdbId);
-            if ($local) {
-                if (!empty($local['id'])) {
-                    $rem = self::fetchRemote("content/{$local['id']}");
-                    $seriesData = $rem ?: $local;
-                } else {
-                    $seriesData = $local;
-                }
-            }
+        $seriesTarget = null;
+
+        // 1. Buscar en catálogo local
+        $local = self::findInLocalCatalog($title, null, 'series', $tmdbId);
+        if ($local && !empty($local['id'])) {
+            $seriesTarget = $local;
         }
 
-        // 3. Respaldo por búsqueda upstream en Rakun
-        if (!$seriesData && mb_strlen($title) >= 2) {
-            $searchData = self::fetchRemote('content?search=' . urlencode($title));
+        // 2. Si no se encontró en local, buscar upstream en la API por título
+        if (!$seriesTarget && mb_strlen($title) >= 2) {
+            $searchData = self::fetchRemote('content?search=' . urlencode($title), 4);
             if (is_array($searchData)) {
                 foreach ($searchData as $item) {
                     $cat = $item['category'] ?? '';
-                    if ($cat !== 'series' && empty($item['seasons'])) continue;
+                    if ($cat !== 'series' && $cat !== 'anime' && empty($item['seasons'])) continue;
 
                     $itemTmdb = (int)($item['tmdbId'] ?? ($item['tmdb_id'] ?? 0));
                     if ($tmdbId !== null && $itemTmdb === $tmdbId) {
-                        // Obtener detalle completo de temporadas si vino liviano
-                        $full = self::fetchRemote("content/{$item['id']}");
-                        $seriesData = $full ?: $item;
+                        $seriesTarget = $item;
                         break;
                     }
 
                     if (self::isTitleMatch($title, $item['title'] ?? '')) {
-                        $full = self::fetchRemote("content/{$item['id']}");
-                        $seriesData = $full ?: $item;
+                        $seriesTarget = $item;
                         break;
                     }
                 }
             }
         }
 
-        if (!$seriesData || empty($seriesData['seasons']) || !is_array($seriesData['seasons'])) {
+        if (!$seriesTarget || empty($seriesTarget['id'])) {
+            return [];
+        }
+
+        // 3. CONSULTAR SIEMPRE EL DETALLE FRESCO POR ID (content/{id}) PARA OBTENER TODAS LAS TEMPORADAS CON TOKENS VÁLIDOS
+        $fresh = self::fetchRemote("content/{$seriesTarget['id']}", 5);
+        $seriesData = $fresh ?: $seriesTarget;
+
+        if (empty($seriesData['seasons']) || !is_array($seriesData['seasons'])) {
             return [];
         }
 
@@ -363,7 +336,12 @@ class RakunService
             return [];
         }
 
-        return self::extractStreamLinks($targetEp);
+        $streams = self::extractStreamLinks($targetEp);
+        if (!empty($streams)) {
+            self::setCache($cacheKey, $streams, 10800); // 3 horas de caché
+        }
+
+        return $streams;
     }
 
     /**
@@ -376,9 +354,37 @@ class RakunService
             return null;
         }
 
-        // Match por TMDB ID
+        static $tmdbToRakunMap = [
+            // Películas
+            1318413 => 'c_3d8l7ewcnq', // El Día D: Bajo presión
+            1128204 => 'c_xq65wtzxir', // Devorador de Almas
+            390061  => 'c_dwqx1ssbjq', // El Informante (2017)
+            354912  => 'c_g01x2i8tvk', // Coco
+            404368  => 'c_l9y3k4s9ly', // Wifi Ralph
+            82690   => 'c_9ioyoi9kdv', // Ralph el demoledor
+            49519   => 'c_oxjod1jgnj', // Los Croods
+            38055   => 'c_5w1gnqdgxw', // Megamente
+            269149  => 'c_bg3v7djvr1', // Mi Villano Favorito 3
+            93456   => 'c_gmo95z7uaq', // Mi Villano Favorito 2
+            // Series
+            1399    => 'c_fzp45tihaf', // Juego de Tronos
+            66732   => 'c_bf1wb9cv1f', // Stranger Things
+            200875  => 'c_v872k399g2', // IT: Bienvenidos a Derry
+            94605   => 's_arcane_s2',  // Arcane
+            218896  => 'c_4x3ngzq8gl', // Linternas (Lanterns)
+            213713  => 'c_5hi0qhdfia', // Crystal Lake
+            258903  => 'c_d6j9dg52lx', // Tougen Anki
+            263622  => 'c_ftt65kqn4t', // Kill Blue
+        ];
+
+        // 1. Match por TMDB ID directo o mapeado
         if ($tmdbId !== null && $tmdbId > 0) {
+            $mappedRakunId = $tmdbToRakunMap[$tmdbId] ?? null;
+
             foreach ($all as $item) {
+                if ($mappedRakunId && ($item['id'] ?? '') === $mappedRakunId) {
+                    return $item;
+                }
                 $itId = (int)($item['tmdbId'] ?? ($item['tmdb_id'] ?? 0));
                 if ($itId === $tmdbId) {
                     return $item;
@@ -387,13 +393,17 @@ class RakunService
                     return $item;
                 }
             }
+
+            if ($mappedRakunId) {
+                return ['id' => $mappedRakunId, 'tmdbId' => $tmdbId, 'category' => $category];
+            }
         }
 
-        // Match por Título y Año
+        // 2. Match por Título y Año
         foreach ($all as $item) {
             $itemCat = $item['category'] ?? '';
             if ($category === 'movies' && $itemCat !== 'movies' && $itemCat !== 'kids') continue;
-            if ($category === 'series' && $itemCat !== 'series') continue;
+            if ($category === 'series' && $itemCat !== 'series' && $itemCat !== 'anime') continue;
 
             $itemTitle = $item['title'] ?? '';
             if (self::isTitleMatch($title, $itemTitle)) {

@@ -820,24 +820,27 @@ const server = http.createServer(async (req, res) => {
         }
 
         try {
+            const isRakunCdn = targetUrl.includes('b-cdn.net') || targetUrl.includes('rakun.lat') || targetUrl.includes('rakun.site');
             const clientReqHeaders = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'User-Agent': isRakunCdn ? 'RakunTv/2.0 (Android TV; OkHttp/4.9.2)' : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 'Accept': '*/*',
                 'Accept-Language': 'es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7'
             };
 
-            if (customReferer) {
-                clientReqHeaders['Referer'] = customReferer;
-                try {
-                    const refUrl = new URL(customReferer);
-                    clientReqHeaders['Origin'] = `${refUrl.protocol}//${refUrl.host}`;
-                } catch (e) {}
-            } else {
-                try {
-                    const tUrl = new URL(targetUrl);
-                    clientReqHeaders['Referer'] = `${tUrl.protocol}//${tUrl.host}/`;
-                    clientReqHeaders['Origin'] = `${tUrl.protocol}//${tUrl.host}`;
-                } catch (e) {}
+            if (!isRakunCdn) {
+                if (customReferer) {
+                    clientReqHeaders['Referer'] = customReferer;
+                    try {
+                        const refUrl = new URL(customReferer);
+                        clientReqHeaders['Origin'] = `${refUrl.protocol}//${refUrl.host}`;
+                    } catch (e) {}
+                } else {
+                    try {
+                        const tUrl = new URL(targetUrl);
+                        clientReqHeaders['Referer'] = `${tUrl.protocol}//${tUrl.host}/`;
+                        clientReqHeaders['Origin'] = `${tUrl.protocol}//${tUrl.host}`;
+                    } catch (e) {}
+                }
             }
 
             if (req.headers['range']) {
