@@ -99,7 +99,7 @@ define('TORRENT_STREAMER_REMOTE_URL', get_active_torrent_streamer_url());
 $PROVIDERS_CONFIG = [
     'local_cdn' => [
         'enabled' => true,
-        'name' => 'CDN Propio (Rakun)'
+        'name' => 'Rakun (Cloud CDN - Latino FHD)'
     ],
     'movieplus' => [
         'enabled' => true,

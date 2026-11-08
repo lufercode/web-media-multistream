@@ -2971,6 +2971,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'fas fa-magnet text-warning';
         }
         if (id.includes('movieplus')) return 'fas fa-cloud text-info';
+        if (id.includes('rakun') || id.includes('local_cdn')) return 'fas fa-cloud text-success';
         if (id.includes('lamovie')) return 'fas fa-play-circle text-danger';
         if (id.includes('cuevana')) return 'fas fa-play-circle text-primary';
         if (id.includes('poseidon')) return 'fas fa-water text-info';
@@ -3228,7 +3229,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isAnimeContent = linksContainer?.dataset?.isAnime === '1';
         const isAnimeTitle = isAnimeContent || /\b(dragon\s*ball|naruto|one\s*piece|bleach|shingeki|jujutsu|kimetsu|demon\s*slayer|boku\s*no\s*hero|my\s*hero|chainsaw|frieren|dandadan|solo\s*leveling|hunter\s*x\s*hunter|fullmetal|death\s*note|tokyo\s*ghoul|beerus|daima|boruto|inuyasha|ranma|saint\s*seiya|pokemon|digimon)\b/i.test(itemTitle || '');
         let rawProviders = (window._cachedProvidersList && window._cachedProvidersList.length > 0) ? window._cachedProvidersList : [
-            { id: 'local_cdn', name: 'CDN Propio', type: 'direct' },
+            { id: 'local_cdn', name: 'Rakun (Cloud CDN)', type: 'streaming' },
             { id: 'movieplus', name: 'Movie+ (Cloud CDN)', type: 'streaming' },
             { id: 'lamovie', name: 'LaMovie', type: 'mixed' },
             { id: 'serieskao', name: 'SeriesKao', type: 'mixed' },

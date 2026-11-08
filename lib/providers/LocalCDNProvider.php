@@ -13,12 +13,12 @@ class LocalCDNProvider implements ProviderInterface
 
     public function getName(): string
     {
-        return 'CDN Propio (Rakun)';
+        return 'Rakun (Cloud CDN)';
     }
 
     public function getType(): string
     {
-        return 'direct';
+        return 'streaming';
     }
 
     public function isEnabled(): bool
@@ -49,7 +49,7 @@ class LocalCDNProvider implements ProviderInterface
                 $results[] = [
                     'provider'      => $this->getId(),
                     'provider_name' => $this->getName(),
-                    'type'          => 'direct',
+                    'type'          => 'streaming',
                     'title'         => $itemTitle,
                     'server'        => $s['server'] ?? 'Rakun Cloud CDN',
                     'quality'       => $s['quality'] ?? '1080p FHD',
@@ -87,7 +87,7 @@ class LocalCDNProvider implements ProviderInterface
                 $results[] = [
                     'provider'      => $this->getId(),
                     'provider_name' => $this->getName(),
-                    'type'          => 'direct',
+                    'type'          => 'streaming',
                     'title'         => $itemTitle,
                     'server'        => $s['server'] ?? 'Rakun Cloud CDN',
                     'quality'       => $s['quality'] ?? '1080p FHD',
