@@ -373,6 +373,15 @@ class ProviderManager
         $consolidated['streaming'] = sanitize_and_filter_stream_links($consolidated['streaming']);
         $consolidated['direct'] = sanitize_and_filter_stream_links($consolidated['direct']);
 
+        // Si el scraper local devolvió 0 enlaces (por bloqueo de IP en hosting compartido como Cloudflare en PoseidonHD),
+        // intentar respaldo ligero desde Render como último recurso excepcional.
+        if (empty($consolidated['streaming']) && empty($consolidated['direct']) && empty($consolidated['torrent'])) {
+            $fallback = $this->fetchFromRenderFallback($provider_id, 'movie', $title, $year, $tmdb_id, $original_title);
+            if (!empty($fallback['streaming']) || !empty($fallback['direct']) || !empty($fallback['torrent'])) {
+                return $fallback;
+            }
+        }
+
         return $consolidated;
     }
 
@@ -440,6 +449,110 @@ class ProviderManager
         $consolidated['streaming'] = sanitize_and_filter_stream_links($consolidated['streaming']);
         $consolidated['direct'] = sanitize_and_filter_stream_links($consolidated['direct']);
 
+        // Si el scraper local devolvió 0 enlaces (por bloqueo de IP en hosting compartido como Cloudflare en PoseidonHD),
+        // intentar respaldo ligero desde Render como último recurso excepcional.
+        if (empty($consolidated['streaming']) && empty($consolidated['direct']) && empty($consolidated['torrent'])) {
+            $fallback = $this->fetchFromRenderFallback($provider_id, 'series', $title, null, $tmdb_id, $original_title, $season, $episode);
+            if (!empty($fallback['streaming']) || !empty($fallback['direct']) || !empty($fallback['torrent'])) {
+                return $fallback;
+            }
+        }
+
         return $consolidated;
+    }
+
+    /**
+     * Respaldo excepcional: consulta a Render únicamente si el proveedor local fue bloqueado
+     * por Cloudflare o red en el hosting compartido (ej. PoseidonHD en InfinityFree).
+     */
+    private function fetchFromRenderFallback(string $provider_id, string $type, string $title, ?string $year = null, ?int $tmdb_id = null, ?string $original_title = null, ?int $season = null, ?int $episode = null): array
+    {
+        $supported = ['poseidonhd', 'cuevana', 'serieskao', 'pelisplus', 'lamovie', 'latanime', 'animeflv', 'jkanime', 'cinecalidad'];
+        if (!in_array($provider_id, $supported, true)) {
+            return [];
+        }
+
+        $streamerUrl = '';
+        if (function_exists('get_active_torrent_streamer_url')) {
+            $streamerUrl = get_active_torrent_streamer_url();
+        } elseif (defined('TORRENT_STREAMER_REMOTE_URL')) {
+            $streamerUrl = TORRENT_STREAMER_REMOTE_URL;
+        } else {
+            $streamerUrl = 'https://web-media-multistream-f4qa.onrender.com';
+        }
+
+        if (empty($streamerUrl)) {
+            return [];
+        }
+
+        $params = [
+            'provider'      => $provider_id,
+            'type'          => $type,
+            'title'         => $title,
+            'originalTitle' => $original_title ?: '',
+            'year'          => $year ?: '',
+            'tmdbId'        => $tmdb_id ?: '',
+            'season'        => $season ?: 1,
+            'episode'       => $episode ?: 1
+        ];
+
+        $apiUrl = rtrim($streamerUrl, '/') . '/api/fallback-provider?' . http_build_query($params);
+
+        $raw = null;
+        if (function_exists('curl_init')) {
+            $ch = @curl_init($apiUrl);
+            if ($ch) {
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT        => 4,
+                    CURLOPT_CONNECTTIMEOUT => 2,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_SSL_VERIFYHOST => false,
+                    CURLOPT_HTTPHEADER     => [
+                        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) Web-Media-Fallback',
+                        'Accept: application/json'
+                    ]
+                ]);
+                $raw = @curl_exec($ch);
+                @curl_close($ch);
+            }
+        }
+
+        if (!$raw) {
+            $ctx = stream_context_create([
+                'http' => [
+                    'timeout'       => 4,
+                    'header'        => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) Web-Media-Fallback\r\nAccept: application/json\r\n",
+                    'ignore_errors' => true
+                ],
+                'ssl' => [
+                    'verify_peer'      => false,
+                    'verify_peer_name' => false
+                ]
+            ]);
+            $raw = @file_get_contents($apiUrl, false, $ctx);
+        }
+
+        if (!$raw) {
+            return [];
+        }
+
+        $data = json_decode($raw, true);
+        if (!empty($data['links']) && is_array($data['links'])) {
+            $links = $data['links'];
+            $res = [
+                'direct'    => $links['direct'] ?? [],
+                'streaming' => $links['streaming'] ?? [],
+                'torrent'   => $links['torrent'] ?? []
+            ];
+
+            if (function_exists('sanitize_and_filter_stream_links')) {
+                $res['streaming'] = sanitize_and_filter_stream_links($res['streaming']);
+                $res['direct']    = sanitize_and_filter_stream_links($res['direct']);
+            }
+            return $res;
+        }
+
+        return [];
     }
 }

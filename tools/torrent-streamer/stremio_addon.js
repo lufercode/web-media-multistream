@@ -3176,3 +3176,186 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
     }
     return payload;
 }
+
+/**
+ * Ejecuta el scraping de un único proveedor bajo demanda (usado como respaldo excepcional por la web)
+ */
+export async function scrapeSingleProvider(providerId, meta) {
+    if (!providerId || !meta) return [];
+    const p = providerId.toLowerCase();
+    try {
+        if (p === 'poseidonhd' || p === 'cuevana') return await scrapeCuevanaOrPoseidon(meta, p);
+        if (p === 'serieskao' || p === 'pelisplus') return await scrapeKaoOrPelisPlus(meta, p);
+        if (p === 'lamovie') return await scrapeLaMovie(meta);
+        if (p === 'latanime') return await scrapeLatAnime(meta);
+        if (p === 'animeflv') return await scrapeAnimeFLV(meta);
+        if (p === 'jkanime') return await scrapeJkAnime(meta);
+        if (p === 'local_cdn' || p === 'rakun') return await scrapeLocalCdn(meta);
+        if (p === 'movieplus') return await scrapeMoviePlus(meta);
+        if (p === 'cinecalidad') return await scrapeCinecalidad(meta);
+        if (p === 'tpb' || p === 'thepiratebay') return await scrapeTpb(meta);
+        if (p === 'yts') return await scrapeYts(meta);
+        if (p === 'nyaa') return await scrapeNyaa(meta);
+        if (p === 'torrentio') return await scrapeTorrentio(meta);
+    } catch (e) {
+        console.warn(`[Fallback Scraper] Error scraping ${p}:`, e.message);
+    }
+    return [];
+}
+
+/**
+ * Extrae los enlaces en formato web para respaldo excepcional de proveedores
+ */
+export async function getWebProviderFallback(providerId, meta) {
+    if (!providerId || !meta) return { direct: [], streaming: [], torrent: [] };
+    const p = providerId.toLowerCase();
+    const links = { direct: [], streaming: [], torrent: [] };
+
+    try {
+        if (p === 'poseidonhd' || p === 'cuevana') {
+            const candHosts = p === 'poseidonhd'
+                ? ['https://poseidonhd2.co']
+                : ['https://cuevanapro.org', 'https://ver.cuevana3.one', 'https://www.cuevana-3.mx'];
+            const queries = Array.from(new Set([meta.title, meta.originalTitle, ...(meta.alternativeTitles || [])].filter(Boolean)));
+            
+            for (const candHost of candHosts) {
+                for (const q of queries.slice(0, 2)) {
+                    const searchUrl = `${candHost}/search?q=${encodeURIComponent(q)}`;
+                    const html = await httpGet(searchUrl, { timeout: 3800, headers: { Referer: `${candHost}/` } });
+                    if (!html) continue;
+
+                    const mNext = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+                    if (!mNext) continue;
+
+                    let nextData = null;
+                    try { nextData = JSON.parse(mNext[1]); } catch (e) { continue; }
+
+                    const items = [
+                        ...(nextData?.props?.pageProps?.movies || []),
+                        ...(nextData?.props?.pageProps?.series || [])
+                    ];
+
+                    let matched = null;
+                    for (const item of items) {
+                        const rawSlug = item?.url?.slug || '';
+                        const isMovieItem = rawSlug.startsWith('movies/') || rawSlug.startsWith('pelicula/');
+                        if (meta.type === 'movie' && !isMovieItem) continue;
+                        if (meta.type !== 'movie' && isMovieItem) continue;
+
+                        if (meta.tmdbId && Number(item.TMDbId) === Number(meta.tmdbId)) {
+                            matched = item;
+                            break;
+                        }
+                        const candTitle = item?.titles?.name || '';
+                        if (isTitleMatch(meta.title, candTitle) || isTitleMatch(meta.originalTitle, candTitle)) {
+                            matched = item;
+                            break;
+                        }
+                    }
+
+                    if (matched) {
+                        const rawSlug = matched.url.slug;
+                        let detailUrl = '';
+                        if (meta.type === 'movie') {
+                            detailUrl = `${candHost}/${rawSlug.replace(/^movies\//, 'pelicula/')}`;
+                        } else {
+                            const serieBase = rawSlug.replace(/^series\//, 'serie/');
+                            detailUrl = `${candHost}/${serieBase}/temporada/${meta.season}/episodio/${meta.episode}`;
+                        }
+
+                        const detHtml = await httpGet(detailUrl, { timeout: 4000, headers: { Referer: searchUrl } });
+                        if (detHtml) {
+                            const mDet = detHtml.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+                            if (mDet) {
+                                try {
+                                    const detJson = JSON.parse(mDet[1]);
+                                    const props = detJson?.props?.pageProps || {};
+                                    const videos = props?.thisMovie?.videos || props?.episode?.videos || props?.thisEpisode?.videos || {};
+                                    const langMap = {
+                                        latino: ['Español Latino', 'lat'],
+                                        spanish: ['Castellano', 'cast'],
+                                        english: ['Subtitulado', 'sub'],
+                                        japanese: ['Japonés (Sub)', 'sub']
+                                    };
+
+                                    for (const [langKey, serverList] of Object.entries(videos)) {
+                                        if (!Array.isArray(serverList)) continue;
+                                        const langInfo = langMap[langKey.toLowerCase()] || ['Español Latino', 'lat'];
+
+                                        for (const sItem of serverList) {
+                                            const playerUrl = sItem.result || sItem.url || '';
+                                            if (!playerUrl) continue;
+
+                                            const rawCyber = (sItem.cyberlocker || 'Online').toLowerCase();
+                                            let sName = sItem.cyberlocker || 'Online Stream';
+                                            if (rawCyber.includes('vidhide')) sName = 'VidHide';
+                                            else if (rawCyber.includes('streamwish')) sName = 'StreamWish';
+                                            else if (rawCyber.includes('voe')) sName = 'Voe';
+                                            else if (rawCyber.includes('dood')) sName = 'Doodstream';
+                                            else if (rawCyber.includes('streamtape')) sName = 'Streamtape';
+                                            else if (rawCyber.includes('filemoon')) sName = 'Filemoon';
+                                            else if (rawCyber.includes('fastream')) sName = 'Fastream';
+                                            else if (rawCyber.includes('netu')) sName = 'Netu';
+
+                                            links.streaming.push({
+                                                provider: p,
+                                                provider_name: p === 'poseidonhd' ? 'PoseidonHD' : 'Cuevana',
+                                                title: meta.title,
+                                                server: sName,
+                                                url: playerUrl,
+                                                stream_url: playerUrl,
+                                                language: langInfo[0],
+                                                lang: langInfo[1],
+                                                quality: sItem.quality ? sItem.quality.toUpperCase() : '1080p Full HD',
+                                                type: 'streaming',
+                                                size: null
+                                            });
+                                        }
+                                    }
+                                } catch (e) {}
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (links.streaming.length > 0) break;
+            }
+            return links;
+        }
+
+        // Para otros proveedores, usar scrapeSingleProvider
+        const rawStreams = await scrapeSingleProvider(p, meta);
+        for (const s of rawStreams) {
+            if (s.infoHash) {
+                links.torrent.push({
+                    provider: p,
+                    title: s.title || s.name || meta.title,
+                    magnet: `magnet:?xt=urn:btih:${s.infoHash}`,
+                    infoHash: s.infoHash,
+                    seeders: s._seeders || 0,
+                    size: s._size || 'N/A',
+                    type: 'torrent'
+                });
+            } else if (s.url) {
+                const serverMatch = s.title?.match(/⚡\s*([^•\n]+)/);
+                const serverName = serverMatch ? serverMatch[1].trim() : (s.name ? s.name.split('\n')[0].replace(/^[^\w]+/, '').trim() : 'Online');
+                links.streaming.push({
+                    provider: p,
+                    provider_name: p,
+                    title: s.title || meta.title,
+                    server: serverName,
+                    url: s.url,
+                    stream_url: s.url,
+                    language: s._lang === 'latino' ? 'Español Latino' : (s._lang === 'castellano' ? 'Castellano' : 'Subtitulado'),
+                    lang: s._lang || 'lat',
+                    quality: '1080p Full HD',
+                    type: 'streaming'
+                });
+            }
+        }
+    } catch (err) {
+        console.warn(`[getWebProviderFallback] Error for ${p}:`, err.message);
+    }
+
+    return links;
+}

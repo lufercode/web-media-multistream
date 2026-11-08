@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import WebTorrent from 'webtorrent';
 import MemoryChunkStore from 'memory-chunk-store';
-import { buildManifest, getStremioStreams, getStremiosCatalog, resolveEmbedToHls, makeStreamUrl } from './stremio_addon.js';
+import { buildManifest, getStremioStreams, getStremiosCatalog, resolveEmbedToHls, makeStreamUrl, scrapeSingleProvider, getWebProviderFallback } from './stremio_addon.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -720,6 +720,59 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ status: 'error', error: e.message }));
+        }
+        return;
+    }
+
+    // =========================================================================
+    // PROVIDER SCRAPING FALLBACK ENDPOINT (Respaldo excepcional para la Web si el hosting compartido es bloqueado)
+    // =========================================================================
+    if (pathname === '/api/fallback-provider' && req.method === 'GET') {
+        const provId = parsedUrl.searchParams.get('provider') || '';
+        const type = parsedUrl.searchParams.get('type') || 'movie';
+        const tmdbId = parsedUrl.searchParams.get('tmdbId') ? parseInt(parsedUrl.searchParams.get('tmdbId'), 10) : null;
+        const title = parsedUrl.searchParams.get('title') || '';
+        const originalTitle = parsedUrl.searchParams.get('originalTitle') || '';
+        const year = parsedUrl.searchParams.get('year') || '';
+        const season = parsedUrl.searchParams.get('season') ? parseInt(parsedUrl.searchParams.get('season'), 10) : 1;
+        const episode = parsedUrl.searchParams.get('episode') ? parseInt(parsedUrl.searchParams.get('episode'), 10) : 1;
+
+        if (!provId || (!title && !tmdbId)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'error', error: 'provider and (title or tmdbId) required' }));
+            return;
+        }
+
+        try {
+            const meta = {
+                type,
+                tmdbId,
+                title,
+                originalTitle,
+                englishTitle: originalTitle,
+                alternativeTitles: [],
+                year,
+                season,
+                episode,
+                isAnime: false
+            };
+
+            const links = await getWebProviderFallback(provId, meta);
+
+            res.writeHead(200, {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Access-Control-Allow-Origin': '*'
+            });
+            res.end(JSON.stringify({
+                status: 'success',
+                provider: provId,
+                source: 'render_fallback',
+                links
+            }));
+        } catch (err) {
+            console.error(`[Fallback Provider] Error scraping ${provId}:`, err);
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ status: 'error', provider: provId, links: { direct: [], streaming: [], torrent: [] } }));
         }
         return;
     }
