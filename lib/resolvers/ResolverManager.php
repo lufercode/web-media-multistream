@@ -14,6 +14,7 @@ require_once __DIR__ . '/StreamtapeResolver.php';
 require_once __DIR__ . '/YourUploadResolver.php';
 require_once __DIR__ . '/MixDropResolver.php';
 require_once __DIR__ . '/Mp4UploadResolver.php';
+require_once __DIR__ . '/RakunCDNResolver.php';
 
 class ResolverManager
 {
@@ -28,6 +29,7 @@ class ResolverManager
     private function registerDefaultResolvers(): void
     {
         $this->resolvers = [
+            new RakunCDNResolver(),
             new YandexDiskResolver(),
             new CinecalidadResolver(),
             new CuevanaResolver(),

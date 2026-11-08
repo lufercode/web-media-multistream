@@ -1276,32 +1276,109 @@ async function scrapeCuevanaOrPoseidon(meta, providerId = 'cuevana', baseUrl = '
 }
 
 /**
- * 5. Scraper: CDN Propio (Rakun Cloud Directo)
+ * 5. Scraper: CDN Propio (Rakun Cloud & Bunny CDN VIP)
  */
-async function scrapeLocalCdn(meta) {
-    if (!meta.tmdbId) return [];
-    const base = 'https://cdn.rakun.site/file/rakun-cloud';
-    const candidates = meta.type === 'movie'
-        ? [`${base}/movies/${meta.tmdbId}/movie.mp4`, `${base}/movies/${meta.tmdbId}/movie.mkv`]
-        : [
-            `${base}/tv/${meta.tmdbId}/s${meta.season}/e${meta.episode}.mp4`,
-            `${base}/tv/${meta.tmdbId}/s${meta.season}/e${meta.episode}.mkv`
-        ];
+async function scrapeLocalCdn(meta, baseUrl = '') {
+    const streams = [];
+    const headers = {
+        'User-Agent': 'RakunTv/2.0 (Android TV; OkHttp/4.9.2)',
+        'Accept': 'application/json'
+    };
 
-    for (const url of candidates) {
-        const exists = await httpGet(url, { method: 'HEAD', headOnly: true, timeout: 2500 });
-        if (exists) {
-            return [{
-                name: `🇲🇽 CDN Propio\n1080p Directo`,
-                title: `${meta.title}\n⚡ Rakun Cloud Directo • 🇲🇽 Español Latino`,
-                url,
+    try {
+        let contentData = null;
+
+        if (meta.type === 'movie') {
+            if (meta.tmdbId) {
+                contentData = await httpGet(`https://api.rakun.lat/api/content/mv_${meta.tmdbId}`, { json: true, headers, timeout: 3500 });
+            }
+            if (!contentData?.streamLinks?.length && !contentData?.streamUrl && meta.title) {
+                const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(meta.title)}`, { json: true, headers, timeout: 3500 });
+                if (Array.isArray(searchRes)) {
+                    contentData = searchRes.find(i => (i.category === 'movies' || i.category === 'kids') && (isTitleMatch(meta.title, i.title || '') || (meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId))));
+                }
+            }
+        } else if (meta.type === 'series') {
+            let seriesDetail = null;
+            if (meta.tmdbId) {
+                seriesDetail = await httpGet(`https://api.rakun.lat/api/content/sr_${meta.tmdbId}`, { json: true, headers, timeout: 3500 });
+            }
+            if (!seriesDetail?.seasons?.length && meta.title) {
+                const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(meta.title)}`, { json: true, headers, timeout: 3500 });
+                if (Array.isArray(searchRes)) {
+                    const match = searchRes.find(i => (i.category === 'series' || i.seasons) && (isTitleMatch(meta.title, i.title || '') || (meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId))));
+                    if (match?.id) {
+                        seriesDetail = await httpGet(`https://api.rakun.lat/api/content/${match.id}`, { json: true, headers, timeout: 3500 });
+                    }
+                }
+            }
+
+            if (seriesDetail?.seasons && Array.isArray(seriesDetail.seasons)) {
+                const seasonObj = seriesDetail.seasons.find(s => Number(s.season_number || s.number) === Number(meta.season));
+                if (seasonObj?.episodes && Array.isArray(seasonObj.episodes)) {
+                    contentData = seasonObj.episodes.find(e => Number(e.episode || e.episode_number) === Number(meta.episode));
+                }
+            }
+        }
+
+        if (!contentData) return [];
+
+        const rawLinks = [];
+        if (Array.isArray(contentData.streamLinks) && contentData.streamLinks.length > 0) {
+            rawLinks.push(...contentData.streamLinks);
+        } else if (contentData.streamUrl) {
+            rawLinks.push({ url: contentData.streamUrl, type: 'free', quality: 'HD' });
+        }
+
+        const seenUrls = new Set();
+        const effectiveBaseUrl = (baseUrl || '').replace(/\/+$/, '');
+
+        for (const lnk of rawLinks) {
+            let directUrl = lnk.url || '';
+            if (!directUrl) continue;
+
+            const cleanBase = directUrl.split('?')[0];
+            if (seenUrls.has(cleanBase)) continue;
+            seenUrls.add(cleanBase);
+
+            // Firmar la URL si no viene con token activo
+            if (!directUrl.includes('token=')) {
+                const sign = await httpGet(`https://api.rakun.lat/api/content/sign-url?url=${encodeURIComponent(directUrl)}`, { json: true, headers, timeout: 3000 });
+                if (sign?.signedUrl) {
+                    directUrl = sign.signedUrl;
+                }
+            }
+
+            const isVip = directUrl.includes('b-cdn.net') || lnk.type === 'premium';
+            const serverLabel = isVip ? 'Rakun VIP (Bunny CDN)' : 'Rakun Cloud CDN';
+            const labelQuality = (lnk.quality && lnk.quality !== 'SD') ? `${lnk.quality.toUpperCase()} HD` : '1080p FHD';
+            const flag = '🇲🇽';
+
+            const streamUrl = effectiveBaseUrl
+                ? `${effectiveBaseUrl}/stream-proxy?url=${encodeURIComponent(directUrl)}`
+                : directUrl;
+
+            const labelTitle = meta.type === 'movie'
+                ? `${meta.title} (${meta.year || 'HD'})`
+                : `${meta.title} S${String(meta.season).padStart(2, '0')}E${String(meta.episode).padStart(2, '0')}`;
+
+            streams.push({
+                name: `${flag} ${isVip ? 'Rakun VIP' : 'Rakun CDN'}\n${labelQuality}`,
+                title: `${labelTitle}\n⚡ Cloud CDN (${serverLabel}) • 🇲🇽 Español Latino`,
+                url: streamUrl,
                 _lang: 'latino',
                 _prov: 'local_cdn',
-                behaviorHints: { notWebReady: false }
-            }];
+                behaviorHints: {
+                    notWebReady: false,
+                    bingeGroup: `streammedia-rakun-latino`
+                }
+            });
         }
+    } catch (e) {
+        // Silently continue
     }
-    return [];
+
+    return streams;
 }
 
 // =========================================================================
@@ -2854,7 +2931,7 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
     const tasks = [];
 
     if (cfg.providers.has('movieplus')) tasks.push(scrapeMoviePlus(meta, baseUrl));
-    if (cfg.providers.has('local_cdn')) tasks.push(scrapeLocalCdn(meta));
+    if (cfg.providers.has('local_cdn')) tasks.push(scrapeLocalCdn(meta, baseUrl));
     if (cfg.providers.has('lamovie')) tasks.push(scrapeLaMovie(meta));
     if (cfg.providers.has('latanime')) tasks.push(scrapeLatAnime(meta));
     if (cfg.providers.has('jkanime')) tasks.push(scrapeJkAnime(meta));

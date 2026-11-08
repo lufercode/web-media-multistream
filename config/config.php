@@ -206,9 +206,10 @@ $CONTENT_TYPES = [
     'anime' => 'Animación'
 ];
 
-// Dominios de tu CDN propio
+// Dominios de tu CDN propio (Rakun Cloud & Bunny CDN VIP)
 $BASE_DOMAINS = [
-    'https://cdn.rakun.site/file/rakun-cloud/'
+    'https://rakun.b-cdn.net/file/rakun-cloud-server/',
+    'https://cdn.rakun.lat/file/rakun-cloud-server/'
 ];
 
 // Patrones de archivos para el CDN propio
