@@ -122,31 +122,25 @@ class MoviePlusService
     {
         $gzPath = self::getGzCatalogPath();
         if (!file_exists($gzPath)) {
-            // Intentar buscar en ../movie-plus si existe
-            $altPath = dirname(__DIR__, 2) . '/movie-plus/catalog_cache.json.gz';
-            if (file_exists($altPath)) {
-                @copy($altPath, $gzPath);
-            } else {
-                $urls = [
-                    'https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/list/items_up_r1791999803134.json.gz',
-                    'https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/items_up.json.gz',
-                    'https://api.appsdevxp.com/db/items_up.json.gz'
-                ];
-                $downloaded = false;
-                foreach ($urls as $u) {
-                    $ctx = stream_context_create([
-                        'http' => ['header' => "User-Agent: Mozilla/5.0\r\n", 'timeout' => 15]
-                    ]);
-                    $content = @file_get_contents($u, false, $ctx);
-                    if ($content !== false && strlen($content) > 1000) {
-                        @file_put_contents($gzPath, $content);
-                        $downloaded = true;
-                        break;
-                    }
+            $urls = [
+                'https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/list/items_up_r1791999803134.json.gz',
+                'https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/items_up.json.gz',
+                'https://api.appsdevxp.com/db/items_up.json.gz'
+            ];
+            $downloaded = false;
+            foreach ($urls as $u) {
+                $ctx = stream_context_create([
+                    'http' => ['header' => "User-Agent: Mozilla/5.0\r\n", 'timeout' => 15]
+                ]);
+                $content = @file_get_contents($u, false, $ctx);
+                if ($content !== false && strlen($content) > 1000) {
+                    @file_put_contents($gzPath, $content);
+                    $downloaded = true;
+                    break;
                 }
-                if (!$downloaded) {
-                    return false;
-                }
+            }
+            if (!$downloaded) {
+                return false;
             }
         }
 

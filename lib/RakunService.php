@@ -79,25 +79,20 @@ class RakunService
             return self::$localCatalogCache;
         }
 
-        $candidates = [
-            __DIR__ . '/../data/rakun/rakun_core_catalog.json',
-            dirname(__DIR__, 2) . '/rakun/assets/rakun_core_catalog.json'
-        ];
-
-        foreach ($candidates as $filePath) {
-            if (file_exists($filePath)) {
-                $raw = @file_get_contents($filePath);
-                if ($raw) {
-                    $json = json_decode($raw, true);
-                    if (isset($json['content']) && is_array($json['content'])) {
-                        self::$localCatalogCache = $json['content'];
-                        return self::$localCatalogCache;
-                    }
+        // 1. Probar archivo JSON crudo local
+        $jsonPath = __DIR__ . '/../data/rakun/rakun_core_catalog.json';
+        if (file_exists($jsonPath)) {
+            $raw = @file_get_contents($jsonPath);
+            if ($raw) {
+                $json = json_decode($raw, true);
+                if (isset($json['content']) && is_array($json['content'])) {
+                    self::$localCatalogCache = $json['content'];
+                    return self::$localCatalogCache;
                 }
             }
         }
 
-        // Probar versión comprimida en gzip si no existe el JSON crudo
+        // 2. Probar versión comprimida en gzip (empaquetada en despliegue)
         $gzPath = __DIR__ . '/../data/rakun/catalog_cache.json.gz';
         if (file_exists($gzPath) && function_exists('gzdecode')) {
             $gzData = @file_get_contents($gzPath);

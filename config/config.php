@@ -56,8 +56,13 @@ if (!function_exists('get_active_torrent_streamer_url')) {
             return $resolved_url;
         }
 
-        $cache_file = sys_get_temp_dir() . '/streamer_active_node.txt';
-        if (file_exists($cache_file) && (time() - filemtime($cache_file) < 180)) {
+        $nodes = defined('TORRENT_STREAMER_POOL') ? TORRENT_STREAMER_POOL : [];
+        $fallback = !empty($nodes[0]) ? $nodes[0] : 'https://web-media-multistream-f4qa.onrender.com';
+
+        $cache_dir = defined('CACHE_DIR') ? CACHE_DIR : (defined('ROOT_DIR') ? ROOT_DIR . '/data/cache' : __DIR__ . '/../data/cache');
+        $cache_file = $cache_dir . '/streamer_active_node.txt';
+
+        if (file_exists($cache_file) && (time() - @filemtime($cache_file) < 300)) {
             $cached = trim((string)@file_get_contents($cache_file));
             if (!empty($cached)) {
                 $resolved_url = $cached;
@@ -65,28 +70,41 @@ if (!function_exists('get_active_torrent_streamer_url')) {
             }
         }
 
-        $nodes = defined('TORRENT_STREAMER_POOL') ? TORRENT_STREAMER_POOL : [];
+        if (empty($nodes) || !function_exists('curl_init')) {
+            $resolved_url = $fallback;
+            return $resolved_url;
+        }
+
         foreach ($nodes as $node) {
             $node = rtrim($node, '/');
             if (empty($node)) continue;
 
-            $ch = curl_init("{$node}/health");
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 2);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            $res = curl_exec($ch);
-            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            try {
+                $ch = @curl_init("{$node}/health");
+                if ($ch === false) continue;
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT        => 2,
+                    CURLOPT_CONNECTTIMEOUT => 1,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_SSL_VERIFYHOST => false,
+                    CURLOPT_NOSIGNAL       => 1
+                ]);
+                $res = @curl_exec($ch);
+                $code = (int)@curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                @curl_close($ch);
 
-            if ($code === 200 && $res && stripos($res, '"status":"ok"') !== false) {
-                $resolved_url = $node;
-                @file_put_contents($cache_file, $node);
-                return $resolved_url;
+                if ($code === 200 && $res && stripos($res, '"status":"ok"') !== false) {
+                    $resolved_url = $node;
+                    @file_put_contents($cache_file, $node);
+                    return $resolved_url;
+                }
+            } catch (\Throwable $e) {
+                // Silencioso ante fallos de red en hosting compartido
             }
         }
 
-        $resolved_url = !empty($nodes[0]) ? $nodes[0] : '';
+        $resolved_url = $fallback;
         @file_put_contents($cache_file, $resolved_url);
         return $resolved_url;
     }

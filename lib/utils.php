@@ -48,7 +48,8 @@ function check_base_domains_accessible(): array {
         return [];
     }
 
-    $cache_file = defined('CACHE_DIR') ? CACHE_DIR . '/base_domains_health.json' : sys_get_temp_dir() . '/base_domains_health.json';
+    $cache_dir = defined('CACHE_DIR') ? CACHE_DIR : (defined('ROOT_DIR') ? ROOT_DIR . '/data/cache' : __DIR__ . '/../data/cache');
+    $cache_file = $cache_dir . '/base_domains_health.json';
 
     if (file_exists($cache_file) && (time() - filemtime($cache_file) < 60)) {
         $cached = json_decode(file_get_contents($cache_file), true);
@@ -496,8 +497,8 @@ function sort_tmdb_results_by_popularity($a, $b) {
  */
 function get_current_identity(): array {
     if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-        session_start();
-        session_write_close();
+        @session_start();
+        @session_write_close();
     }
 
     // 1. ¿Hay usuario autenticado con Google?
