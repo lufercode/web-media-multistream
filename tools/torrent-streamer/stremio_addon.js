@@ -203,6 +203,81 @@ async function httpGet(url, options = {}) {
     }
 }
 
+function cleanTitleForComparison(title = '') {
+    if (!title || typeof title !== 'string') return '';
+    let t = title.toLowerCase();
+
+    // Eliminar sufijo de grupo de release al final
+    t = t.replace(/-[a-z0-9_]+$/i, '');
+
+    // Eliminar años de 4 dígitos (1900-2035) delimitados por espacios, puntos, etc.
+    t = t.replace(/[\(\[\s._\-]\b(19\d{2}|20[0-2]\d|203[0-5])\b[\)\]\s._\-]/g, ' ');
+
+    // Eliminar contenido entre corchetes [ ... ]
+    t = t.replace(/\[.*?\]/g, ' ');
+
+    // Eliminar palabras de ruido técnico (calidades, codecs, audios, etc.)
+    const noiseWords = [
+        '1080p', '720p', '480p', '2160p', '4k', 'uhd', 'hd', 'fullhd', 'full hd',
+        'bluray', 'bdrip', 'brrip', 'dvdrip', 'web-dl', 'webdl', 'web-rip', 'webrip', 'hdtv', 'microhd', 'cam', 'screener', 'ts', 'telesync', 'hdcam',
+        'amzn', 'dsnp', 'atvp', 'nflx', 'hmax', 'max', 'paramount', 'disney',
+        'h264', 'h.264', 'x264', 'h265', 'h.265', 'x265', 'hevc', 'avc', '10bit', 'hdr', 'hdr10', 'hdr10plus', 'dv', 'dovi', 'sdr',
+        'ddp5.1', 'ddp51', 'atmos', 'dts', 'truehd', 'aac', 'ac3', 'eac3', 'mp3',
+        'latino', 'lat', 'castellano', 'espanol', 'español', 'spanish', 'subtitulado', 'sub', 'subs', 'subbed', 'vose', 'vost',
+        'dual', 'ingles', 'english', 'eng', 'audio', 'multi', 'temporada', 'temp', 'mkv', 'mp4', 'avi'
+    ];
+    for (const w of noiseWords) {
+        const re = new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+        t = t.replace(re, ' ');
+    }
+
+    // Normalizar acentos y conjunciones
+    t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    t = t.replace(/&/g, 'y');
+
+    // Conservar solo alfanuméricos
+    return t.replace(/[^a-z0-9]/g, '').trim();
+}
+
+function getSequelTokens(str = '') {
+    const s = ` ${String(str || '').toLowerCase()} `.replace(/[\(\[\s._\-]\b(19\d{2}|20[0-2]\d|203[0-5])\b[\)\]\s._\-]/g, ' ');
+    const tokens = new Set();
+
+    const numM = s.match(/\b([2-9]|10)\b/g);
+    if (numM) numM.forEach(t => tokens.add(t));
+
+    const romM = s.match(/\b(ii|iii|iv|v|vi|vii|viii|ix|x)\b/g);
+    if (romM) romM.forEach(t => tokens.add(t));
+
+    const wordM = s.match(/\b(dos|tres|cuatro|cinco|seis|two|three|four|five|six)\b/g);
+    if (wordM) wordM.forEach(t => tokens.add(t));
+
+    const partM = s.match(/\b(capitulo|capítulo|chapter|parte|part)\b/g);
+    if (partM) partM.forEach(t => tokens.add(t));
+
+    return tokens;
+}
+
+function stringSimilarity(s1, s2) {
+    if (s1 === s2) return 1.0;
+    if (s1.length < 2 || s2.length < 2) return 0.0;
+    const bigrams1 = new Map();
+    for (let i = 0; i < s1.length - 1; i++) {
+        const bg = s1.slice(i, i + 2);
+        bigrams1.set(bg, (bigrams1.get(bg) || 0) + 1);
+    }
+    let intersection = 0;
+    for (let i = 0; i < s2.length - 1; i++) {
+        const bg = s2.slice(i, i + 2);
+        const count = bigrams1.get(bg) || 0;
+        if (count > 0) {
+            bigrams1.set(bg, count - 1);
+            intersection++;
+        }
+    }
+    return (2.0 * intersection) / ((s1.length - 1) + (s2.length - 1));
+}
+
 function normalizeText(str = '') {
     return str
         .toLowerCase()
@@ -213,21 +288,84 @@ function normalizeText(str = '') {
         .trim();
 }
 
+/**
+ * Comparación estricta de títulos y años para evitar entregar contenido erróneo
+ * (ej: no entregar Dragon Ball Super ante Dragon Ball Super: Beerus, ni The Thing 2011 ante The Thing 1982).
+ */
 function isTitleMatch(queryTitle, candTitle, queryYear = null, candYear = null) {
-    const q = normalizeText(queryTitle);
-    const c = normalizeText(candTitle);
-    if (!q || !c) return false;
-    if (queryYear && candYear && Math.abs(parseInt(queryYear, 10) - parseInt(candYear, 10)) > 1) {
+    if (!queryTitle || !candTitle) return false;
+
+    // 1. Auto-extraer año de los títulos si no vino provisto explícitamente
+    let effectiveCandYear = candYear;
+    if (!effectiveCandYear) {
+        const m = candTitle.match(/[\(\[\s._\-]\b(19\d{2}|20[0-2]\d|203[0-5])\b[\)\]\s._\-]/);
+        if (m) effectiveCandYear = m[1];
+    }
+    let effectiveQueryYear = queryYear;
+    if (!effectiveQueryYear) {
+        const m = queryTitle.match(/[\(\[\s._\-]\b(19\d{2}|20[0-2]\d|203[0-5])\b[\)\]\s._\-]/);
+        if (m) effectiveQueryYear = m[1];
+    }
+
+    // 2. Validación estricta de AÑO si ambos están presentes y son válidos
+    if (effectiveQueryYear && effectiveCandYear) {
+        const qY = parseInt(String(effectiveQueryYear).replace(/\D/g, ''), 10);
+        const cY = parseInt(String(effectiveCandYear).replace(/\D/g, ''), 10);
+        if (qY > 1900 && cY > 1900 && Math.abs(qY - cY) > 1) {
+            return false;
+        }
+    }
+
+    // 3. Detección estricta de secuelas y números romanos o palabras numéricas
+    const qTokens = getSequelTokens(queryTitle);
+    const cTokens = getSequelTokens(candTitle);
+    for (const t of cTokens) {
+        if (!qTokens.has(t)) return false;
+    }
+    for (const t of qTokens) {
+        if (!cTokens.has(t)) return false;
+    }
+
+    const cleanQuery = cleanTitleForComparison(queryTitle);
+    const cleanCand = cleanTitleForComparison(candTitle);
+
+    if (!cleanQuery || !cleanCand) return false;
+
+    // 4. Coincidencia exacta tras limpieza técnica
+    if (cleanQuery === cleanCand) return true;
+
+    const allowedNoise = new Set([
+        'subs', 'sub', 'integrados', 'integrado', 'vose', 'vost',
+        'extended', 'extendida', 'unrated', 'directors', 'director', 'cut',
+        'remastered', 'remasterizada', 'imax', 'version', 'edicion', 'edition',
+        'pelicula', 'movie', 'amzn', 'dsnp', 'nflx', 'webdl', 'webrip', 'bluray',
+        'h264', 'x264', 'h265', 'x265', 'hevc', 'ddp51', 'ddp', 'atmos', 'dts',
+        'aac', 'ac3', 'latino', 'lat', 'castellano', 'dual', 'multi', 'mp4', 'mkv'
+    ]);
+
+    // 5. Si el candidato empieza por la búsqueda: verificar que el remanente sea únicamente ruido técnico
+    if (cleanCand.startsWith(cleanQuery)) {
+        let extra = cleanCand.slice(cleanQuery.length).replace(/(?:19\d{2}|20\d{2})/g, '');
+        for (const n of allowedNoise) {
+            extra = extra.replaceAll(n, '');
+        }
+        if (extra.trim() === '') return true;
         return false;
     }
-    if (q === c) return true;
-    if (c.includes(q) || q.includes(c)) {
-        const qWords = q.split(' ').filter(Boolean);
-        const cWords = c.split(' ').filter(Boolean);
-        const minRatio = Math.min(qWords.length, cWords.length) / Math.max(qWords.length, cWords.length);
-        if (minRatio >= 0.5 || qWords[0] === cWords[0]) return true;
+
+    // 6. Si la búsqueda empieza por el candidato: verificar que el remanente sea únicamente ruido técnico
+    if (cleanQuery.startsWith(cleanCand)) {
+        let extra = cleanQuery.slice(cleanCand.length).replace(/(?:19\d{2}|20\d{2})/g, '');
+        for (const n of allowedNoise) {
+            extra = extra.replaceAll(n, '');
+        }
+        if (extra.trim() === '') return true;
+        return false;
     }
-    return false;
+
+    // 7. Similitud textual alta (mínimo 90%) para tolerar pequeñas erratas tipográficas
+    const sim = stringSimilarity(cleanQuery, cleanCand);
+    return sim >= 0.90;
 }
 
 /**
@@ -1351,12 +1489,17 @@ export async function scrapeLocalCdn(meta, baseUrl = '') {
                 for (const q of searchQueries.slice(0, 2)) {
                     const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(q)}`, { json: true, headers, timeout: 4000 });
                     if (Array.isArray(searchRes) && searchRes.length > 0) {
-                        const match = searchRes.find(i => 
-                            (i.category === 'movies' || i.category === 'kids') && 
-                            ((meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId)) ||
-                             isTitleMatch(meta.title, i.title || '') ||
-                             (meta.originalTitle && isTitleMatch(meta.originalTitle, i.title || '')))
-                        );
+                        const match = searchRes.find(i => {
+                            if (i.category !== 'movies' && i.category !== 'kids') return false;
+                            const itemTmdb = Number(i.tmdbId || i.tmdb_id || 0);
+                            if (meta.tmdbId && itemTmdb > 0) {
+                                return itemTmdb === Number(meta.tmdbId);
+                            }
+                            const candYear = i.year || (i.release_date ? String(i.release_date).slice(0, 4) : null);
+                            return isTitleMatch(meta.title, i.title || '', meta.year, candYear) ||
+                                   (meta.originalTitle && isTitleMatch(meta.originalTitle, i.title || '', meta.year, candYear)) ||
+                                   (meta.englishTitle && isTitleMatch(meta.englishTitle, i.title || '', meta.year, candYear));
+                        });
                         if (match?.id) {
                             targetId = match.id;
                             break;
@@ -1387,12 +1530,17 @@ export async function scrapeLocalCdn(meta, baseUrl = '') {
                 for (const q of searchQueries.slice(0, 2)) {
                     const searchRes = await httpGet(`https://api.rakun.lat/api/content?search=${encodeURIComponent(q)}`, { json: true, headers, timeout: 4000 });
                     if (Array.isArray(searchRes) && searchRes.length > 0) {
-                        const match = searchRes.find(i => 
-                            (i.category === 'series' || i.category === 'anime' || i.seasons) && 
-                            ((meta.tmdbId && Number(i.tmdbId || i.tmdb_id) === Number(meta.tmdbId)) ||
-                             isTitleMatch(meta.title, i.title || '') ||
-                             (meta.originalTitle && isTitleMatch(meta.originalTitle, i.title || '')))
-                        );
+                        const match = searchRes.find(i => {
+                            if (i.category !== 'series' && i.category !== 'anime' && !i.seasons) return false;
+                            const itemTmdb = Number(i.tmdbId || i.tmdb_id || 0);
+                            if (meta.tmdbId && itemTmdb > 0) {
+                                return itemTmdb === Number(meta.tmdbId);
+                            }
+                            const candYear = i.year || (i.first_air_date ? String(i.first_air_date).slice(0, 4) : null);
+                            return isTitleMatch(meta.title, i.title || '', meta.year, candYear) ||
+                                   (meta.originalTitle && isTitleMatch(meta.originalTitle, i.title || '', meta.year, candYear)) ||
+                                   (meta.englishTitle && isTitleMatch(meta.englishTitle, i.title || '', meta.year, candYear));
+                        });
                         if (match?.id) {
                             targetId = match.id;
                             break;
