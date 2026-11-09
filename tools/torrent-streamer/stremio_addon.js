@@ -3364,11 +3364,16 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
         allStreams = langFiltered;
     }
 
-    // Ordenar streams según jerarquía estricta:
-    // 1° Lugar: Streams reproducibles desde EMBEDS (servidores web como StreamWish, Voe, VidHide, PelisPlus, SeriesKao, LaMovie, Cuevana, AnimeFLV, etc.)
-    // 2° Lugar: Archivos LOCALES / Cloud CDN directos (Movie+ / Yandex CDN, CDN Propio Rakun)
-    // 3° Lugar: TORRENTS P2P al final, mostrados con prioridad estricta en Español Latino (Latino > Castellano > Multi > Sub) y ordenados por mayor número de seeders reales
-    const langRank = { latino: 40, castellano: 30, multi: 20, sub: 10 };
+    // Jerarquía de ordenación estricta:
+    // 1° Grupo de Idioma: Cualquier opción que contenga Español Latino (Latino o Multi con Latino) PRIMERO.
+    //    Los que no contengan Latino (Castellano, Subtitulado, Audio Original) van al FINAL.
+    // 2° Tipo de Servidor (Tier):
+    //    Tier 1: HLS Directo (.m3u8 desde servidores web / embeds: SeriesKao, PelisForte, PelisPedia, Cinecalidad, LaMovie, AnimeFLV, etc.)
+    //    Tier 2: Servidores CDN / Yandex / Archivos directos (Rakun Bunny VIP, Rakun Cloud CDN, Movie+ Cloud/Yandex CDN)
+    //    Tier 3: Torrents P2P (ordenados por mayor número de seeders reales)
+    // 3° Para igual tier e idioma:
+    //    - Calidad: 4K UHD / HDR (2160p) > 1080p FHD > 720p HD
+    //    - Torrents: mayor cantidad de seeders reales
     const provPriority = {
         cinecalidad: 1,
         lamovie_p2p: 2,
@@ -3378,57 +3383,97 @@ export async function getStremioStreams(type, rawId, configStr = '', baseUrl = '
         torrentio: 6
     };
 
+    const isLatinoStream = (s) => {
+        if (s._lang === 'sub' || s._lang === 'castellano') return false;
+        if (s._lang === 'latino' || s._lang === 'multi') return true;
+
+        const nameText = String(s.name || '');
+        const titleText = String(s.title || '');
+
+        if (/subtitulado|vose|sub latino|\bsub\b|castellano|españa|🇪🇸|💬/i.test(nameText)) return false;
+        if (/audio original\s*\+\s*.*sub/i.test(titleText)) return false;
+
+        return /\b(?:latino|audio latino|dual audio|triple audio|trial|dual|multi)\b/i.test(`${nameText} ${titleText}`) ||
+               nameText.includes('🇲🇽') ||
+               nameText.includes('🌐');
+    };
+
     const getStreamTier = (s) => {
         // Tier 3: Torrents P2P al final
         if (s.infoHash) return 3;
 
-        // Tier 2: Archivos locales y Cloud CDN (Movie+ / Yandex CDN, Local CDN Rakun)
+        // Tier 2: Archivos en Servidor Propio, Cloud CDN y Yandex (Rakun CDN, Movie+ Cloud CDN)
         const isCloudOrLocal = s._prov === 'movieplus' ||
             s._prov === 'local_cdn' ||
-            (s.name && /Movie\+|CDN Propio|Yandex/i.test(s.name)) ||
-            (s.title && /Cloud CDN|Rakun Cloud/i.test(s.title));
+            (s.name && /Movie\+|CDN Propio|Yandex|Rakun/i.test(s.name)) ||
+            (s.title && /Cloud CDN|Rakun Cloud|Yandex CDN/i.test(s.title)) ||
+            (s.url && /movieplus-stream|rakun|b-cdn\.net|cdn\.rakun/i.test(s.url));
         if (isCloudOrLocal) return 2;
 
-        // Tier 1: Reproducibles desde embed (servidores web resueltos a HLS o MP4 directo)
+        // Tier 1: Reproducibles HLS directo (.m3u8) desde servidores web / embeds
         return 1;
     };
 
+    const getQualityRank = (s) => {
+        const text = `${s.name || ''} ${s.title || ''}`;
+        if (/\b(?:4k|2160p|uhd)\b/i.test(text)) return 40;
+        if (/\b(?:1080p|fhd|full[\s-]?hd)\b/i.test(text)) return 30;
+        if (/\b(?:720p|hd)\b/i.test(text)) return 20;
+        return 25;
+    };
+
     allStreams.sort((a, b) => {
+        // 1. Grupo de Idioma: Latino / Multi primero (0), otros idiomas al final (1)
+        const aLat = isLatinoStream(a) ? 0 : 1;
+        const bLat = isLatinoStream(b) ? 0 : 1;
+        if (aLat !== bLat) {
+            return aLat - bLat;
+        }
+
+        // 2. Jerarquía de tipo (Tier 1: HLS directo -> Tier 2: CDN/Yandex -> Tier 3: Torrents)
         const aTier = getStreamTier(a);
         const bTier = getStreamTier(b);
         if (aTier !== bTier) {
             return aTier - bTier;
         }
 
-        const aLangScore = langRank[a._lang] || 0;
-        const bLangScore = langRank[b._lang] || 0;
-
-        // Tier 1 (Embeds reproducibles) o Tier 2 (Archivos locales / Yandex):
-        // Priorizar por idioma: Latino (40) > Castellano (30) > Multi (20) > Sub (10)
-        if (aTier === 1 || aTier === 2) {
-            if (bLangScore !== aLangScore) {
-                return bLangScore - aLangScore;
+        // 3. Diferenciación de idioma dentro del mismo grupo:
+        if (aLat === 0) {
+            // En el grupo Latino: Puro Latino (latino) preferido ligeramente sobre Multi (latino+castellano+inglés)
+            if (a._lang === 'latino' && b._lang === 'multi') return -1;
+            if (b._lang === 'latino' && a._lang === 'multi') return 1;
+        } else {
+            // En el grupo de Otros Idiomas: Castellano (30) > Subtitulado / VO (10)
+            const otherScore = { castellano: 30, sub: 10 };
+            const aScore = otherScore[a._lang] || 5;
+            const bScore = otherScore[b._lang] || 5;
+            if (bScore !== aScore) {
+                return bScore - aScore;
             }
-            return 0;
         }
 
-        // Tier 3 (Torrents P2P al final):
-        // 1° Prioridad estricta en Español Latino (Latino [40] > Castellano [30] > Multi [20] > Sub/Inglés [10])
-        if (bLangScore !== aLangScore) {
-            return bLangScore - aLangScore;
+        // 4. Ordenación interna dentro del mismo Tier:
+        if (aTier === 3) {
+            // Torrents: mayor cantidad de seeders reales (descendente)
+            const aSeeds = Number(a._seeders) || 0;
+            const bSeeds = Number(b._seeders) || 0;
+            if (bSeeds !== aSeeds) {
+                return bSeeds - aSeeds;
+            }
+            // A igualdad de seeders, proveedores dedicados antes de Torrentio
+            const aProvOrder = provPriority[a._prov] || 99;
+            const bProvOrder = provPriority[b._prov] || 99;
+            return aProvOrder - bProvOrder;
+        } else {
+            // HLS o CDN: resolución y calidad (4K HDR > 1080p > 720p)
+            const aQ = getQualityRank(a);
+            const bQ = getQualityRank(b);
+            if (bQ !== aQ) {
+                return bQ - aQ;
+            }
         }
 
-        // 2° Para el mismo idioma: mayor cantidad de seeders reales (descendente)
-        const aSeeds = Number(a._seeders) || 0;
-        const bSeeds = Number(b._seeders) || 0;
-        if (bSeeds !== aSeeds) {
-            return bSeeds - aSeeds;
-        }
-
-        // 3° Si empatan en seeders: agrupar proveedores dedicados antes de Torrentio
-        const aProvOrder = provPriority[a._prov] || 99;
-        const bProvOrder = provPriority[b._prov] || 99;
-        return aProvOrder - bProvOrder;
+        return 0;
     });
 
     // Limpiar propiedades internas antes de enviar a Stremio
